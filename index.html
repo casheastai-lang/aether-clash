@@ -3,25 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Archer Gauntlet</title>
+    <title>Archer Gauntlet: 1000 Floors</title>
     <style>
         body { font-family: Arial, sans-serif; }
-        /* Add additional styles here */
+        canvas { background: #eee; display: block; margin: 0 auto; }
     </style>
 </head>
 <body>
-    <h1>Welcome to the Archer Gauntlet Game!</h1>
-    <p>Instructions: Use the arrow keys to move and shoot at targets.</p>
+    <h1>Archer Gauntlet: 1000 Floors</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
     <script>
-        // Game code goes here
-        let targets = []; // Initialize targets
-        function initializeGame() {
-            // Initialize targets and game elements
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Game Variables
+        let player = { x: 400, y: 300, health: 100, score: 0 };
+        let enemies = [];
+        let floors = 1000;
+        let currentFloor = 1;
+
+        // Player Controls
+        window.addEventListener('keydown', (e) => {
+            switch(e.key) {
+                case 'w': player.y -= 5; break;
+                case 'a': player.x -= 5; break;
+                case 's': player.y += 5; break;
+                case 'd': player.x += 5; break;
+                case ' ': shoot(); break;
+            }
+        });
+
+        // Shooting Mechanic
+        function shoot() {
+            // Shooting logic here (mouse click shooting)
+            console.log('Shoot!');
         }
-        function shootAtTarget(target) {
-            // Logic for shooting at targets
+
+        // Enemy Spawning
+        function spawnEnemy() {
+            const enemy = { x: Math.random() * canvas.width, y: 0, health: 30 };
+            enemies.push(enemy);
         }
-        window.onload = initializeGame;
+
+        // Game Loop
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = 'blue';
+            ctx.fillRect(player.x, player.y, 50, 50);  // Draw Player
+
+            // Update and Draw Enemies
+            enemies.forEach(enemy => {
+                enemy.y += 2; // Enemy movement
+                ctx.fillStyle = 'red';
+                ctx.fillRect(enemy.x, enemy.y, 50, 50);  // Draw Enemy
+            });
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Start Game
+        spawnEnemy();
+        gameLoop();
     </script>
 </body>
 </html>
