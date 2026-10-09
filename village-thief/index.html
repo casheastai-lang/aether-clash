@@ -46,7 +46,6 @@ resize();
 
 // ---------- tuning ----------
 const P_WALK = 50, P_RUN = 84, G_PATROL = 30, G_RUN = 56, G_CHASE = 64;
-const PICK_TIME = 2.6, PICK_TIME_KIT = 1.3;
 const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_TIME = 1.1, HEAT_TIME = 12, GOAL = 1000;
 const DAY_LEN = 300;
 
@@ -117,6 +116,9 @@ const SFX = {
   buy() { tone(660, 0.08, { vol: 0.05 }); tone(880, 0.14, { vol: 0.05, delay: 0.08 }); },
   smoke() { noise(0.6, 0.12); },
   rustle() { noise(0.18, 0.06); },
+  set() { tone(1250, 0.05, { vol: 0.05 }); tone(1650, 0.06, { vol: 0.04, delay: 0.04 }); },
+  snap() { noise(0.08, 0.2); tone(190, 0.12, { type: 'sawtooth', vol: 0.06, slide: -80 }); },
+  unlock() { tone(520, 0.08, { vol: 0.05 }); tone(780, 0.1, { vol: 0.05, delay: 0.08 }); tone(1040, 0.14, { vol: 0.05, delay: 0.16 }); },
   bark() { tone(320, 0.07, { type: 'sawtooth', vol: 0.07, slide: -120 }); tone(300, 0.08, { type: 'sawtooth', vol: 0.07, slide: -120, delay: 0.16 }); },
   pick() { tone(2400 + Math.random() * 800, 0.025, { type: 'square', vol: 0.025 }); },
   deny() { tone(140, 0.16, { vol: 0.05 }); },
@@ -588,6 +590,8 @@ function randFloor(m) {
 }
 
 genTown();
+const roadTiles = [];
+for (let y = 0; y < town.h; y++) for (let x = 0; x < town.w; x++) { const t = town.tiles[y * town.w + x]; if (t === T.PATH || t === T.COBBLE) roadTiles.push({ x, y }); }
 houses.forEach(genInterior);
 genJail();
 Object.values(maps).forEach(renderMap);
@@ -606,8 +610,13 @@ const miniCv = mk(town.w, town.h);
 // =====================================================================
 //  ENTITIES & STATE
 // =====================================================================
-const GUARD_ROUTES = [[[3, 10], [56, 10]], [[3, 22], [56, 22]], [[3, 35], [56, 35]], [[29, 3], [29, 41]], [[12, 10], [12, 34], [46, 34], [46, 10]], [[24, 24], [35, 24]]];
-const GUARD_NAMES = ['Sgt. Bramble', 'Cpl. Hobb', 'Watchman Pell', 'Watchman Odo', 'Sgt. Varn', 'Watchman Tibb'];
+const GUARD_ROUTES = [[[3, 10], [56, 10]], [[3, 22], [56, 22]], [[3, 35], [56, 35]], [[29, 3], [29, 41]], [[12, 10], [12, 34], [46, 34], [46, 10]], [[24, 24], [35, 24]],
+  [[13, 3], [13, 41]], [[47, 3], [47, 41]], [[56, 11], [3, 11]], [[30, 41], [30, 3]]];
+const GUARD_NAMES = ['Sgt. Bramble', 'Cpl. Hobb', 'Watchman Pell', 'Watchman Odo', 'Sgt. Varn', 'Watchman Tibb', 'Watchman Ash', 'Watchman Burl', 'Watchman Cade', 'Watchman Dunn'];
+const UNIT_ROUTES = { guard: GUARD_ROUTES, dog: [[[3, 23], [56, 23]], [[3, 34], [56, 34]]], sarge: [[[12, 22], [46, 22]], [[29, 10], [29, 34]]] };
+const BOUNTY_FORCE = [4, 5, 7, 10, 10, 10]; // watchmen on the streets per bounty level
+const HUNTERS = [2, 3, 4, 6, 6, 6];      // how many of them get sent after an alarm
+const UNIT_NAMES = { guard: GUARD_NAMES, dog: ['Hound', 'Hound'], sarge: ['Sergeant Krell', 'Sergeant Morrow'] };
 let guards = [];
 const fences = [
   { kind: 'fence', name: 'Shady Mags', map: 'town', x: 5 * TS + 8, y: 39 * TS + 12, dir: 'right', fa: 0, sheet: FENCE_SHEETS[0], animT: 0, bubble: null, chatT: 3 },
@@ -623,12 +632,14 @@ let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up
 
 function newGame() {
   player = { kind: 'player', map: 'town', x: 27 * TS + 8, y: 23 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
-    loot: [], smoke: 1, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
+    loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
   up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
-  guards = GUARD_ROUTES.map((route, i) => ({ kind: 'guard', unit: 'guard', temp: false, name: GUARD_NAMES[i], map: 'town', x: route[0][0] * TS + 8, y: route[0][1] * TS + 12, fa: 0, dir: 'right', sheet: guardSheet(i), animT: 0,
-    route: route.map(([x, y]) => ({ x, y })), wi: 1, state: 'patrol', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 }));
-  for (const h of houses) { h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.resident.state = 'idle'; h.resident.sus = 0; }
+  guards = []; for (let i = 0; i < BOUNTY_FORCE[0]; i++) makeUnit('guard', i, true);
+  for (const h of houses) {
+    h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.robbed = false;
+    const r = h.resident, t = randFloor(h.map); r.state = 'idle'; r.sus = 0; r.map = h.key; r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.path = null; r.outCD = rnd(2, 45); r.reportCD = 0;
+  }
   maps.jail.cellOpen = true;
 }
 newGame();
@@ -745,12 +756,11 @@ function setWanted(reason) {
   if (!wanted) msg(reason, '#ff6b6b');
   wanted = true; lastSeenT = gameTime;
 }
-const BOUNTY_CAP = [2, 5, 7, 10, 10, 10];
 const HUNT_STATES = ['respond', 'search', 'chase'];
 const heatTime = () => HEAT_TIME + bounty * 3;
-const BOUNTY_MSG = ['', 'Bounty 1! Up to 5 watchmen will hunt you.', 'Bounty 2! Up to 7 watchmen are hunting you.', 'Bounty 3! The whole Watch - 10 men - is after you!', "Bounty 4! They've released the hounds!", 'Bounty 5! Sergeants have joined the hunt!'];
+const BOUNTY_MSG = ['', 'Bounty 1! The Watch puts 5 men on the streets.', 'Bounty 2! 7 watchmen now patrol the town.', 'Bounty 3! 10 watchmen patrol - and folk you robbed will recognize you!', 'Bounty 4! The Watch has brought out the hounds!', 'Bounty 5! Sergeants have joined the Watch!'];
 function raiseBounty() {
-  if (bounty >= 5) return; bounty++; msg(BOUNTY_MSG[bounty], '#ff4040'); SFX.whistle();
+  if (bounty >= 5) return; bounty++; msg(BOUNTY_MSG[bounty], '#ff4040'); SFX.whistle(); syncForce();
 }
 function randomNear(px, py, rad) {
   const cx = Math.floor(px / TS), cy = Math.floor(py / TS);
@@ -758,28 +768,43 @@ function randomNear(px, py, rad) {
   return { map: 'town', x: town.jail.approach.x, y: town.jail.approach.y };
 }
 function sendHunt(g) { g.state = 'respond'; g.target = randomNear(lastSeenPos.x, lastSeenPos.y, 7); g.path = null; }
-function spawnUnit(unit) {
-  const a = town.jail.approach, n = guards.filter(g => g.unit === unit).length;
-  const g = { kind: 'guard', unit, temp: true, name: unit === 'dog' ? 'Hound' : unit === 'sarge' ? 'Sergeant ' + ['Krell', 'Morrow'][n % 2] : 'Watchman ' + ['Ash', 'Burl', 'Cade', 'Dunn', 'Esk'][n % 5],
-    map: 'town', x: a.x * TS + 8, y: a.y * TS + 12, fa: Math.PI / 2, dir: 'down', animT: 0,
-    sheet: unit === 'dog' ? DOG_SHEET : unit === 'sarge' ? SARGE_SHEETS[n % 2] : guardSheet(guards.length + 3),
-    route: [{ x: a.x, y: a.y }], wi: 0, state: 'respond', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 };
-  sendHunt(g); guards.push(g);
-  say(g, unit === 'dog' ? 'WOOF! WOOF!' : unit === 'sarge' ? 'Find that thief!' : pick(['Reporting for duty!', 'Where are they?']));
-  if (unit === 'dog') SFX.bark();
-  return g;
+function makeUnit(unit, ri, atStart) {
+  const route = UNIT_ROUTES[unit][ri].map(([x, y]) => ({ x, y })), a = atStart ? route[0] : town.jail.approach;
+  const g = { kind: 'guard', unit, ri, leaving: false, name: UNIT_NAMES[unit][ri], map: 'town', x: a.x * TS + 8, y: a.y * TS + 12, fa: Math.PI / 2, dir: 'down', animT: 0,
+    sheet: unit === 'dog' ? DOG_SHEET : unit === 'sarge' ? SARGE_SHEETS[ri] : guardSheet(ri), route, wi: atStart ? 1 : 0, state: atStart ? 'patrol' : 'return',
+    path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 };
+  guards.push(g); return g;
 }
-// Make sure enough of the Watch is hunting for the current bounty level.
+const forceTarget = unit => unit === 'guard' ? BOUNTY_FORCE[bounty] : unit === 'dog' ? (bounty >= 4 ? 2 : 0) : (bounty >= 5 ? 2 : 0);
+// Keep the number of watchmen (and hounds/sergeants) on the streets matched to the bounty.
+// New units march out of the Watch House; surplus ones walk back in and go off duty.
+function syncForce() {
+  const busy = ['grab', 'hold', 'assist', 'escort_lead', 'escort_follow'];
+  for (const unit of ['guard', 'dog', 'sarge']) {
+    const active = () => guards.filter(g => g.unit === unit && !g.leaving), want = forceTarget(unit);
+    if (active().length < want) {
+      const used = new Set(active().map(g => g.ri));
+      for (let ri = 0; ri < UNIT_ROUTES[unit].length && active().length < want; ri++) if (!used.has(ri)) {
+        const g = makeUnit(unit, ri, false);
+        if (wanted) sendHunt(g);
+        say(g, unit === 'dog' ? 'WOOF! WOOF!' : unit === 'sarge' ? 'Find that thief!' : pick(['Reporting for duty!', 'On patrol!']));
+        if (unit === 'dog') SFX.bark();
+      }
+    } else if (active().length > want) {
+      const extras = active().filter(g => !busy.includes(g.state)).sort((a, b) => b.ri - a.ri).slice(0, active().length - want);
+      for (const g of extras) { g.leaving = true; g.state = 'return'; g.route = [{ x: town.jail.approach.x, y: town.jail.approach.y }]; g.wi = 0; g.path = null; }
+    }
+  }
+}
+// Send a share of the Watch after you when an alarm is raised.
 function ensureForce() {
   if (!wanted) return;
-  const humans = guards.filter(g => g.unit === 'guard');
-  let need = BOUNTY_CAP[bounty] - humans.filter(g => HUNT_STATES.includes(g.state)).length;
-  const idle = humans.filter(g => ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => Math.hypot(townPos(a).x - lastSeenPos.x, townPos(a).y - lastSeenPos.y) - Math.hypot(townPos(b).x - lastSeenPos.x, townPos(b).y - lastSeenPos.y));
+  const humans = guards.filter(g => g.unit === 'guard' && !g.leaving);
+  let need = HUNTERS[bounty] - humans.filter(g => HUNT_STATES.includes(g.state)).length;
+  const d = g => Math.hypot(townPos(g).x - lastSeenPos.x, townPos(g).y - lastSeenPos.y);
+  const idle = humans.filter(g => ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => d(a) - d(b));
   for (const g of idle) { if (need <= 0) break; sendHunt(g); need--; }
-  let total = humans.length;
-  while (need > 0 && total < 10) { spawnUnit('guard'); total++; need--; }
-  if (bounty >= 4) for (let n = guards.filter(g => g.unit === 'dog').length; n < 2; n++) spawnUnit('dog');
-  if (bounty >= 5) for (let n = guards.filter(g => g.unit === 'sarge').length; n < 2; n++) spawnUnit('sarge');
+  for (const g of guards) if (g.unit !== 'guard' && !g.leaving && ['patrol', 'pause', 'return'].includes(g.state)) sendHunt(g);
 }
 function dispatchGuards(mapKey, tx, ty, n) {
   const target = { map: mapKey, x: tx, y: ty };
@@ -813,11 +838,16 @@ function knock(h) {
 function resolveKnock(h) {
   const p = player; p.state = 'free'; let refuse = null;
   const doorSpot = { x: h.door.x * TS + 8, y: h.door.y * TS + 6 }; const doorE = { x: doorSpot.x, y: doorSpot.y };
-  if (h.resident.state === 'alarm') refuse = 'Get away from my door, thief!';
+  const r = h.resident, away = r.map !== h.key || ['out', 'homeward'].includes(r.state);
+  if (away) refuse = "...(no answer) Nobody's home.";
+  else if (r.state === 'alarm') refuse = 'Get away from my door, thief!';
+  else if (bounty >= 3 && h.robbed) {
+    h.doorOpenT = 1.2; SFX.door(); doorBubble = { x: doorE.x, y: doorE.y, text: "IT'S YOU! THIEF!! WATCH! WATCH!", t: 3 };
+    msg(`The ${h.family}s recognize you from your wanted poster!`, '#ff4040'); raiseAlarm(h, false); return;
+  }
   else if (wanted) refuse = pick(['I heard the whistles. Go away!', 'Not with the Watch about!']);
   else if (h.cooldown > 0) refuse = pick(['You again? Clear off!', "I've had enough visitors today.", 'Come back another day.']);
   else if (isNight() && Math.random() < 0.35) refuse = "It's the middle of the night!";
-  else if (Math.random() < 0.08) { refuse = '...(no answer)...'; h.cooldown = 8; }
   if (refuse) { doorBubble = { x: doorE.x, y: doorE.y, text: refuse, t: 2.8 }; SFX.deny(); return; }
   h.doorOpenT = 0.8; SFX.door();
   doorBubble = { x: doorE.x, y: doorE.y, text: pick(['Come in, come in!', 'Oh, a visitor! Do come in.', 'Welcome, friend!', 'Wipe your boots!']), t: 1.6 };
@@ -837,7 +867,7 @@ function leaveHouse(h) {
     const p = player; p.map = 'town'; p.x = h.approach.x * TS + 8; p.y = h.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
     for (const g of guards) if (g.state === 'chase' && g.map === h.key && g.lostT < 2) { g.lastKnown = { map: 'town', x: p.x, y: p.y }; }
     const r = h.resident;
-    if (r.state !== 'alarm') {
+    if (r.state !== 'alarm' && r.map === h.key && !['out', 'homeward'].includes(r.state)) {
       const wasAsleep = ['sleep', 'woke', 'prowl'].includes(r.state);
       r.state = wasAsleep && isNight() ? 'sleep' : 'idle'; h.cooldown = Math.max(h.cooldown, 60);
       if (wasAsleep && r.state === 'idle') { const t = bedSide(h.map); r.x = t.x * TS + 8; r.y = t.y * TS + 12; }
@@ -845,8 +875,30 @@ function leaveHouse(h) {
     }
   });
 }
+// Lockpicking: push a pin up, then set it while it hangs at the top (it glows).
+// Mistime it and the pick snaps.
 function startPick(h) {
-  const p = player; p.state = 'picking'; p.pickT = 0; p.clickT = 0; p.pickHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2;
+  const p = player;
+  if (p.picks <= 0) { msg('No lockpicks! Buy some from a fence.', '#ffb36b'); SFX.deny(); return; }
+  const n = 2 + h.wealth, kit = up.picks ? 1.6 : 1;
+  p.state = 'picking'; p.pickHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2;
+  p.lock = { sel: 0, flash: 0, pins: Array.from({ length: n }, () => ({ pos: 0, st: 'down', t: 0, hang: rnd(0.14, 0.42) * kit, fall: rnd(0.22, 0.55), rise: rnd(0.1, 0.2) })) };
+}
+function lockSel(d) { const L = player.lock; L.sel = clamp(L.sel + d, 0, L.pins.length - 1); }
+function lockPush() { const pin = player.lock.pins[player.lock.sel]; if (pin.st === 'down') { pin.st = 'rising'; SFX.pick(); } }
+function lockCancel() { player.state = 'free'; player.lock = null; }
+function lockSet() {
+  const p = player, L = p.lock, pin = L.pins[L.sel];
+  if (pin.st === 'set') return;
+  if (pin.st === 'hang') {
+    pin.st = 'set'; pin.pos = 1; SFX.set();
+    if (L.pins.every(q => q.st === 'set')) { const h = p.pickHouse; lockCancel(); SFX.unlock(); burgle(h); }
+    return;
+  }
+  p.picks--; L.flash = 0.35; SFX.snap(); say(p, '*snap*', 0.8);
+  if (pin.st !== 'down') pin.st = 'falling';
+  if (p.picks <= 0) { msg('Your last lockpick snapped!', '#ff8a6b'); lockCancel(); }
+  else msg(`Lockpick snapped! ${p.picks} left.`, '#ffb36b');
 }
 function bedSide(m) {
   for (const [x, y] of [[m.bed.x, 4], [m.bed.x + 1, 3], [m.bed.x - 1, 3], [m.bed.x + 1, 2], [m.bed.x - 1, 2]]) if (!isSolid(m, x, y)) return { x, y };
@@ -858,8 +910,9 @@ function burgle(h) {
     const p = player, m = h.map;
     p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
     h.visitStolen = 0;
-    const r = h.resident; r.state = 'sleep'; r.wake = 0; r.sus = 0; r.path = null; r.caught = false;
-    msg(`You slip into the ${h.family} house. They're asleep... don't make a sound.`, '#9ab0ff');
+    const r = h.resident, home = r.map === h.key && !['out', 'homeward'].includes(r.state);
+    if (home) { r.state = 'sleep'; r.wake = 0; r.sus = 0; r.path = null; r.caught = false; msg(`You slip into the ${h.family} house. They're asleep... don't make a sound.`, '#9ab0ff'); }
+    else msg(`The ${h.family}s are out. Be quick - they could come home any minute.`, '#9ab0ff');
   });
 }
 function wakeUp(r) {
@@ -873,7 +926,7 @@ function startSteal(e) {
   player.state = 'stealing'; player.stealT = 0; player.stealTarget = e;
 }
 function finishSteal() {
-  const p = player, e = p.stealTarget; e.taken = true; e.t = 0; p.loot.push(e.item); maps[p.map].house.visitStolen++;
+  const p = player, e = p.stealTarget; e.taken = true; e.t = 0; p.loot.push(e.item); maps[p.map].house.visitStolen++; maps[p.map].house.robbed = true;
   SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free';
   const r = maps[p.map].house.resident; if (r.state === 'sleep') r.wake += rnd(10, 30) * (up.picks ? 0.75 : 1);
 }
@@ -899,12 +952,13 @@ function sellAll() {
   if (!won && totalEarned >= GOAL) { won = true; wonT = 7; SFX.win(); msg('You earned 1000g — LEGENDARY THIEF! Keep going if you like.', '#9df0a0'); }
 }
 function buy(kind, cost) {
-  if (kind !== 'smoke' && up[kind]) return;
+  if (kind !== 'smoke' && kind !== 'lockpicks' && up[kind]) return;
   if (kind === 'smoke' && player.smoke >= 3) { say(menu.fence, "You can't carry more than 3."); SFX.deny(); return; }
+  if (kind === 'lockpicks' && player.picks >= 20) { say(menu.fence, "That's plenty of picks."); SFX.deny(); return; }
   if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
   gold -= cost; SFX.buy();
-  if (kind === 'smoke') player.smoke++; else up[kind] = true;
-  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', picks: 'Bought a Lockpick Kit.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
+  if (kind === 'smoke') player.smoke++; else if (kind === 'lockpicks') player.picks += 5; else up[kind] = true;
+  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', picks: 'Bought a Lockpick Kit.', lockpicks: 'Bought 5 lockpicks.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
 }
 
 // ---------- the catch ----------
@@ -918,7 +972,7 @@ function breakFree() {
 }
 function arrest() {
   const p = player, G0 = p.grabG; p.state = 'held'; G0.state = 'hold'; wanted = false; SFX.jail();
-  for (const g of guards) if (g !== G0 && (['chase', 'respond', 'search'].includes(g.state) || (g.temp && g.unit !== 'guard'))) { g.state = 'return'; g.path = null; }
+  for (const g of guards) if (g !== G0 && (['chase', 'respond', 'search'].includes(g.state) || g.unit !== 'guard')) { g.state = 'return'; g.path = null; }
   const others = guards.filter(g => g !== G0 && g.unit !== 'dog' && !['stunned'].includes(g.state)).sort((a, b) => roughDist(a, p) - roughDist(b, p));
   if (G0.unit === 'dog') {
     escort = { A: null, B: null, dog: G0, waitT: 0, t: 0 };
@@ -952,7 +1006,7 @@ function finishEscort() {
     SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g) and fined ${fine}g.`, '#ff6b6b');
     say(jailNPCs[0], pick(jailNPCs[0].lines), 3);
     for (const g of [A, B]) if (g) { g.state = 'return'; g.path = null; g.x = j.entry.x * TS + 8 + (g === B ? -16 : 16); g.y = 5 * TS + 12; g.map = 'jail'; }
-    escort = null; trail = []; escapes = 0; if (bounty) msg('Your bounty has been cleared.', '#9df0a0'); bounty = 0;
+    escort = null; trail = []; escapes = 0; if (bounty) msg('Your bounty has been cleared.', '#9df0a0'); bounty = 0; syncForce();
   });
 }
 function release() {
@@ -984,7 +1038,7 @@ const BTN = () => [
   { id: 'run', k: 'shift', x: VW - 68, y: VH - 24, r: 13, label: 'RUN' },
   { id: 'smk', k: 'q', x: VW - 64, y: VH - 62, r: 11, label: 'Q' },
   { id: 'esc', k: 'escape', x: VW - 14, y: 80, r: 9, label: 'II' },
-  ...(player && (player.inter2 || player.state === 'picking') ? [{ id: 'pick', k: 'f', x: VW - 26, y: VH - 74, r: 12, label: 'F' }] : []),
+  ...(player && player.inter2 && player.state === 'free' ? [{ id: 'pick', k: 'f', x: VW - 26, y: VH - 74, r: 12, label: 'F' }] : []),
 ];
 function toV(cx, cy) { const r = cv.getBoundingClientRect(); return { x: (cx - r.left) * DPR / S, y: (cy - r.top) * DPR / S }; }
 cv.addEventListener('touchstart', e => {
@@ -1020,6 +1074,14 @@ function tapUI(v) {
     return true;
   }
   if (paused) { paused = false; return true; }
+  if (state === 'play' && player.state === 'picking' && lockUI) {
+    const inR = r => r && v.x >= r.x && v.x <= r.x + r.w && v.y >= r.y && v.y <= r.y + r.h;
+    const i = lockUI.pins.findIndex(inR);
+    if (i >= 0) { player.lock.sel = i; lockPush(); return true; }
+    if (inR(lockUI.set)) { lockSet(); return true; }
+    if (inR(lockUI.quit)) { lockCancel(); return true; }
+    if (inR({ x: lockUI.px, y: lockUI.py, w: lockUI.pw, h: lockUI.ph })) return true;
+  }
   return false;
 }
 function startGame() { newGame(); state = 'play'; audioInit(); msg('Knock on doors [E]. Steal when nobody is looking.', '#f7d774'); msg('Sell your loot to a fence ($ on the map). Earn 1000g!', '#f7d774'); }
@@ -1053,7 +1115,8 @@ function findInteraction() {
     const doorNear = d => Math.abs(p.x - (d.x * TS + 8)) < 10 && p.y - (d.y * TS + 16) >= 0 && p.y - (d.y * TS + 16) < 16;
     for (const h of houses) if (doorNear(h.door)) {
       p.inter = { label: `Knock - ${h.family}s ${'$'.repeat(h.wealth)}`, act: () => knock(h) };
-      if (isNight() && h.resident.state !== 'alarm') p.inter2 = { label: 'Pick lock (hold F)', act: () => startPick(h) };
+      const r = h.resident, away = r.map !== h.key || ['out', 'homeward'].includes(r.state);
+      if ((isNight() || away) && r.state !== 'alarm') p.inter2 = { label: away ? 'Pick lock (nobody home)' : 'Pick lock', act: () => startPick(h) };
       return;
     }
     if (doorNear(town.jail.door)) { p.inter = { label: 'Watch House', act: () => say(p, "Not going in there willingly.") }; return; }
@@ -1090,10 +1153,18 @@ function updatePlayer(dt) {
     }
     case 'knocking': p.knockT -= dt; if (p.knockT <= 0) resolveKnock(p.knockHouse); break;
     case 'picking': {
-      if (!held('f') || readMove().l > 0) { p.state = 'free'; say(p, 'Tsk.', 0.8); break; }
-      const need = up.picks ? PICK_TIME_KIT : PICK_TIME;
-      p.pickT += dt; p.clickT -= dt; if (p.clickT <= 0) { p.clickT = rnd(0.2, 0.45); SFX.pick(); }
-      if (p.pickT >= need) { p.state = 'free'; burgle(p.pickHouse); }
+      if (hit('escape') || hit('f')) { lockCancel(); break; }
+      if (hit('a') || hit('arrowleft')) lockSel(-1);
+      if (hit('d') || hit('arrowright')) lockSel(1);
+      if (hit('w') || hit('arrowup')) lockPush();
+      if (hit('e') || hit(' ')) lockSet();
+      const L = p.lock; if (!L) break;
+      L.flash = Math.max(0, L.flash - dt);
+      for (const pin of L.pins) {
+        if (pin.st === 'rising') { pin.pos += dt / pin.rise; if (pin.pos >= 1) { pin.pos = 1; pin.st = 'hang'; pin.t = pin.hang; } }
+        else if (pin.st === 'hang') { pin.t -= dt; if (pin.t <= 0) pin.st = 'falling'; }
+        else if (pin.st === 'falling') { pin.pos -= dt / pin.fall; if (pin.pos <= 0) { pin.pos = 0; pin.st = 'down'; } }
+      }
       p.stamina = Math.min(100, p.stamina + STAM_REGEN * dt);
       break;
     }
@@ -1146,12 +1217,12 @@ function updateGuard(g, dt) {
         player.state = 'free'; say(g, g.unit === 'dog' ? 'GRRRR! WOOF!' : 'Found you!'); grab(g); break;
       }
       if (g.searchT <= 0) {
-        if (wanted && (bounty >= 1 || g.temp)) sendHunt(g);
+        if (wanted && !g.leaving && (bounty >= 1 || g.unit !== 'guard')) sendHunt(g);
         else { g.state = 'return'; g.path = null; say(g, g.unit === 'dog' ? '*whimper*' : pick(['Hmph.', 'Back to my rounds.', 'Lost them...'])); }
       }
       break;
     }
-    case 'return': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { if (g.temp) g.dead = true; else g.state = 'patrol'; } break; }
+    case 'return': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { if (g.leaving) g.dead = true; else g.state = 'patrol'; } break; }
     case 'stunned': g.stunT -= dt; g.fa += dt * 6; if (g.stunT <= 0) { g.state = wanted ? 'search' : 'return'; g.searchT = 2; } break;
     case 'grab': case 'hold': if (sameMap) g.fa = Math.atan2(player.y - g.y, player.x - g.x); break;
     case 'assist': {
@@ -1181,7 +1252,7 @@ function startChase(g) {
   lastSeenPos = townPos(player);
   say(g, g.unit === 'dog' ? pick(['WOOF! WOOF!', 'GRRRR!', 'ARF ARF!']) : g.unit === 'sarge' ? pick(['You are MINE, thief!', 'Nobody outruns me!']) : pick(['Halt, thief!', 'Stop right there!', 'Thief! THIEF!', 'You there! Stop!']));
   if (whistleCD <= 0) { g.unit === 'dog' ? SFX.bark() : SFX.whistle(); whistleCD = 2.5; }
-  let room = BOUNTY_CAP[bounty] - guards.filter(o => o.unit === 'guard' && HUNT_STATES.includes(o.state)).length;
+  let room = HUNTERS[bounty] - guards.filter(o => o.unit === 'guard' && HUNT_STATES.includes(o.state)).length;
   for (const o of guards) if (room > 0 && o !== g && o.unit === 'guard' && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220 && room--) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
 }
 function placeFollower(e, c, dt) {
@@ -1201,7 +1272,37 @@ function updateResident(r, dt) {
     if (navTo(r, h.key, r.wtarget.x, r.wtarget.y, spd, dt) || r.stuckT > 2) { r.wtarget = null; r.wait = rnd(1, 3); r.stuckT = 0; }
   };
   switch (r.state) {
-    case 'idle': goWander(20); break;
+    case 'idle': {
+      goWander(20);
+      r.outCD -= dt;
+      if (!here && r.map === h.key && !isNight() && r.outCD <= 0) {
+        if (houses.filter(o => o.resident.map !== o.key || ['out', 'homeward'].includes(o.resident.state)).length < 8) { r.state = 'out'; r.outT = rnd(35, 80); r.wtarget = pick(roadTiles); r.path = null; r.wait = 0; }
+        else r.outCD = rnd(10, 30);
+      }
+      break;
+    }
+    case 'out': {
+      if (r.wait > 0) r.wait -= dt;
+      else if (navTo(r, 'town', r.wtarget.x, r.wtarget.y, 22, dt) || r.stuckT > 3) { r.wtarget = pick(roadTiles); r.stuckT = 0; r.wait = Math.random() < 0.4 ? rnd(1, 4) : 0; }
+      r.outT -= dt; r.reportCD -= dt;
+      if (r.map === 'town' && player.map === 'town' && r.reportCD <= 0 && (wanted || player.state === 'picking') && canSee(r, player, 90, 0.35)) {
+        r.reportCD = 8; r.fa = Math.atan2(player.y - r.y, player.x - r.x);
+        if (!wanted) { say(r, 'Burglar! WATCH! WATCH!', 2.5); setWanted('A passer-by saw you picking a lock!'); }
+        else say(r, pick(['There! The thief!', 'Over here! THIEF!', "Guards! They went this way!"]), 2.5);
+        lastSeenPos = townPos(player); SFX.alarm();
+        const t = { x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) };
+        const near = guards.filter(g => g.unit === 'guard' && ['patrol', 'pause', 'return', 'search', 'respond'].includes(g.state)).sort((a, b) => dist(a, r) - dist(b, r))[0];
+        if (near) { near.state = 'respond'; near.target = { map: 'town', x: t.x, y: t.y }; near.path = null; }
+        ensureForce();
+      }
+      if (r.outT <= 0 || isNight()) { r.state = 'homeward'; r.home = randFloor(m); r.path = null; }
+      break;
+    }
+    case 'homeward': {
+      if (navTo(r, h.key, r.home.x, r.home.y, 24, dt) || r.stuckT > 4) { r.state = 'idle'; r.outCD = rnd(30, 90); r.stuckT = 0; }
+      if (r.map === h.key && here) { r.state = 'prowl'; r.prowlT = 10; r.path = null; say(r, pick(["Who's in my house?!", 'Hello...? Why is the door open?', 'Is someone in here?']), 2.5); }
+      break;
+    }
     case 'host': {
       if (!here) { r.state = 'idle'; break; }
       r.modeT -= dt;
@@ -1243,7 +1344,7 @@ function updateResident(r, dt) {
     case 'prowl': {
       r.prowlT -= dt;
       if (here) { const t = tileOfE(p); navTo(r, h.key, t.x, t.y, 22, dt, true); if (canSee(r, p, 110, 0.55)) { raiseAlarm(h, true); break; } }
-      if (r.prowlT <= 0 || !here) { say(r, pick(["Must've been the cat...", 'Hmph. Just the wind.', 'Back to bed...']), 2.2); r.state = 'sleep'; r.wake = 0; r.path = null; }
+      if (r.prowlT <= 0 || !here) { say(r, pick(["Must've been the cat...", 'Hmph. Just the wind.', 'Back to bed...']), 2.2); r.state = isNight() ? 'sleep' : 'idle'; r.wake = 0; r.path = null; }
       break;
     }
     case 'alarm': {
@@ -1271,7 +1372,7 @@ function updateWorld(dt) {
   for (const h of houses) {
     updateResident(h.resident, dt);
     h.cooldown = Math.max(0, h.cooldown - dt); h.doorOpenT = Math.max(0, h.doorOpenT - dt);
-    if (h.discoverT > 0) { h.discoverT -= dt; if (h.discoverT <= 0 && ['free', 'stealing', 'hidden', 'knocking', 'picking'].includes(player.state)) theftDiscovered(h); }
+    if (h.discoverT > 0) { h.discoverT -= dt; if (h.discoverT <= 0) { if (h.resident.map !== h.key || ['out', 'homeward'].includes(h.resident.state)) h.discoverT = 3; else if (['free', 'stealing', 'hidden', 'knocking', 'picking'].includes(player.state)) theftDiscovered(h); } }
     for (const e of h.map.loot.values()) if (e.taken) { e.t += dt; if (e.t > 200 && player.map !== h.key) { e.taken = false; e.item = rollItem(h.wealth); } }
   }
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
@@ -1281,10 +1382,10 @@ function updateWorld(dt) {
       wanted = false; escapes = 0; msg('You lost the Watch. The heat is off.', '#9df0a0');
       for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
     }
-    forceT -= dt; if (wanted && forceT <= 0) { forceT = 2; ensureForce(); }
-  }
-  { const d = dayInfo().day; if (d !== curDay) { curDay = d; if (bounty > 0 && !wanted) { bounty--; msg(`A new day. Your bounty fades to ${bounty}.`, '#9df0a0'); } } }
-  { const di = dayInfo(); if (isNight() && nightNotified !== di.day) { nightNotified = di.day; msg('Night falls. Hold [F] at a door to pick the lock.', '#9ab0ff'); } }
+      }
+  forceT -= dt; if (forceT <= 0) { forceT = 2; syncForce(); ensureForce(); }
+  { const d = dayInfo().day; if (d !== curDay) { curDay = d; if (bounty > 0 && !wanted) { bounty--; msg(`A new day. Your bounty fades to ${bounty}.`, '#9df0a0'); syncForce(); } } }
+  { const di = dayInfo(); if (isNight() && nightNotified !== di.day) { nightNotified = di.day; msg('Night falls. Press [F] at a door to pick the lock.', '#9ab0ff'); } }
   if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
   for (const f of fences) { f.chatT -= dt; if (f.chatT <= 0) { f.chatT = rnd(6, 12); if (player.map === 'town' && dist(f, player) < 90) say(f, pick(['Psst. Got goods?', 'Buying shiny things...', 'No questions asked.', 'Over here, friend.']), 2.2); } }
   for (const n of jailNPCs) { if (Math.random() < dt * 0.08 && player.map === 'jail') say(n, pick(n.lines), 2.5); }
@@ -1340,6 +1441,7 @@ function bubbleAt(x, y, text, color = '#fff8e7') {
 function render(dt) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
   const p = player, camMap = state === 'title' ? 'town' : p.map, m = maps[camMap];
+  const HR = m.kind === 'house' && m.house.resident.map === m.key ? m.house.resident : null;
   F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : '#0d0906');
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
@@ -1361,16 +1463,16 @@ function render(dt) {
     const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
     drawCone(g, g.unit === 'dog' ? range * 0.95 : range, g.unit === 'dog' ? Math.PI * 0.999 : Math.acos(0.62), col);
   }
-  if (m.kind === 'house') { const r = m.house.resident; if (r.state === 'woke' || r.state === 'prowl') drawCone(r, 110, Math.acos(0.55), 'rgba(255,90,90,0.17)'); if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
+  if (HR) { const r = HR; if (r.state === 'woke' || r.state === 'prowl') drawCone(r, 110, Math.acos(0.55), 'rgba(255,90,90,0.17)'); if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
   // characters
   const list = [];
   if (state !== 'title' && p.state !== 'hidden') list.push(p);
   for (const g of guards) if (g.map === camMap) list.push(g);
   if (camMap === 'town') list.push(...fences);
   if (camMap === 'jail') list.push(...jailNPCs);
-  if (m.kind === 'house') {
-    const r = m.house.resident;
-    if (r.state === 'sleep') { const b = m.bed; ctx.drawImage(r.sheet.down[0], 0, 4, 16, 10, b.x * TS, b.y * TS + 3, 16, 10); F(ctx, b.x * TS + 2, b.y * TS + 13, 12, 3, m.blanket); }
+  for (const h of houses) {
+    const r = h.resident; if (r.map !== camMap) continue;
+    if (r.state === 'sleep' && camMap === h.key) { const b = m.bed; ctx.drawImage(r.sheet.down[0], 0, 4, 16, 10, b.x * TS, b.y * TS + 3, 16, 10); F(ctx, b.x * TS + 2, b.y * TS + 13, 12, 3, m.blanket); }
     else list.push(r);
   }
   list.sort((a, b) => a.y - b.y);
@@ -1394,22 +1496,21 @@ function render(dt) {
     if (g.state === 'chase') txt('!', g.x - 2, g.y - 34, 8, '#ff4040');
     else if (g.state === 'search' || g.state === 'respond') txt('?', g.x - 2, g.y - 34, 8, '#ffb040');
   }
-  if (m.kind === 'house') {
-    const r = m.house.resident;
+  if (HR) {
+    const r = HR;
     if (r.state === 'host') { const w = 14, x = Math.round(r.x - w / 2), y = Math.round(r.y - 27); F(ctx, x - 1, y - 1, w + 2, 4, '#111'); F(ctx, x, y, Math.round(w * r.sus / 100), 2, r.sus < 50 ? '#8bd46a' : r.sus < 80 ? '#f0c040' : '#f05040'); F(ctx, x - 6, y - 1, 4, 3, '#fff'); F(ctx, x - 5, y, 2, 1, '#111'); }
     if (r.state === 'alarm') txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
   }
   if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * p.stealT / STEAL_TIME), 3, '#f7d774'); }
-  if (p.state === 'picking') { const need = up.picks ? PICK_TIME_KIT : PICK_TIME, w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.pickT / need)), 3, '#9ab0ff'); txt('*click*', p.x, y - 8, 4, '#cfd8ff', 'center'); }
-  if (m.kind === 'house' && m.house.resident.state === 'sleep') {
-    const b = m.bed, r = m.house.resident, z = Math.floor(gameTime * 1.5) % 3;
+  if (HR && HR.state === 'sleep') {
+    const b = m.bed, r = HR, z = Math.floor(gameTime * 1.5) % 3;
     txt('z'.repeat(z + 1), b.x * TS + 10, b.y * TS - 6 - z * 2, 5, '#cfd8ff');
     const w = 14, x = b.x * TS + 1, y = b.y * TS - 10; F(ctx, x - 1, y - 1, w + 2, 4, '#111'); F(ctx, x, y, Math.round(w * Math.min(100, r.wake) / 100), 2, r.wake < 50 ? '#7a8ad8' : r.wake < 80 ? '#f0c040' : '#f05040');
   }
-  if (m.kind === 'house' && ['woke', 'prowl'].includes(m.house.resident.state)) txt('?', m.house.resident.x - 2, m.house.resident.y - 34, 8, '#ffb040');
+  if (HR && ['woke', 'prowl'].includes(HR.state)) txt('?', HR.x - 2, HR.y - 34, 8, '#ffb040');
   if (p.inter && p.state === 'free' && !fade.dir) {
     const opts = [[(touchMode ? '' : '[E] ') + p.inter.label, '#f7d774']];
-    if (p.inter2) opts.push([(touchMode ? '[F] ' : '[F] ') + p.inter2.label.replace(' (hold F)', touchMode ? ' (hold)' : ' (hold)'), '#9ab0ff']);
+    if (p.inter2) opts.push(['[F] ' + p.inter2.label, '#9ab0ff']);
     ctx.font = '5px ' + FONT; const w = Math.max(...opts.map(o => ctx.measureText(o[0]).width)) + 6;
     const x = Math.round(p.x - w / 2), y = Math.round(p.y - 34 - (opts.length - 1) * 9); F(ctx, x, y, w, 9 * opts.length, 'rgba(10,10,20,0.85)');
     opts.forEach((o, i) => txt(o[0], x + 3, y + 2 + i * 9, 5, o[1], 'left', null));
@@ -1418,6 +1519,7 @@ function render(dt) {
   ctx.setTransform(S, 0, 0, S, 0, 0);
   if (state === 'title') { drawTitle(); }
   else drawHUD(di);
+  if (state !== 'title' && p.state === 'picking') drawLock();
   if (state === 'menu') drawMenu();
   if (paused && state === 'play') { panel(0, 0, VW, VH, 0.6); txt('PAUSED', VW / 2, VH / 2 - 20, 12, '#fff', 'center'); txt('P / Esc to resume', VW / 2, VH / 2, 6, '#ccc', 'center'); drawHelp(VW / 2 - 110, VH / 2 + 14); }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
@@ -1445,17 +1547,54 @@ function drawLighting(dark, cx, cy, m) {
   if (m.kind === 'town') for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
   ctx.globalCompositeOperation = 'source-over';
 }
+let lockUI = null;
+function drawLock() {
+  const p = player, L = p.lock; if (!L) return;
+  const n = L.pins.length, lw = 24 + n * 26, lh = 58, pw = Math.min(VW - 8, lw + 92), ph = 82;
+  const px = Math.round(VW / 2 - pw / 2), py = Math.round(VH - ph - (touchMode ? 84 : 24));
+  lockUI = { px, py, pw, ph, pins: [], set: null, quit: null };
+  panel(px, py, pw, ph, 0.92);
+  const lx = px + 8, ly = py + 16;
+  txt(`${p.pickHouse.family}s' lock`, px + 6, py + 4, 5, '#cfd8ff');
+  txt(`picks ${p.picks}`, lx + lw, py + 4, 5, p.picks <= 1 ? '#ff8a6b' : '#f7d774', 'right');
+  F(ctx, lx, ly, lw, lh, '#8a6a2a'); F(ctx, lx + 1, ly + 1, lw - 2, 1, '#c9a04a'); F(ctx, lx + 2, ly + 2, lw - 4, lh - 4, '#34343e');
+  F(ctx, lx + 4, ly + 42, lw - 8, 9, '#0b0b0f'); F(ctx, lx + 4, ly + 25, lw - 8, 1, 'rgba(255,255,255,0.10)');
+  L.pins.forEach((pin, i) => {
+    const cx = lx + 18 + i * 26, top = ly + 24 - Math.round(pin.pos * 17);
+    F(ctx, cx - 5, ly + 5, 10, 38, '#121216');
+    for (let y = ly + 6, k = 0; y < top; y += 2, k++) F(ctx, cx - 3 + (k % 2) * 3, y, 4, 1, '#9a9aa6');
+    const col = pin.st === 'set' ? '#7fd87f' : pin.st === 'hang' ? '#fff6b0' : '#d4a83a';
+    F(ctx, cx - 3, top, 6, 18, col); F(ctx, cx - 3, top, 6, 1, shade(col, 0.45)); F(ctx, cx + 2, top, 1, 18, shade(col, -0.3));
+    if (pin.st === 'hang') { F(ctx, cx - 5, top - 1, 1, 20, 'rgba(255,246,176,0.5)'); F(ctx, cx + 4, top - 1, 1, 20, 'rgba(255,246,176,0.5)'); }
+    if (i === L.sel) { F(ctx, cx - 2, ly - 5, 5, 1, '#fff'); F(ctx, cx - 1, ly - 4, 3, 1, '#fff'); F(ctx, cx, ly - 3, 1, 1, '#fff'); }
+    lockUI.pins.push({ x: cx - 13, y: ly - 6, w: 26, h: lh + 6 });
+  });
+  const sel = L.pins[L.sel], sx = lx + 18 + L.sel * 26, pickCol = L.flash > 0 ? '#ff6b6b' : '#c8ccd4';
+  const tipY = sel.st === 'rising' || sel.st === 'hang' ? ly + 42 - Math.round(sel.pos * 17) : ly + 43;
+  F(ctx, lx - 6, ly + 46, sx - lx + 6, 2, pickCol); F(ctx, sx - 1, tipY, 2, ly + 46 - tipY, pickCol); F(ctx, lx - 8, ly + 44, 5, 6, '#6b4a2b');
+  const ix = lx + lw + 8;
+  if (touchMode) {
+    lockUI.set = { x: ix, y: ly + 4, w: pw - (ix - px) - 6, h: 24 }; lockUI.quit = { x: ix, y: ly + 34, w: pw - (ix - px) - 6, h: 18 };
+    F(ctx, lockUI.set.x, lockUI.set.y, lockUI.set.w, lockUI.set.h, 'rgba(127,216,127,0.25)'); txt('SET', lockUI.set.x + lockUI.set.w / 2, lockUI.set.y + 8, 7, '#bff0bf', 'center', null);
+    F(ctx, lockUI.quit.x, lockUI.quit.y, lockUI.quit.w, lockUI.quit.h, 'rgba(255,255,255,0.08)'); txt('quit', lockUI.quit.x + lockUI.quit.w / 2, lockUI.quit.y + 6, 5, '#ccc', 'center', null);
+    txt('tap pin = push', ix, ly + 56, 4, '#999');
+  } else {
+    [['A/D', 'pick'], ['W', 'push pin'], ['E', 'set pin'], ['Esc', 'quit']].forEach(([k, v], i) => { txt(k, ix, ly + 2 + i * 10, 5, '#f7d774'); txt(v, ix + 22, ly + 2 + i * 10, 5, '#ddd'); });
+    txt('Set it while', ix, ly + 44, 4, '#aaa'); txt('it glows!', ix, ly + 51, 4, '#fff6b0');
+  }
+}
 function coinIcon(x, y) { F(ctx, x + 1, y, 4, 6, '#e8b830'); F(ctx, x, y + 1, 6, 4, '#e8b830'); F(ctx, x + 2, y + 1, 1, 4, '#fff2a8'); }
 function sackIcon(x, y) { F(ctx, x + 1, y + 2, 5, 5, '#9c7a4a'); F(ctx, x + 2, y + 1, 3, 1, '#7a5a34'); F(ctx, x + 2, y, 3, 1, '#9c7a4a'); }
 function drawHUD(di) {
   const p = player, narrow = VW < 300;
-  panel(4, 4, 112, 56);
+  panel(4, 4, 112, 64);
   coinIcon(9, 9); txt(`${gold}g`, 18, 9, 6, '#f7d774');
   sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
   txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
-  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 63, 4, '#9df0a0');
+  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 71, 4, '#9df0a0');
+  txt(`picks x${p.picks}`, 9, 56, 5, p.picks ? '#ccc' : '#ff8a6b'); txt(`watch ${guards.filter(g => !g.leaving).length}`, 70, 56, 5, bounty ? '#ff9a9a' : '#aaa');
   txt('BOUNTY', 9, 47, 5, bounty ? '#ff6b6b' : '#888');
   for (let i = 0; i < 5; i++) { const x = 50 + i * 10, on = i < bounty; F(ctx, x, 46, 7, 7, on ? '#2a0a0a' : '#222'); F(ctx, x + 1, 47, 5, 5, on ? (bounty >= 4 && Math.floor(gameTime * 4) % 2 ? '#ff7a40' : '#e03030') : '#3a3a3a'); if (on) { F(ctx, x + 2, 48, 1, 1, '#000'); F(ctx, x + 4, 48, 1, 1, '#000'); } }
   // clock + minimap
@@ -1497,7 +1636,7 @@ function drawHUD(di) {
   if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 140, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F (night)', 'pick a lock (hold)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   txt('Residents watch you. Steal when they look away.', x, y + 76, 4, '#bbb');
   txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
@@ -1515,7 +1654,7 @@ function drawTouch() {
   else txt('drag to move', 30, VH - 20, 4, 'rgba(255,255,255,0.4)', 'center', null);
 }
 function drawMenu() {
-  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 148, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 164, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
   menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph; menu.items = [];
   panel(px, py, pw, ph, 0.92); F(ctx, px, py, pw, 14, 'rgba(90,45,110,0.9)');
   txt(f.name + ' - Fence', px + 6, py + 4, 6, '#f7d774'); coinIcon(px + pw - 50, py + 4); txt(`${gold}g`, px + pw - 42, py + 4, 6, '#f7d774');
@@ -1527,7 +1666,8 @@ function drawMenu() {
     ['3', 'Swift Boots (+speed)', up.boots ? 'OWNED' : '150g', () => buy('boots', 150), !up.boots && gold >= 150],
     ['4', 'Silver Tongue (less suspicion)', up.tongue ? 'OWNED' : '130g', () => buy('tongue', 130), !up.tongue && gold >= 130],
     ['5', `Smoke Bomb (${player.smoke}/3)`, '50g', () => buy('smoke', 50), player.smoke < 3 && gold >= 50],
-    ['6', 'Lockpick Kit (faster, quieter)', up.picks ? 'OWNED' : '100g', () => buy('picks', 100), !up.picks && gold >= 100],
+    ['6', `Lockpicks x5 (have ${player.picks})`, '20g', () => buy('lockpicks', 20), player.picks < 20 && gold >= 20],
+    ['7', 'Lockpick Kit (easier, quieter)', up.picks ? 'OWNED' : '100g', () => buy('picks', 100), !up.picks && gold >= 100],
   ];
   opts.forEach(([k, label, price, fn, ok], i) => {
     const y = py + 30 + i * 16, item = { x: px + 4, y: y - 2, w: pw - 8, h: 14, fn }; menu.items.push(item);
@@ -1543,7 +1683,7 @@ function drawTitle() {
   txt('LIGHT FINGERS', cxm, ty, VW < 300 ? 12 : 18, '#f7d774', 'center', '#5a2d0a');
   txt('a village of easy marks', cxm, ty + 26, 6, '#e8dcc0', 'center');
   ctx.drawImage(PLAYER_SHEET.down[Math.floor(performance.now() / 200) % 2 ? 1 : 2], cxm - 8, ty + 38);
-  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'At night, pick locks and rob sleepers.', 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
+  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'Pick locks at night or when nobody is home.', 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
   lines.forEach((l, i) => txt(l, cxm, ty + 66 + i * 10, 5, '#ddd', 'center'));
   if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, ty + 132, 7, '#fff', 'center');
   if (!touchMode) txt('WASD move · Shift run · E act · Space struggle · Q smoke', cxm, VH - 14, 4, '#aaa', 'center');
@@ -1561,12 +1701,12 @@ function frame(now) {
     updateCamera(dt, 'town', 30 * TS + Math.sin(now / 9000) * 240, 22 * TS + Math.cos(now / 11000) * 120);
     if (hit('enter') || hit(' ') || hit('e')) startGame();
   } else if (state === 'menu') {
-    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('picks', 100);
+    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('lockpicks', 20); if (hit('7')) buy('picks', 100);
     if (hit('escape') || hit('e')) closeMenu();
     for (const f of fences) if (f.bubble) { f.bubble.t -= dt; if (f.bubble.t <= 0) f.bubble = null; }
     for (const mm of msgs) mm.t -= dt * 0.3;
   } else {
-    if (hit('p') || hit('escape')) paused = !paused;
+    if (hit('p') || (hit('escape') && player.state !== 'picking')) paused = !paused;
     if (!paused) updateWorld(dt);
     updateCamera(paused ? 0 : dt, player.map, player.state === 'hidden' ? player.hay.x * TS + 8 : player.x, player.y - 8);
   }
