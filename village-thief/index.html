@@ -46,6 +46,7 @@ resize();
 
 // ---------- tuning ----------
 const P_WALK = 50, P_RUN = 84, G_PATROL = 30, G_RUN = 56, G_CHASE = 64;
+const PICK_TIME = 2.6, PICK_TIME_KIT = 1.3;
 const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_TIME = 1.1, HEAT_TIME = 12, GOAL = 1000;
 const DAY_LEN = 300;
 
@@ -116,6 +117,7 @@ const SFX = {
   buy() { tone(660, 0.08, { vol: 0.05 }); tone(880, 0.14, { vol: 0.05, delay: 0.08 }); },
   smoke() { noise(0.6, 0.12); },
   rustle() { noise(0.18, 0.06); },
+  pick() { tone(2400 + Math.random() * 800, 0.025, { type: 'square', vol: 0.025 }); },
   deny() { tone(140, 0.16, { vol: 0.05 }); },
   win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, { vol: 0.06, delay: i * 0.14 })); },
 };
@@ -523,7 +525,7 @@ function genInterior(h) {
   m.exit = { x: Math.floor(w / 2), y: hh - 1 }; set(m.exit.x, m.exit.y, T.EXIT);
   m.entry = { x: m.exit.x, y: hh - 2 }; m.approach = h.approach;
   m.blanket = ['#a83232', '#3a6ea8', '#3f8a3a', '#7a4ea8', '#c97a2a'][ri(0, 4)];
-  const bedLeft = r() < 0.5, bx = bedLeft ? 1 : w - 2; set(bx, 2, T.BED); set(bx, 3, T.BED2);
+  const bedLeft = r() < 0.5, bx = bedLeft ? 1 : w - 2; set(bx, 2, T.BED); set(bx, 3, T.BED2); m.bed = { x: bx, y: 2 };
   let fx = ri(2, w - 3); set(fx, 1, T.FIRE);
   const top = []; for (let x = 2; x <= w - 3; x++) top.push([x, 2]);
   const sides = []; for (let y = 4; y <= hh - 3; y++) { sides.push([1, y]); sides.push([w - 2, y]); }
@@ -597,13 +599,14 @@ const jailNPCs = [
   { kind: 'decor', map: 'jail', x: 2 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[0], animT: 0, bubble: null, lines: ['Got any bread?', 'I was framed, I tell ya!', 'Psst... nice sack.'] },
   { kind: 'decor', map: 'jail', x: 10 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[1], animT: 0, bubble: null, lines: ['Fourth time this week.', 'The food is awful.', 'Zzz...'] },
 ];
+let nightNotified = -1;
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
   player = { kind: 'player', map: 'town', x: 27 * TS + 8, y: 23 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
-  up = { sack: false, boots: false, tongue: false }; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
+  up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
   guards = GUARD_ROUTES.map((route, i) => ({ kind: 'guard', name: GUARD_NAMES[i], map: 'town', x: route[0][0] * TS + 8, y: route[0][1] * TS + 12, fa: 0, dir: 'right', sheet: guardSheet(i), animT: 0,
     route: route.map(([x, y]) => ({ x, y })), wi: 1, state: 'patrol', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 }));
   for (const h of houses) { h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.resident.state = 'idle'; h.resident.sus = 0; }
@@ -777,10 +780,35 @@ function leaveHouse(h) {
     for (const g of guards) if (g.state === 'chase' && g.map === h.key && g.lostT < 2) { g.lastKnown = { map: 'town', x: p.x, y: p.y }; }
     const r = h.resident;
     if (r.state !== 'alarm') {
-      r.state = 'idle'; h.cooldown = Math.max(h.cooldown, 60);
+      const wasAsleep = ['sleep', 'woke', 'prowl'].includes(r.state);
+      r.state = wasAsleep && isNight() ? 'sleep' : 'idle'; h.cooldown = Math.max(h.cooldown, 60);
+      if (wasAsleep && r.state === 'idle') { const t = bedSide(h.map); r.x = t.x * TS + 8; r.y = t.y * TS + 12; }
       if (h.visitStolen > 0 && Math.random() < Math.min(0.75, 0.18 * h.visitStolen)) h.discoverT = rnd(8, 18);
     }
   });
+}
+function startPick(h) {
+  const p = player; p.state = 'picking'; p.pickT = 0; p.clickT = 0; p.pickHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2;
+}
+function bedSide(m) {
+  for (const [x, y] of [[m.bed.x, 4], [m.bed.x + 1, 3], [m.bed.x - 1, 3], [m.bed.x + 1, 2], [m.bed.x - 1, 2]]) if (!isSolid(m, x, y)) return { x, y };
+  return randFloor(m);
+}
+function burgle(h) {
+  SFX.door(); h.doorOpenT = 0.5;
+  transition(() => {
+    const p = player, m = h.map;
+    p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
+    h.visitStolen = 0;
+    const r = h.resident; r.state = 'sleep'; r.wake = 0; r.sus = 0; r.path = null; r.caught = false;
+    msg(`You slip into the ${h.family} house. They're asleep... don't make a sound.`, '#9ab0ff');
+  });
+}
+function wakeUp(r) {
+  const m = r.house.map, t = bedSide(m);
+  r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.state = 'woke'; r.wokeT = 1.3; r.wake = 0; r.path = null;
+  r.fa = Math.atan2(player.y - r.y, player.x - r.x);
+  say(r, pick(["Who's there?!", 'Hello...? Is someone there?', 'Wha-? What was that?']), 2.2); SFX.deny();
 }
 function startSteal(e) {
   if (player.loot.length >= sackCap()) { msg('Your sack is full! Sell to a fence.', '#ffb36b'); SFX.deny(); return; }
@@ -789,6 +817,7 @@ function startSteal(e) {
 function finishSteal() {
   const p = player, e = p.stealTarget; e.taken = true; e.t = 0; p.loot.push(e.item); maps[p.map].house.visitStolen++;
   SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free';
+  const r = maps[p.map].house.resident; if (r.state === 'sleep') r.wake += rnd(10, 30) * (up.picks ? 0.75 : 1);
 }
 function useSmoke() {
   const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
@@ -817,7 +846,7 @@ function buy(kind, cost) {
   if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
   gold -= cost; SFX.buy();
   if (kind === 'smoke') player.smoke++; else up[kind] = true;
-  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
+  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', picks: 'Bought a Lockpick Kit.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
 }
 
 // ---------- the catch ----------
@@ -891,6 +920,7 @@ const BTN = () => [
   { id: 'run', k: 'shift', x: VW - 68, y: VH - 24, r: 13, label: 'RUN' },
   { id: 'smk', k: 'q', x: VW - 64, y: VH - 62, r: 11, label: 'Q' },
   { id: 'esc', k: 'escape', x: VW - 14, y: 80, r: 9, label: 'II' },
+  ...(player && (player.inter2 || player.state === 'picking') ? [{ id: 'pick', k: 'f', x: VW - 26, y: VH - 74, r: 12, label: 'F' }] : []),
 ];
 function toV(cx, cy) { const r = cv.getBoundingClientRect(); return { x: (cx - r.left) * DPR / S, y: (cy - r.top) * DPR / S }; }
 cv.addEventListener('touchstart', e => {
@@ -954,10 +984,14 @@ function doMove(dt, canRun) {
   if (p.moving) { moveEntity(p, ix * spd * dt, iy * spd * dt); p.fa = Math.atan2(iy, ix); p.dir = dirFromAngle(p.fa); p.animT += dt * (p.running ? 1.6 : 1); }
 }
 function findInteraction() {
-  const p = player, m = maps[p.map]; p.inter = null;
+  const p = player, m = maps[p.map]; p.inter = null; p.inter2 = null;
   if (m.kind === 'town') {
     const doorNear = d => Math.abs(p.x - (d.x * TS + 8)) < 10 && p.y - (d.y * TS + 16) >= 0 && p.y - (d.y * TS + 16) < 16;
-    for (const h of houses) if (doorNear(h.door)) { p.inter = { label: `Knock - ${h.family}s ${'$'.repeat(h.wealth)}`, act: () => knock(h) }; return; }
+    for (const h of houses) if (doorNear(h.door)) {
+      p.inter = { label: `Knock - ${h.family}s ${'$'.repeat(h.wealth)}`, act: () => knock(h) };
+      if (isNight() && h.resident.state !== 'alarm') p.inter2 = { label: 'Pick lock (hold F)', act: () => startPick(h) };
+      return;
+    }
     if (doorNear(town.jail.door)) { p.inter = { label: 'Watch House', act: () => say(p, "Not going in there willingly.") }; return; }
     for (const f of fences) if (dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => openFence(f) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
@@ -969,7 +1003,7 @@ function findInteraction() {
 }
 function updatePlayer(dt) {
   const p = player; p.invuln = Math.max(0, p.invuln - dt); p.boostT = Math.max(0, p.boostT - dt); p.shake = Math.max(0, p.shake - dt);
-  p.moving = false; p.inter = null;
+  p.moving = false; p.inter = null; p.inter2 = null;
   if (fade.dir) return;
   const m = maps[p.map];
   switch (p.state) {
@@ -986,10 +1020,19 @@ function updatePlayer(dt) {
       if (m.kind === 'house') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveHouse(m.house); return; } }
       findInteraction();
       if (p.inter && hit('e')) p.inter.act();
+      else if (p.inter2 && hit('f')) p.inter2.act();
       if (hit('q')) useSmoke();
       break;
     }
     case 'knocking': p.knockT -= dt; if (p.knockT <= 0) resolveKnock(p.knockHouse); break;
+    case 'picking': {
+      if (!held('f') || readMove().l > 0) { p.state = 'free'; say(p, 'Tsk.', 0.8); break; }
+      const need = up.picks ? PICK_TIME_KIT : PICK_TIME;
+      p.pickT += dt; p.clickT -= dt; if (p.clickT <= 0) { p.clickT = rnd(0.2, 0.45); SFX.pick(); }
+      if (p.pickT >= need) { p.state = 'free'; burgle(p.pickHouse); }
+      p.stamina = Math.min(100, p.stamina + STAM_REGEN * dt);
+      break;
+    }
     case 'hidden': if (hit('e') || readMove().l > 0.6) { p.state = 'free'; SFX.rustle(); } break;
     case 'grabbed': {
       p.grabT += dt; p.struggle -= 24 * dt;
@@ -1011,8 +1054,8 @@ function updateGuard(g, dt) {
   const spdFor = { chase: G_CHASE, respond: G_RUN, assist: 50, escort_lead: 34 };
   const spd = spdFor[g.state] || G_PATROL;
   const sameMap = g.map === player.map, dP = sameMap ? dist(g, player) : 1e9;
-  const canSpot = wanted && ['patrol', 'pause', 'respond', 'search', 'return'].includes(g.state) && ['free', 'stealing', 'knocking', 'hidden'].includes(player.state);
-  if (canSpot && guardSees(g)) startChase(g);
+  const canSpot = (wanted || player.state === 'picking') && ['patrol', 'pause', 'respond', 'search', 'return'].includes(g.state) && ['free', 'stealing', 'knocking', 'hidden', 'picking'].includes(player.state);
+  if (canSpot && guardSees(g)) { if (!wanted) setWanted(`${g.name} caught you picking a lock!`); startChase(g); }
   switch (g.state) {
     case 'patrol': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { g.wi = (g.wi + 1) % g.route.length; g.state = 'pause'; g.pause = rnd(0.8, 2.2); } break; }
     case 'pause': g.pause -= dt; g.fa += Math.sin(gameTime * 1.7 + g.wi) * dt * 1.5; if (g.pause <= 0) g.state = 'patrol'; break;
@@ -1028,7 +1071,7 @@ function updateGuard(g, dt) {
         if (navTo(g, lk.map, t.x, t.y, spd, dt, true) && !sees) { g.state = 'search'; g.searchT = 3.5; say(g, pick(["Where'd they go?", 'Blast!', 'I know you\'re here...'])); }
       }
       if (g.lostT > 6) { g.state = 'search'; g.searchT = 3; }
-      if (sameMap && dP < 10 && ['free', 'stealing', 'knocking'].includes(player.state) && player.invuln <= 0 && !fade.dir) grab(g);
+      if (sameMap && dP < 10 && ['free', 'stealing', 'knocking', 'picking'].includes(player.state) && player.invuln <= 0 && !fade.dir) grab(g);
       break;
     }
     case 'search': {
@@ -1109,6 +1152,25 @@ function updateResident(r, dt) {
       if (r.sus >= 100) raiseAlarm(h);
       break;
     }
+    case 'sleep': {
+      if (!here) { if (!isNight()) { const t = bedSide(m); r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.state = 'idle'; } break; }
+      const quiet = up.boots ? 0.7 : 1;
+      if (p.running) r.wake += 34 * quiet * dt; else if (p.moving) r.wake += 1.5 * quiet * dt; else r.wake -= 4 * dt;
+      r.wake = Math.max(0, r.wake);
+      if (r.wake >= 100) wakeUp(r);
+      break;
+    }
+    case 'woke': {
+      r.wokeT -= dt; r.fa = turnToward(r.fa, Math.atan2(p.y - r.y, p.x - r.x), dt * 1.5);
+      if (r.wokeT <= 0) { if (here && canSee(r, p, 120, 0.55)) raiseAlarm(h); else { r.state = 'prowl'; r.prowlT = 7; } }
+      break;
+    }
+    case 'prowl': {
+      r.prowlT -= dt;
+      if (here) { const t = tileOfE(p); navTo(r, h.key, t.x, t.y, 22, dt, true); if (canSee(r, p, 110, 0.55)) { raiseAlarm(h); break; } }
+      if (r.prowlT <= 0 || !here) { say(r, pick(["Must've been the cat...", 'Hmph. Just the wind.', 'Back to bed...']), 2.2); r.state = 'sleep'; r.wake = 0; r.path = null; }
+      break;
+    }
     case 'alarm': {
       r.alarmT -= dt;
       if (here) { r.fa = Math.atan2(p.y - r.y, p.x - r.x); if (!r.bubble || r.bubble.t <= 0) say(r, pick(['THIEF!', 'HELP! WATCH!', 'Somebody stop them!']), 1.6); }
@@ -1133,17 +1195,18 @@ function updateWorld(dt) {
   for (const h of houses) {
     updateResident(h.resident, dt);
     h.cooldown = Math.max(0, h.cooldown - dt); h.doorOpenT = Math.max(0, h.doorOpenT - dt);
-    if (h.discoverT > 0) { h.discoverT -= dt; if (h.discoverT <= 0 && ['free', 'stealing', 'hidden', 'knocking'].includes(player.state)) theftDiscovered(h); }
+    if (h.discoverT > 0) { h.discoverT -= dt; if (h.discoverT <= 0 && ['free', 'stealing', 'hidden', 'knocking', 'picking'].includes(player.state)) theftDiscovered(h); }
     for (const e of h.map.loot.values()) if (e.taken) { e.t += dt; if (e.t > 200 && player.map !== h.key) { e.taken = false; e.item = rollItem(h.wealth); } }
   }
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
   if (wanted) {
     if (guards.some(g => g.state === 'chase' && g.lostT === 0)) lastSeenT = gameTime;
-    if (gameTime - lastSeenT > HEAT_TIME && ['free', 'hidden', 'stealing', 'knocking'].includes(player.state)) {
+    if (gameTime - lastSeenT > HEAT_TIME && ['free', 'hidden', 'stealing', 'knocking', 'picking'].includes(player.state)) {
       wanted = false; escapes = 0; msg('You lost the Watch. The heat is off.', '#9df0a0');
       for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
     }
   }
+  { const di = dayInfo(); if (isNight() && nightNotified !== di.day) { nightNotified = di.day; msg('Night falls. Hold [F] at a door to pick the lock.', '#9ab0ff'); } }
   if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
   for (const f of fences) { f.chatT -= dt; if (f.chatT <= 0) { f.chatT = rnd(6, 12); if (player.map === 'town' && dist(f, player) < 90) say(f, pick(['Psst. Got goods?', 'Buying shiny things...', 'No questions asked.', 'Over here, friend.']), 2.2); } }
   for (const n of jailNPCs) { if (Math.random() < dt * 0.08 && player.map === 'jail') say(n, pick(n.lines), 2.5); }
@@ -1220,14 +1283,18 @@ function render(dt) {
     const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
     drawCone(g, range, Math.acos(0.62), col);
   }
-  if (m.kind === 'house') { const r = m.house.resident; if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
+  if (m.kind === 'house') { const r = m.house.resident; if (r.state === 'woke' || r.state === 'prowl') drawCone(r, 110, Math.acos(0.55), 'rgba(255,90,90,0.17)'); if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
   // characters
   const list = [];
   if (state !== 'title' && p.state !== 'hidden') list.push(p);
   for (const g of guards) if (g.map === camMap) list.push(g);
   if (camMap === 'town') list.push(...fences);
   if (camMap === 'jail') list.push(...jailNPCs);
-  if (m.kind === 'house') list.push(m.house.resident);
+  if (m.kind === 'house') {
+    const r = m.house.resident;
+    if (r.state === 'sleep') { const b = m.bed; ctx.drawImage(r.sheet.down[0], 0, 4, 16, 10, b.x * TS, b.y * TS + 3, 16, 10); F(ctx, b.x * TS + 2, b.y * TS + 13, 12, 3, m.blanket); }
+    else list.push(r);
+  }
   list.sort((a, b) => a.y - b.y);
   for (const e of list) drawEntity(e);
   if (p.state === 'escorted' && escort && escort.A.map === p.map) { ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 0.5, p.y - 10); ctx.lineTo(escort.A.x + 0.5, escort.A.y - 10); ctx.stroke(); }
@@ -1238,7 +1305,8 @@ function render(dt) {
     for (let i = 0; i < 9; i++) { const ang = i * 0.7 + gameTime * 0.4, rr = c.r * (0.3 + (i % 3) * 0.25); ctx.fillStyle = `rgba(200,200,205,${a * 0.5})`; ctx.beginPath(); ctx.arc(c.x + Math.cos(ang) * rr, c.y + Math.sin(ang) * rr * 0.7, c.r * 0.45, 0, 7); ctx.fill(); }
   }
   // lighting
-  if (m.kind === 'town' && di.dark > 0.01) drawLighting(di.dark, cx, cy);
+  if (m.kind === 'town' && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  else if (m.kind === 'house' && di.dark > 0.2) drawLighting(di.dark * 0.85, cx, cy, m);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   // overhead UI in world space
   for (const e of list) if (e.bubble) bubbleAt(e.x, e.y - 24, e.bubble.text, e.kind === 'guard' && e.state === 'chase' ? '#ffd9d9' : '#fff8e7');
@@ -1254,9 +1322,19 @@ function render(dt) {
     if (r.state === 'alarm') txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
   }
   if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * p.stealT / STEAL_TIME), 3, '#f7d774'); }
+  if (p.state === 'picking') { const need = up.picks ? PICK_TIME_KIT : PICK_TIME, w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.pickT / need)), 3, '#9ab0ff'); txt('*click*', p.x, y - 8, 4, '#cfd8ff', 'center'); }
+  if (m.kind === 'house' && m.house.resident.state === 'sleep') {
+    const b = m.bed, r = m.house.resident, z = Math.floor(gameTime * 1.5) % 3;
+    txt('z'.repeat(z + 1), b.x * TS + 10, b.y * TS - 6 - z * 2, 5, '#cfd8ff');
+    const w = 14, x = b.x * TS + 1, y = b.y * TS - 10; F(ctx, x - 1, y - 1, w + 2, 4, '#111'); F(ctx, x, y, Math.round(w * Math.min(100, r.wake) / 100), 2, r.wake < 50 ? '#7a8ad8' : r.wake < 80 ? '#f0c040' : '#f05040');
+  }
+  if (m.kind === 'house' && ['woke', 'prowl'].includes(m.house.resident.state)) txt('?', m.house.resident.x - 2, m.house.resident.y - 34, 8, '#ffb040');
   if (p.inter && p.state === 'free' && !fade.dir) {
-    const label = (touchMode ? '' : '[E] ') + p.inter.label; ctx.font = '5px ' + FONT; const w = ctx.measureText(label).width + 6;
-    const x = Math.round(p.x - w / 2), y = Math.round(p.y - 34); F(ctx, x, y, w, 9, 'rgba(10,10,20,0.85)'); txt(label, x + 3, y + 2, 5, '#f7d774', 'left', null);
+    const opts = [[(touchMode ? '' : '[E] ') + p.inter.label, '#f7d774']];
+    if (p.inter2) opts.push([(touchMode ? '[F] ' : '[F] ') + p.inter2.label.replace(' (hold F)', touchMode ? ' (hold)' : ' (hold)'), '#9ab0ff']);
+    ctx.font = '5px ' + FONT; const w = Math.max(...opts.map(o => ctx.measureText(o[0]).width)) + 6;
+    const x = Math.round(p.x - w / 2), y = Math.round(p.y - 34 - (opts.length - 1) * 9); F(ctx, x, y, w, 9 * opts.length, 'rgba(10,10,20,0.85)');
+    opts.forEach((o, i) => txt(o[0], x + 3, y + 2 + i * 9, 5, o[1], 'left', null));
   }
   // HUD
   ctx.setTransform(S, 0, 0, S, 0, 0);
@@ -1266,22 +1344,27 @@ function render(dt) {
   if (paused && state === 'play') { panel(0, 0, VW, VH, 0.6); txt('PAUSED', VW / 2, VH / 2 - 20, 12, '#fff', 'center'); txt('P / Esc to resume', VW / 2, VH / 2, 6, '#ccc', 'center'); drawHelp(VW / 2 - 110, VH / 2 + 14); }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
 }
-function drawLighting(dark, cx, cy) {
+function drawLighting(dark, cx, cy, m) {
   const g = lctx; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, VW, VH);
   g.fillStyle = `rgba(10,12,40,${dark})`; g.fillRect(0, 0, VW, VH); g.globalCompositeOperation = 'destination-out';
   const light = (x, y, r, a) => {
     const sx = x - cx, sy = y - cy; if (sx < -r || sy < -r || sx > VW + r || sy > VH + r) return;
     const gr = g.createRadialGradient(sx, sy, 0, sx, sy, r); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(sx - r, sy - r, r * 2, r * 2);
   };
-  for (const l of lamps) light(l.x * TS + 8, l.y * TS + 4, 50, 1);
-  for (const w of windows) light(w.x * TS + 8, w.y * TS + 10, 22, 0.75);
-  for (const gd of guards) if (gd.map === 'town') light(gd.x, gd.y - 8, 30, 0.85);
-  for (const f of fences) light(f.x, f.y - 8, 22, 0.7);
-  if (player.map === 'town' && state !== 'title') light(player.x, player.y - 8, 26, 0.6);
+  if (m.kind === 'town') {
+    for (const l of lamps) light(l.x * TS + 8, l.y * TS + 4, 50, 1);
+    for (const w of windows) light(w.x * TS + 8, w.y * TS + 10, 22, 0.75);
+    for (const f of fences) light(f.x, f.y - 8, 22, 0.7);
+  } else {
+    for (let x = 0; x < m.w; x++) if (m.tiles[m.w + x] === T.FIRE) light(x * TS + 8, TS + 14, 60, 0.9);
+    light(m.exit.x * TS + 8, m.exit.y * TS + 8, 24, 0.5);
+  }
+  for (const gd of guards) if (gd.map === m.key) light(gd.x, gd.y - 8, 30, 0.85);
+  if (player.map === m.key && state !== 'title') light(player.x, player.y - 8, m.kind === 'town' ? 26 : 34, 0.6);
   g.globalCompositeOperation = 'source-over';
   ctx.setTransform(S, 0, 0, S, 0, 0); ctx.imageSmoothingEnabled = true; ctx.drawImage(lightCv, 0, 0); ctx.imageSmoothingEnabled = false;
   ctx.globalCompositeOperation = 'lighter';
-  for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
+  if (m.kind === 'town') for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
   ctx.globalCompositeOperation = 'source-over';
 }
 function coinIcon(x, y) { F(ctx, x + 1, y, 4, 6, '#e8b830'); F(ctx, x, y + 1, 6, 4, '#e8b830'); F(ctx, x + 2, y + 1, 1, 4, '#fff2a8'); }
@@ -1294,7 +1377,7 @@ function drawHUD(di) {
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
   txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
-  if (up.sack || up.boots || up.tongue) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : ''].filter(Boolean).join(' '), 6, 53, 4, '#9df0a0');
+  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 53, 4, '#9df0a0');
   // clock + minimap
   const mw = town.w, mh = town.h, mx = VW - mw - 6, my = 4;
   panel(mx - 2, my, mw + 4, 12); txt(`Day ${di.day} ${di.name}`, mx + mw / 2, my + 3, 5, di.name === 'Night' ? '#9ab0ff' : '#ffe9a8', 'center', null);
@@ -1331,14 +1414,15 @@ function drawHUD(di) {
   }
   if (touchMode) drawTouch();
   else txt('H: help', VW - 6, VH - 9, 4, 'rgba(255,255,255,0.5)', 'right', null);
-  if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 60, 232, 120, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
+  if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 132, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F (night)', 'pick a lock (hold)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   txt('Residents watch you. Steal when they look away.', x, y + 76, 4, '#bbb');
   txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
   txt('Caught = 2 watchmen march you to jail.', x, y + 92, 4, '#bbb');
+  txt('Night: pick locks, sneak past sleepers. No running!', x, y + 100, 4, '#bbb');
 }
 function drawTouch() {
   for (const b of BTN()) {
@@ -1350,7 +1434,7 @@ function drawTouch() {
   else txt('drag to move', 30, VH - 20, 4, 'rgba(255,255,255,0.4)', 'center', null);
 }
 function drawMenu() {
-  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 132, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 148, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
   menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph; menu.items = [];
   panel(px, py, pw, ph, 0.92); F(ctx, px, py, pw, 14, 'rgba(90,45,110,0.9)');
   txt(f.name + ' - Fence', px + 6, py + 4, 6, '#f7d774'); coinIcon(px + pw - 50, py + 4); txt(`${gold}g`, px + pw - 42, py + 4, 6, '#f7d774');
@@ -1362,6 +1446,7 @@ function drawMenu() {
     ['3', 'Swift Boots (+speed)', up.boots ? 'OWNED' : '150g', () => buy('boots', 150), !up.boots && gold >= 150],
     ['4', 'Silver Tongue (less suspicion)', up.tongue ? 'OWNED' : '130g', () => buy('tongue', 130), !up.tongue && gold >= 130],
     ['5', `Smoke Bomb (${player.smoke}/3)`, '50g', () => buy('smoke', 50), player.smoke < 3 && gold >= 50],
+    ['6', 'Lockpick Kit (faster, quieter)', up.picks ? 'OWNED' : '100g', () => buy('picks', 100), !up.picks && gold >= 100],
   ];
   opts.forEach(([k, label, price, fn, ok], i) => {
     const y = py + 30 + i * 16, item = { x: px + 4, y: y - 2, w: pw - 8, h: 14, fn }; menu.items.push(item);
@@ -1377,9 +1462,9 @@ function drawTitle() {
   txt('LIGHT FINGERS', cxm, ty, VW < 300 ? 12 : 18, '#f7d774', 'center', '#5a2d0a');
   txt('a village of easy marks', cxm, ty + 26, 6, '#e8dcc0', 'center');
   ctx.drawImage(PLAYER_SHEET.down[Math.floor(performance.now() / 200) % 2 ? 1 : 2], cxm - 8, ty + 38);
-  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
+  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'At night, pick locks and rob sleepers.', 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
   lines.forEach((l, i) => txt(l, cxm, ty + 66 + i * 10, 5, '#ddd', 'center'));
-  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, ty + 122, 7, '#fff', 'center');
+  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, ty + 132, 7, '#fff', 'center');
   if (!touchMode) txt('WASD move · Shift run · E act · Space struggle · Q smoke', cxm, VH - 14, 4, '#aaa', 'center');
 }
 
@@ -1395,7 +1480,7 @@ function frame(now) {
     updateCamera(dt, 'town', 30 * TS + Math.sin(now / 9000) * 240, 22 * TS + Math.cos(now / 11000) * 120);
     if (hit('enter') || hit(' ') || hit('e')) startGame();
   } else if (state === 'menu') {
-    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50);
+    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('picks', 100);
     if (hit('escape') || hit('e')) closeMenu();
     for (const f of fences) if (f.bubble) { f.bubble.t -= dt; if (f.bubble.t <= 0) f.bubble = null; }
     for (const mm of msgs) mm.t -= dt * 0.3;
