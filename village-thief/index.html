@@ -117,6 +117,7 @@ const SFX = {
   buy() { tone(660, 0.08, { vol: 0.05 }); tone(880, 0.14, { vol: 0.05, delay: 0.08 }); },
   smoke() { noise(0.6, 0.12); },
   rustle() { noise(0.18, 0.06); },
+  bark() { tone(320, 0.07, { type: 'sawtooth', vol: 0.07, slide: -120 }); tone(300, 0.08, { type: 'sawtooth', vol: 0.07, slide: -120, delay: 0.16 }); },
   pick() { tone(2400 + Math.random() * 800, 0.025, { type: 'square', vol: 0.025 }); },
   deny() { tone(140, 0.16, { vol: 0.05 }); },
   win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, { vol: 0.06, delay: i * 0.14 })); },
@@ -443,6 +444,24 @@ const FENCE_SHEETS = [
   makeSheet({ skin: '#e0ac69', hair: '#7a2e1c', hairStyle: 'long', hat: 'hood', hatC: '#5b2d6e', shirt: '#4a2357', pants: '#2a1a30', dress: true }),
   makeSheet({ skin: '#c68642', hair: '#111111', hairStyle: 'short', hat: 'cap', hatC: '#3a3a2a', shirt: '#5a4a2a', pants: '#2a2a2a', patch: true, beard: true }),
 ];
+const SARGE_SHEETS = [0, 1].map(i => makeSheet({ skin: SKINS[(i + 2) % 5], hair: HAIRS[i], hairStyle: 'short', hat: 'helmet', shirt: '#8e2a2a', pants: '#2a2a33', emblem: '#f0d060', belt: '#f0d060', spear: true, beard: i === 0 }));
+function drawDog(dir, f) {
+  const c = mk(16, 22), g = c.getContext('2d'), r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  const b = '#7a5230', d = '#4f3219', l = '#a0764a', n = '#141414', col = '#c0392b', a = f === 1 ? 1 : 0, z = f === 2 ? 1 : 0;
+  if (dir === 'left') {
+    r(4, 12, 9, 5, b); r(4, 12, 9, 1, l); r(12, 10, 2, 3, b); r(13, 8, 1, 2, b);
+    r(0, 9, 5, 5, b); r(0, 12, 2, 2, l); r(0, 12, 1, 1, n); r(2, 10, 1, 1, n); r(3, 8, 2, 3, d); r(4, 13, 1, 3, col);
+    r(4 - a + z, 17, 2, 4, d); r(6 + a - z, 17, 2, 4, b); r(10 + a - z, 17, 2, 4, d); r(12 - a + z, 17, 1, 4, b);
+  } else if (dir === 'down') {
+    r(4, 13, 8, 6, b); r(4, 8, 8, 6, b); r(6, 12, 4, 3, l); r(7, 12, 2, 1, n); r(5, 10, 1, 1, n); r(10, 10, 1, 1, n);
+    r(3, 8, 2, 4, d); r(11, 8, 2, 4, d); r(5, 14, 6, 1, col); r(5, 19, 2, 2 - a, d); r(9, 19, 2, 2 - z, d);
+  } else {
+    r(4, 11, 8, 8, b); r(5, 8, 6, 5, b); r(4, 8, 2, 3, d); r(10, 8, 2, 3, d); r(7, 17 - a, 2, 4, l); r(5, 12, 6, 1, col);
+    r(4, 19, 2, 2 - z, d); r(10, 19, 2, 2 - a, d);
+  }
+  return c;
+}
+const DOG_SHEET = (() => { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawDog(d, f)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; })();
 const JAILER_SHEET = makeSheet({ skin: '#ffdbac', hair: '#5a3b22', hairStyle: 'bald', shirt: '#2f4f9e', pants: '#3a3a46', emblem: '#e0b43a', beard: true });
 const PRISONER_SHEETS = [makeSheet({ skin: '#e0ac69', hair: '#5a3b22', hairStyle: 'short', shirt: '#8a8070', pants: '#5a5448', beard: true }), makeSheet({ skin: '#8d5524', hair: '#111111', hairStyle: 'bald', shirt: '#8a8070', pants: '#5a5448' })];
 function residentSheet(rng) {
@@ -599,15 +618,15 @@ const jailNPCs = [
   { kind: 'decor', map: 'jail', x: 2 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[0], animT: 0, bubble: null, lines: ['Got any bread?', 'I was framed, I tell ya!', 'Psst... nice sack.'] },
   { kind: 'decor', map: 'jail', x: 10 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[1], animT: 0, bubble: null, lines: ['Fourth time this week.', 'The food is awful.', 'Zzz...'] },
 ];
-let nightNotified = -1;
+let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, curDay = 1;
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
   player = { kind: 'player', map: 'town', x: 27 * TS + 8, y: 23 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
-  up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
-  guards = GUARD_ROUTES.map((route, i) => ({ kind: 'guard', name: GUARD_NAMES[i], map: 'town', x: route[0][0] * TS + 8, y: route[0][1] * TS + 12, fa: 0, dir: 'right', sheet: guardSheet(i), animT: 0,
+  up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
+  guards = GUARD_ROUTES.map((route, i) => ({ kind: 'guard', unit: 'guard', temp: false, name: GUARD_NAMES[i], map: 'town', x: route[0][0] * TS + 8, y: route[0][1] * TS + 12, fa: 0, dir: 'right', sheet: guardSheet(i), animT: 0,
     route: route.map(([x, y]) => ({ x, y })), wi: 1, state: 'patrol', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 }));
   for (const h of houses) { h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.resident.state = 'idle'; h.resident.sus = 0; }
   maps.jail.cellOpen = true;
@@ -712,7 +731,7 @@ function canSee(e, t, range, cosHalf) {
   return losClear(e.map, ex, ey, tx, ty);
 }
 const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? 100 - dayInfo().dark * 55 : 110; };
-const guardSees = g => canSee(g, player, guardRange(), 0.62);
+const guardSees = g => g.unit === 'dog' ? canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
 function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
 function roughDist(a, b) { const pa = townPos(a), pb = townPos(b); return Math.hypot(pa.x - pb.x, pa.y - pb.y) + (a.map === b.map ? 0 : 60); }
 
@@ -726,15 +745,53 @@ function setWanted(reason) {
   if (!wanted) msg(reason, '#ff6b6b');
   wanted = true; lastSeenT = gameTime;
 }
+const BOUNTY_CAP = [2, 5, 7, 10, 10, 10];
+const HUNT_STATES = ['respond', 'search', 'chase'];
+const heatTime = () => HEAT_TIME + bounty * 3;
+const BOUNTY_MSG = ['', 'Bounty 1! Up to 5 watchmen will hunt you.', 'Bounty 2! Up to 7 watchmen are hunting you.', 'Bounty 3! The whole Watch - 10 men - is after you!', "Bounty 4! They've released the hounds!", 'Bounty 5! Sergeants have joined the hunt!'];
+function raiseBounty() {
+  if (bounty >= 5) return; bounty++; msg(BOUNTY_MSG[bounty], '#ff4040'); SFX.whistle();
+}
+function randomNear(px, py, rad) {
+  const cx = Math.floor(px / TS), cy = Math.floor(py / TS);
+  for (let i = 0; i < 40; i++) { const x = cx + Math.floor(rnd(-rad, rad + 1)), y = cy + Math.floor(rnd(-rad, rad + 1)); if (!isSolid(town, x, y)) return { map: 'town', x, y }; }
+  return { map: 'town', x: town.jail.approach.x, y: town.jail.approach.y };
+}
+function sendHunt(g) { g.state = 'respond'; g.target = randomNear(lastSeenPos.x, lastSeenPos.y, 7); g.path = null; }
+function spawnUnit(unit) {
+  const a = town.jail.approach, n = guards.filter(g => g.unit === unit).length;
+  const g = { kind: 'guard', unit, temp: true, name: unit === 'dog' ? 'Hound' : unit === 'sarge' ? 'Sergeant ' + ['Krell', 'Morrow'][n % 2] : 'Watchman ' + ['Ash', 'Burl', 'Cade', 'Dunn', 'Esk'][n % 5],
+    map: 'town', x: a.x * TS + 8, y: a.y * TS + 12, fa: Math.PI / 2, dir: 'down', animT: 0,
+    sheet: unit === 'dog' ? DOG_SHEET : unit === 'sarge' ? SARGE_SHEETS[n % 2] : guardSheet(guards.length + 3),
+    route: [{ x: a.x, y: a.y }], wi: 0, state: 'respond', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 };
+  sendHunt(g); guards.push(g);
+  say(g, unit === 'dog' ? 'WOOF! WOOF!' : unit === 'sarge' ? 'Find that thief!' : pick(['Reporting for duty!', 'Where are they?']));
+  if (unit === 'dog') SFX.bark();
+  return g;
+}
+// Make sure enough of the Watch is hunting for the current bounty level.
+function ensureForce() {
+  if (!wanted) return;
+  const humans = guards.filter(g => g.unit === 'guard');
+  let need = BOUNTY_CAP[bounty] - humans.filter(g => HUNT_STATES.includes(g.state)).length;
+  const idle = humans.filter(g => ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => Math.hypot(townPos(a).x - lastSeenPos.x, townPos(a).y - lastSeenPos.y) - Math.hypot(townPos(b).x - lastSeenPos.x, townPos(b).y - lastSeenPos.y));
+  for (const g of idle) { if (need <= 0) break; sendHunt(g); need--; }
+  let total = humans.length;
+  while (need > 0 && total < 10) { spawnUnit('guard'); total++; need--; }
+  if (bounty >= 4) for (let n = guards.filter(g => g.unit === 'dog').length; n < 2; n++) spawnUnit('dog');
+  if (bounty >= 5) for (let n = guards.filter(g => g.unit === 'sarge').length; n < 2; n++) spawnUnit('sarge');
+}
 function dispatchGuards(mapKey, tx, ty, n) {
   const target = { map: mapKey, x: tx, y: ty };
   const spot = { map: mapKey, x: tx * TS + 8, y: ty * TS + 12 };
-  const free = guards.filter(g => ['patrol', 'pause', 'return', 'search'].includes(g.state)).sort((a, b) => roughDist(a, spot) - roughDist(b, spot));
+  const free = guards.filter(g => g.unit === 'guard' && ['patrol', 'pause', 'return', 'search'].includes(g.state)).sort((a, b) => roughDist(a, spot) - roughDist(b, spot));
   free.slice(0, n).forEach(g => { g.state = 'respond'; g.target = target; g.path = null; say(g, pick(["On my way!", "Trouble at the " + (maps[mapKey].house ? maps[mapKey].house.family + "s'!" : "square!"), "I hear you!"])); });
   return free.slice(0, n);
 }
-function raiseAlarm(h) {
+function raiseAlarm(h, witnessed) {
   const r = h.resident; if (r.state === 'alarm') return;
+  if (witnessed) raiseBounty();
+  lastSeenPos = townPos({ map: h.key });
   r.state = 'alarm'; r.alarmT = 30; r.sus = 100; say(r, 'THIEF! WATCH! WATCH!', 3.5);
   SFX.alarm(); h.cooldown = 180;
   setWanted(`The ${h.family}s are calling the Watch! RUN!`);
@@ -742,11 +799,12 @@ function raiseAlarm(h) {
   const g2 = dispatchGuards('town', h.approach.x, h.approach.y, 1);
   alertPing = { x: h.approach.x, y: h.approach.y, t: 8 };
   if (sent.length) msg(`${sent[0].name} is coming to the ${h.family} house!`, '#ffb36b');
+  ensureForce();
 }
 function theftDiscovered(h) {
   h.cooldown = 180; h.resident.state = 'alarm'; h.resident.alarmT = 20; say(h.resident, 'We were robbed!!', 4);
   SFX.alarm(); setWanted(`The ${h.family}s discovered the theft! The Watch is searching.`);
-  dispatchGuards('town', h.approach.x, h.approach.y, 2); alertPing = { x: h.approach.x, y: h.approach.y, t: 8 };
+  lastSeenPos = townPos({ map: h.key }); dispatchGuards('town', h.approach.x, h.approach.y, 2); alertPing = { x: h.approach.x, y: h.approach.y, t: 8 }; ensureForce();
 }
 
 function knock(h) {
@@ -770,7 +828,7 @@ function enterHouse(h) {
   const p = player, m = h.map;
   p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
   h.visitStolen = 0;
-  const r = h.resident; r.state = 'host'; r.mode = 'watch'; r.modeT = rnd(3, 4.5); r.sus = 0; r.warned = false; r.path = null;
+  const r = h.resident; r.state = 'host'; r.mode = 'watch'; r.modeT = rnd(3, 4.5); r.sus = 0; r.warned = false; r.path = null; r.caught = false;
   const spot = { x: m.entry.x, y: Math.max(2, m.entry.y - 2) }; if (!isSolid(m, spot.x, spot.y)) { r.x = spot.x * TS + 8; r.y = spot.y * TS + 12; }
   say(r, pick(['Make yourself at home!', 'Lovely to have company.', 'Care for some tea?', 'Mind the rug, dear.', 'What brings you by?']), 3);
 }
@@ -852,24 +910,30 @@ function buy(kind, cost) {
 // ---------- the catch ----------
 function grab(g) {
   const p = player; p.state = 'grabbed'; p.grabG = g; p.struggle = 45; p.grabT = 0; g.state = 'grab'; g.path = null;
-  SFX.grab(); say(g, pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
+  SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
 }
 function breakFree() {
   const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, 'Oof!'); }
   p.state = 'free'; p.invuln = 1.6; p.boostT = 1.6; escapes++; SFX.free(); msg('You wriggled free! RUN!', '#9df0a0'); say(p, 'Not today!', 1.5);
 }
 function arrest() {
-  const p = player, A = p.grabG; p.state = 'held'; A.state = 'hold'; wanted = false; SFX.jail();
-  for (const g of guards) if (g !== A && ['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
-  const others = guards.filter(g => g !== A && !['stunned'].includes(g.state)).sort((a, b) => roughDist(a, p) - roughDist(b, p));
-  const B = others[0];
+  const p = player, G0 = p.grabG; p.state = 'held'; G0.state = 'hold'; wanted = false; SFX.jail();
+  for (const g of guards) if (g !== G0 && (['chase', 'respond', 'search'].includes(g.state) || (g.temp && g.unit !== 'guard'))) { g.state = 'return'; g.path = null; }
+  const others = guards.filter(g => g !== G0 && g.unit !== 'dog' && !['stunned'].includes(g.state)).sort((a, b) => roughDist(a, p) - roughDist(b, p));
+  if (G0.unit === 'dog') {
+    escort = { A: null, B: null, dog: G0, waitT: 0, t: 0 };
+    msg('A hound has you pinned! Two watchmen are coming to take you away.', '#ff6b6b');
+    others.slice(0, 2).forEach(g => { g.state = 'assist'; g.path = null; say(g, 'Good boy! Hold them!'); });
+    return;
+  }
+  const A = G0, B = others[0];
   escort = { A, B: B || null, waitT: 0, t: 0 };
   say(A, pick(["You're nicked!", 'By order of the Watch, you are under arrest!', "That's enough running."]), 3);
   msg('CAUGHT! A second watchman is coming to escort you to jail.', '#ff6b6b');
   if (B) { B.state = 'assist'; B.path = null; say(B, 'Coming, Sarge!'); } else startEscort();
 }
 function startEscort() {
-  const p = player, { A, B } = escort; A.state = 'escort_lead'; A.path = null; maps.jail.cellOpen = true;
+  const p = player, { A, B } = escort; if (escort.dog) { escort.dog.state = 'return'; escort.dog.path = null; escort.dog = null; } A.state = 'escort_lead'; A.path = null; maps.jail.cellOpen = true;
   if (B) B.state = 'escort_follow';
   p.state = 'escorted'; trail = [];
   const from = B || p;
@@ -888,7 +952,7 @@ function finishEscort() {
     SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g) and fined ${fine}g.`, '#ff6b6b');
     say(jailNPCs[0], pick(jailNPCs[0].lines), 3);
     for (const g of [A, B]) if (g) { g.state = 'return'; g.path = null; g.x = j.entry.x * TS + 8 + (g === B ? -16 : 16); g.y = 5 * TS + 12; g.map = 'jail'; }
-    escort = null; trail = []; escapes = 0;
+    escort = null; trail = []; escapes = 0; if (bounty) msg('Your bounty has been cleared.', '#9df0a0'); bounty = 0;
   });
 }
 function release() {
@@ -1035,7 +1099,7 @@ function updatePlayer(dt) {
     }
     case 'hidden': if (hit('e') || readMove().l > 0.6) { p.state = 'free'; SFX.rustle(); } break;
     case 'grabbed': {
-      p.grabT += dt; p.struggle -= 24 * dt;
+      p.grabT += dt; p.struggle -= (p.grabG && p.grabG.unit !== 'guard' ? 31 : 24) * dt;
       if (hit(' ') || hit('e')) { p.struggle += Math.max(5, 13 - escapes * 2.5); SFX.struggle(); p.shake = 0.12; }
       if (hit('q') && p.smoke > 0) { useSmoke(); breakFree(); break; }
       if (p.struggle >= 100) breakFree(); else if (p.struggle <= 0 || p.grabT > 4) arrest();
@@ -1052,7 +1116,9 @@ function updatePlayer(dt) {
 function updateGuard(g, dt) {
   g.moving = false;
   const spdFor = { chase: G_CHASE, respond: G_RUN, assist: 50, escort_lead: 34 };
-  const spd = spdFor[g.state] || G_PATROL;
+  let spd = spdFor[g.state] || G_PATROL;
+  if (g.unit === 'dog' && (g.state === 'chase' || g.state === 'respond')) spd = g.state === 'chase' ? 88 : 80;
+  if (g.unit === 'sarge' && (g.state === 'chase' || g.state === 'respond')) spd = g.state === 'chase' ? 78 : 68;
   const sameMap = g.map === player.map, dP = sameMap ? dist(g, player) : 1e9;
   const canSpot = (wanted || player.state === 'picking') && ['patrol', 'pause', 'respond', 'search', 'return'].includes(g.state) && ['free', 'stealing', 'knocking', 'hidden', 'picking'].includes(player.state);
   if (canSpot && guardSees(g)) { if (!wanted) setWanted(`${g.name} caught you picking a lock!`); startChase(g); }
@@ -1062,7 +1128,7 @@ function updateGuard(g, dt) {
     case 'respond': if (navTo(g, g.target.map, g.target.x, g.target.y, spd, dt) || g.stuckT > 3) { g.state = 'search'; g.searchT = 4; say(g, pick(['Where are they?', 'Hmm...', 'Show yourself!'])); } break;
     case 'chase': {
       const sees = guardSees(g);
-      if (sees) { g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.lostT = 0; lastSeenT = gameTime; } else g.lostT += dt;
+      if (sees) { g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.lostT = 0; lastSeenT = gameTime; lastSeenPos = townPos(player); } else g.lostT += dt;
       if (sees && dP < 52) {
         const dx = player.x - g.x, dy = player.y - g.y, d = Math.hypot(dx, dy) || 1;
         moveEntity(g, dx / d * spd * dt, dy / d * spd * dt); g.fa = Math.atan2(dy, dx); g.moving = true; g.path = null;
@@ -1076,19 +1142,26 @@ function updateGuard(g, dt) {
     }
     case 'search': {
       g.searchT -= dt; g.fa += dt * 2.6;
-      if (player.state === 'hidden' && sameMap && player.hay && Math.hypot(g.x - (player.hay.x * TS + 8), g.y - (player.hay.y * TS + 12)) < 26 && Math.random() < 0.7 * dt) {
-        player.state = 'free'; say(g, 'Found you!'); grab(g); break;
+      if (player.state === 'hidden' && sameMap && player.hay && Math.hypot(g.x - (player.hay.x * TS + 8), g.y - (player.hay.y * TS + 12)) < (g.unit === 'dog' ? 34 : 26) && Math.random() < (g.unit === 'dog' ? 2.2 : 0.7) * dt) {
+        player.state = 'free'; say(g, g.unit === 'dog' ? 'GRRRR! WOOF!' : 'Found you!'); grab(g); break;
       }
-      if (g.searchT <= 0) { g.state = 'return'; g.path = null; say(g, pick(['Hmph.', 'Back to my rounds.', 'Lost them...'])); }
+      if (g.searchT <= 0) {
+        if (wanted && (bounty >= 1 || g.temp)) sendHunt(g);
+        else { g.state = 'return'; g.path = null; say(g, g.unit === 'dog' ? '*whimper*' : pick(['Hmph.', 'Back to my rounds.', 'Lost them...'])); }
+      }
       break;
     }
-    case 'return': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) g.state = 'patrol'; break; }
+    case 'return': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { if (g.temp) g.dead = true; else g.state = 'patrol'; } break; }
     case 'stunned': g.stunT -= dt; g.fa += dt * 6; if (g.stunT <= 0) { g.state = wanted ? 'search' : 'return'; g.searchT = 2; } break;
     case 'grab': case 'hold': if (sameMap) g.fa = Math.atan2(player.y - g.y, player.x - g.x); break;
     case 'assist': {
       escort.waitT += dt; const t = tileOfE(player);
       navTo(g, player.map, t.x, t.y, spd, dt, true);
-      if ((sameMap && dP < 26) || escort.waitT > 25) { if (!sameMap) { g.map = player.map; g.x = player.x - 12; g.y = player.y; } startEscort(); }
+      if ((sameMap && dP < 26) || escort.waitT > 25) {
+        if (!sameMap) { g.map = player.map; g.x = player.x - 12; g.y = player.y; }
+        if (!escort.A) { escort.A = g; g.state = 'hold'; escort.waitT = 0; say(g, 'Good dog. I have them now.'); }
+        else { escort.B = g; startEscort(); }
+      }
       break;
     }
     case 'escort_lead': {
@@ -1105,9 +1178,11 @@ function updateGuard(g, dt) {
 }
 function startChase(g) {
   g.state = 'chase'; g.lostT = 0; g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.path = null; lastSeenT = gameTime;
-  say(g, pick(['Halt, thief!', 'Stop right there!', 'Thief! THIEF!', 'You there! Stop!']));
-  if (whistleCD <= 0) { SFX.whistle(); whistleCD = 2.5; }
-  for (const o of guards) if (o !== g && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
+  lastSeenPos = townPos(player);
+  say(g, g.unit === 'dog' ? pick(['WOOF! WOOF!', 'GRRRR!', 'ARF ARF!']) : g.unit === 'sarge' ? pick(['You are MINE, thief!', 'Nobody outruns me!']) : pick(['Halt, thief!', 'Stop right there!', 'Thief! THIEF!', 'You there! Stop!']));
+  if (whistleCD <= 0) { g.unit === 'dog' ? SFX.bark() : SFX.whistle(); whistleCD = 2.5; }
+  let room = BOUNTY_CAP[bounty] - guards.filter(o => o.unit === 'guard' && HUNT_STATES.includes(o.state)).length;
+  for (const o of guards) if (room > 0 && o !== g && o.unit === 'guard' && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220 && room--) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
 }
 function placeFollower(e, c, dt) {
   if (!c) return;
@@ -1149,7 +1224,7 @@ function updateResident(r, dt) {
       } else if (sees && p.running) rate = 10 * tongue;
       r.sus = Math.min(100, r.sus + rate * dt);
       if (r.sus >= 60 && !r.warned) { r.warned = true; say(r, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
-      if (r.sus >= 100) raiseAlarm(h);
+      if (r.sus >= 100) raiseAlarm(h, r.caught);
       break;
     }
     case 'sleep': {
@@ -1162,12 +1237,12 @@ function updateResident(r, dt) {
     }
     case 'woke': {
       r.wokeT -= dt; r.fa = turnToward(r.fa, Math.atan2(p.y - r.y, p.x - r.x), dt * 1.5);
-      if (r.wokeT <= 0) { if (here && canSee(r, p, 120, 0.55)) raiseAlarm(h); else { r.state = 'prowl'; r.prowlT = 7; } }
+      if (r.wokeT <= 0) { if (here && canSee(r, p, 120, 0.55)) raiseAlarm(h, true); else { r.state = 'prowl'; r.prowlT = 7; } }
       break;
     }
     case 'prowl': {
       r.prowlT -= dt;
-      if (here) { const t = tileOfE(p); navTo(r, h.key, t.x, t.y, 22, dt, true); if (canSee(r, p, 110, 0.55)) { raiseAlarm(h); break; } }
+      if (here) { const t = tileOfE(p); navTo(r, h.key, t.x, t.y, 22, dt, true); if (canSee(r, p, 110, 0.55)) { raiseAlarm(h, true); break; } }
       if (r.prowlT <= 0 || !here) { say(r, pick(["Must've been the cat...", 'Hmph. Just the wind.', 'Back to bed...']), 2.2); r.state = 'sleep'; r.wake = 0; r.path = null; }
       break;
     }
@@ -1188,6 +1263,7 @@ function updateWorld(dt) {
   else if (fade.dir === -1) { fade.a -= dt * 4; if (fade.a <= 0) { fade.a = 0; fade.dir = 0; } }
   updatePlayer(dt);
   for (const g of guards) updateGuard(g, dt);
+  if (guards.some(g => g.dead)) guards = guards.filter(g => !g.dead);
   if (player.state === 'escorted' && escort) {
     placeFollower(player, trail[Math.max(0, trail.length - 1 - 9)], dt);
     if (escort.B) placeFollower(escort.B, trail[Math.max(0, trail.length - 1 - 18)], dt);
@@ -1201,11 +1277,13 @@ function updateWorld(dt) {
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
   if (wanted) {
     if (guards.some(g => g.state === 'chase' && g.lostT === 0)) lastSeenT = gameTime;
-    if (gameTime - lastSeenT > HEAT_TIME && ['free', 'hidden', 'stealing', 'knocking', 'picking'].includes(player.state)) {
+    if (gameTime - lastSeenT > heatTime() && ['free', 'hidden', 'stealing', 'knocking', 'picking'].includes(player.state)) {
       wanted = false; escapes = 0; msg('You lost the Watch. The heat is off.', '#9df0a0');
       for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
     }
+    forceT -= dt; if (wanted && forceT <= 0) { forceT = 2; ensureForce(); }
   }
+  { const d = dayInfo().day; if (d !== curDay) { curDay = d; if (bounty > 0 && !wanted) { bounty--; msg(`A new day. Your bounty fades to ${bounty}.`, '#9df0a0'); } } }
   { const di = dayInfo(); if (isNight() && nightNotified !== di.day) { nightNotified = di.day; msg('Night falls. Hold [F] at a door to pick the lock.', '#9ab0ff'); } }
   if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
   for (const f of fences) { f.chatT -= dt; if (f.chatT <= 0) { f.chatT = rnd(6, 12); if (player.map === 'town' && dist(f, player) < 90) say(f, pick(['Psst. Got goods?', 'Buying shiny things...', 'No questions asked.', 'Over here, friend.']), 2.2); } }
@@ -1281,7 +1359,7 @@ function render(dt) {
   for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
     if (['hold', 'assist', 'escort_lead', 'escort_follow', 'grab'].includes(g.state)) continue;
     const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
-    drawCone(g, range, Math.acos(0.62), col);
+    drawCone(g, g.unit === 'dog' ? range * 0.95 : range, g.unit === 'dog' ? Math.PI * 0.999 : Math.acos(0.62), col);
   }
   if (m.kind === 'house') { const r = m.house.resident; if (r.state === 'woke' || r.state === 'prowl') drawCone(r, 110, Math.acos(0.55), 'rgba(255,90,90,0.17)'); if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
   // characters
@@ -1312,7 +1390,7 @@ function render(dt) {
   for (const e of list) if (e.bubble) bubbleAt(e.x, e.y - 24, e.bubble.text, e.kind === 'guard' && e.state === 'chase' ? '#ffd9d9' : '#fff8e7');
   if (p.state === 'hidden' && p.bubble) bubbleAt(p.hay.x * TS + 8, p.hay.y * TS, p.bubble.text);
   if (doorBubble && camMap === 'town') bubbleAt(doorBubble.x, doorBubble.y - 4, doorBubble.text);
-  for (const g of list) if (g.kind === 'guard') {
+  for (const g of list) if (g.kind === 'guard' && !g.bubble) {
     if (g.state === 'chase') txt('!', g.x - 2, g.y - 34, 8, '#ff4040');
     else if (g.state === 'search' || g.state === 'respond') txt('?', g.x - 2, g.y - 34, 8, '#ffb040');
   }
@@ -1371,13 +1449,15 @@ function coinIcon(x, y) { F(ctx, x + 1, y, 4, 6, '#e8b830'); F(ctx, x, y + 1, 6,
 function sackIcon(x, y) { F(ctx, x + 1, y + 2, 5, 5, '#9c7a4a'); F(ctx, x + 2, y + 1, 3, 1, '#7a5a34'); F(ctx, x + 2, y, 3, 1, '#9c7a4a'); }
 function drawHUD(di) {
   const p = player, narrow = VW < 300;
-  panel(4, 4, 112, 46);
+  panel(4, 4, 112, 56);
   coinIcon(9, 9); txt(`${gold}g`, 18, 9, 6, '#f7d774');
   sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
   txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
-  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 53, 4, '#9df0a0');
+  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 63, 4, '#9df0a0');
+  txt('BOUNTY', 9, 47, 5, bounty ? '#ff6b6b' : '#888');
+  for (let i = 0; i < 5; i++) { const x = 50 + i * 10, on = i < bounty; F(ctx, x, 46, 7, 7, on ? '#2a0a0a' : '#222'); F(ctx, x + 1, 47, 5, 5, on ? (bounty >= 4 && Math.floor(gameTime * 4) % 2 ? '#ff7a40' : '#e03030') : '#3a3a3a'); if (on) { F(ctx, x + 2, 48, 1, 1, '#000'); F(ctx, x + 4, 48, 1, 1, '#000'); } }
   // clock + minimap
   const mw = town.w, mh = town.h, mx = VW - mw - 6, my = 4;
   panel(mx - 2, my, mw + 4, 12); txt(`Day ${di.day} ${di.name}`, mx + mw / 2, my + 3, 5, di.name === 'Night' ? '#9ab0ff' : '#ffe9a8', 'center', null);
@@ -1391,7 +1471,7 @@ function drawHUD(di) {
   }
   // status banners
   if (wanted) {
-    const left = Math.max(0, HEAT_TIME - (gameTime - lastSeenT)), seen = gameTime - lastSeenT < 0.3;
+    const left = Math.max(0, heatTime() - (gameTime - lastSeenT)), seen = gameTime - lastSeenT < 0.3;
     const flash = Math.floor(gameTime * 4) % 2;
     panel(VW / 2 - 52, 4, 104, 22, 0.8); txt('WANTED', VW / 2, 7, 8, flash ? '#ff4040' : '#ff9090', 'center');
     txt(seen ? 'They see you! RUN!' : `Stay hidden: ${Math.ceil(left)}s`, VW / 2, 17, 5, '#fff', 'center');
@@ -1401,7 +1481,7 @@ function drawHUD(di) {
     F(ctx, VW / 2 - 60, VH / 2 + 36, 120, 6, '#222'); F(ctx, VW / 2 - 59, VH / 2 + 37, Math.round(118 * clamp(p.struggle, 0, 100) / 100), 4, '#f7d774');
     if (p.smoke > 0) txt('or [Q] smoke bomb', VW / 2, VH / 2 + 45, 4, '#ccc', 'center', null);
   }
-  if (p.state === 'held') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('CAUGHT! Waiting for a second watchman...', VW / 2, 35, 5, '#ffb36b', 'center'); }
+  if (p.state === 'held') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt(escort && escort.dog ? 'PINNED by a hound! Watchmen coming...' : 'CAUGHT! Waiting for a second watchman...', VW / 2, 35, 5, '#ffb36b', 'center'); }
   if (p.state === 'escorted') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('Being escorted to the jail cell...', VW / 2, 35, 5, '#ffb36b', 'center'); }
   if (p.state === 'jailed') { panel(VW / 2 - 70, 30, 140, 24, 0.8); txt('IN JAIL', VW / 2, 33, 8, '#ff6b6b', 'center'); txt(`Release in ${Math.ceil(p.jailT)}s`, VW / 2, 44, 5, '#fff', 'center'); }
   if (p.state === 'hidden') { panel(VW / 2 - 60, VH - 70, 120, 14, 0.8); txt('Hiding in the hay... [E] leave', VW / 2, VH - 66, 4, '#e3c25a', 'center'); }
@@ -1414,7 +1494,7 @@ function drawHUD(di) {
   }
   if (touchMode) drawTouch();
   else txt('H: help', VW - 6, VH - 9, 4, 'rgba(255,255,255,0.5)', 'right', null);
-  if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 132, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
+  if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 140, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
 }
 function drawHelp(x, y) {
   const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F (night)', 'pick a lock (hold)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
@@ -1423,6 +1503,7 @@ function drawHelp(x, y) {
   txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
   txt('Caught = 2 watchmen march you to jail.', x, y + 92, 4, '#bbb');
   txt('Night: pick locks, sneak past sleepers. No running!', x, y + 100, 4, '#bbb');
+  txt('Seen stealing = bounty +1 (max 5). More hunters.', x, y + 108, 4, '#bbb');
 }
 function drawTouch() {
   for (const b of BTN()) {
@@ -1499,7 +1580,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
