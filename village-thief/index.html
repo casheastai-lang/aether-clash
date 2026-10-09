@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Light Fingers</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0d0f1a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0d0f1a; } }
+  :root[data-theme="dark"] { --bg: #0d0f1a; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+  canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+// =====================================================================
+//  LIGHT FINGERS — a 2D pixel-art village thief game
+//  Knock on doors, get invited in, steal when nobody's looking,
+//  sell to fences, and outrun the Watch.
+// =====================================================================
+
+const FONT = "'Press Start 2P', monospace";
+const TS = 16;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const lightCv = document.createElement('canvas');
+const lctx = lightCv.getContext('2d');
+let S = 3, VW = 400, VH = 225, DPR = 1;
+
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  const W = Math.floor(innerWidth * DPR), H = Math.floor(innerHeight * DPR);
+  cv.width = W; cv.height = H;
+  S = Math.max(2, Math.round(W > H ? Math.min(W / 420, H / 240) : W / 260));
+  VW = Math.ceil(W / S); VH = Math.ceil(H / S);
+  lightCv.width = VW; lightCv.height = VH;
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- tuning ----------
+const P_WALK = 50, P_RUN = 84, G_PATROL = 30, G_RUN = 56, G_CHASE = 64;
+const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_TIME = 1.1, HEAT_TIME = 12, GOAL = 1000;
+const DAY_LEN = 300;
+
+// ---------- helpers ----------
+function mk(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+function F(g, x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); }
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash(x, y, s) { let h = (x * 374761393 + y * 668265263 + s * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16; return (h >>> 0) / 4294967296; }
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16); const r = n >> 16, g = n >> 8 & 255, b = n & 255;
+  const f = v => clamp(Math.round(amt < 0 ? v * (1 + amt) : v + (255 - v) * amt), 0, 255);
+  return '#' + ((1 << 24) | (f(r) << 16) | (f(g) << 8) | f(b)).toString(16).slice(1);
+}
+function speck(g, ox, oy, n, cols, seed, tx, ty) {
+  for (let i = 0; i < n; i++) {
+    const a = hash(tx, ty, seed + i * 3), b = hash(tx, ty, seed + i * 3 + 1), c = hash(tx, ty, seed + i * 3 + 2);
+    F(g, ox + Math.floor(a * 16), oy + Math.floor(b * 16), 1, 1, cols[Math.floor(c * cols.length)]);
+  }
+}
+function blob(g, cx, cy, r, col) { g.fillStyle = col; for (let y = -r; y <= r; y++) { const w = Math.floor(Math.sqrt(r * r - y * y + r * 0.5)); g.fillRect(cx - w, cy + y, w * 2 + 1, 1); } }
+function wrap(str, n) {
+  const words = str.split(' '), lines = []; let cur = '';
+  for (const w of words) { if ((cur + ' ' + w).trim().length > n && cur) { lines.push(cur); cur = w; } else cur = (cur + ' ' + w).trim(); }
+  if (cur) lines.push(cur); return lines;
+}
+function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; return d; }
+function turnToward(a, b, amt) { const d = angDiff(a, b); return Math.abs(d) <= amt ? b : a + Math.sign(d) * amt; }
+function dirFromAngle(a) { const c = Math.cos(a), s = Math.sin(a); return Math.abs(c) > Math.abs(s) ? (c < 0 ? 'left' : 'right') : (s < 0 ? 'up' : 'down'); }
+const DIR_ANG = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+
+// ---------- audio ----------
+let AC = null, master = null, muted = false;
+function audioInit() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try { AC = new (window.AudioContext || window.webkitAudioContext)(); master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination); } catch (e) { AC = null; }
+}
+function tone(freq, dur, o = {}) {
+  if (!AC || muted) return;
+  const t = AC.currentTime + (o.delay || 0);
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.type = o.type || 'square'; osc.frequency.setValueAtTime(freq, t);
+  if (o.slide) osc.frequency.linearRampToValueAtTime(Math.max(20, freq + o.slide), t + dur);
+  g.gain.setValueAtTime(o.vol || 0.06, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g); g.connect(master); osc.start(t); osc.stop(t + dur + 0.02);
+}
+function noise(dur, vol = 0.1, delay = 0) {
+  if (!AC || muted) return;
+  const len = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, len, AC.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = AC.createBufferSource(), g = AC.createGain(); src.buffer = buf; g.gain.value = vol;
+  src.connect(g); g.connect(master); src.start(AC.currentTime + delay);
+}
+const SFX = {
+  knock() { [0, 0.16, 0.55, 0.71].forEach((d, i) => tone(i % 2 ? 98 : 112, 0.07, { type: 'triangle', vol: 0.35, delay: d })); },
+  door() { tone(320, 0.18, { type: 'sawtooth', vol: 0.03, slide: -140 }); },
+  steal() { tone(988, 0.06, { vol: 0.05 }); tone(1319, 0.1, { vol: 0.05, delay: 0.06 }); },
+  whistle() { tone(2100, 0.12, { type: 'sine', vol: 0.09 }); tone(2500, 0.28, { type: 'sine', vol: 0.09, delay: 0.13, slide: -250 }); },
+  alarm() { for (let i = 0; i < 4; i++) tone(650, 0.12, { vol: 0.05, delay: i * 0.17, slide: 350 }); },
+  grab() { tone(170, 0.28, { type: 'sawtooth', vol: 0.08, slide: -90 }); },
+  struggle() { tone(200 + Math.random() * 90, 0.05, { vol: 0.03 }); },
+  free() { tone(523, 0.08, { vol: 0.05 }); tone(784, 0.14, { vol: 0.05, delay: 0.08 }); },
+  jail() { noise(0.25, 0.18); tone(70, 0.5, { vol: 0.07, slide: -25 }); },
+  coins() { for (let i = 0; i < 6; i++) tone(1100 + i * 140, 0.06, { vol: 0.04, delay: i * 0.05 }); },
+  buy() { tone(660, 0.08, { vol: 0.05 }); tone(880, 0.14, { vol: 0.05, delay: 0.08 }); },
+  smoke() { noise(0.6, 0.12); },
+  rustle() { noise(0.18, 0.06); },
+  deny() { tone(140, 0.16, { vol: 0.05 }); },
+  win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, { vol: 0.06, delay: i * 0.14 })); },
+};
+
+// =====================================================================
+//  TILES
+// =====================================================================
+const T = {
+  GRASS: 0, FLOWER: 1, PATH: 2, COBBLE: 3, TREE: 4, ROOF: 5, WALL: 6, WINDOW: 7, DOOR: 8, STONE: 9, JROOF: 10, JDOOR: 11,
+  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21,
+  FLOOR: 30, IWALL: 31, IEDGE: 32, EXIT: 34, BED: 35, TABLE: 36, CHAIR: 37, CHEST: 38, SHELF: 39, DRESSER: 40, POT: 41,
+  IBARREL: 42, FIRE: 43, PLANT: 44, SFLOOR: 45, SWALL: 46, BARS: 47, CELLDOOR: 48, DESK: 49, BENCH: 50, BED2: 51, SEDGE: 52,
+};
+const SOLID = new Set([T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.FENCE, T.BUSH, T.BARREL, T.CRATE,
+  T.LAMP, T.WELL, T.STALL, T.HAY, T.IWALL, T.IEDGE, T.BED, T.BED2, T.TABLE, T.CHAIR, T.CHEST, T.SHELF, T.DRESSER, T.POT, T.IBARREL,
+  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH]);
+const OPAQUE = new Set([T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.BUSH, T.STALL, T.HAY,
+  T.IWALL, T.IEDGE, T.FIRE, T.SWALL, T.SEDGE, T.SHELF]);
+const LOOT = new Set([T.CHEST, T.SHELF, T.DRESSER, T.POT]);
+const ROOFS = [['#b5473a', '#8e3328', '#cf6a55'], ['#3f5f9e', '#2f4777', '#5b7cc0'], ['#7a5236', '#5c3c26', '#97694a'], ['#4f7f45', '#3b6134', '#6a9c5d'], ['#8a4f8a', '#6a3a6a', '#a96aa9']];
+
+const maps = {};
+const houses = [];
+function newMap(key, w, h, kind) {
+  const m = { key, w, h, kind, tiles: new Uint8Array(w * h), ground: new Uint8Array(w * h), owner: new Int16Array(w * h).fill(-1), loot: new Map(), canvas: null };
+  maps[key] = m; return m;
+}
+function tileAt(m, x, y) { if (x < 0 || y < 0 || x >= m.w || y >= m.h) return -1; return m.tiles[y * m.w + x]; }
+function isSolid(m, x, y) {
+  const t = tileAt(m, x, y); if (t < 0) return true;
+  if (t === T.CELLDOOR) return !(m.cellOpen && x === m.cell.x);
+  return SOLID.has(t);
+}
+function isOpaque(m, x, y) { const t = tileAt(m, x, y); return t < 0 || OPAQUE.has(t); }
+
+// ---------- ground painters ----------
+const GP = {};
+GP[T.GRASS] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#5d9c47'); speck(g, ox, oy, 14, ['#4f8a3c', '#6fb055', '#548f40'], 1, tx, ty);
+  if (hash(tx, ty, 9) < 0.35) { const x = ox + 2 + Math.floor(hash(tx, ty, 10) * 11), y = oy + 3 + Math.floor(hash(tx, ty, 11) * 10); F(g, x, y, 1, 2, '#447a34'); F(g, x + 2, y, 1, 2, '#447a34'); F(g, x + 1, y - 1, 1, 3, '#3f7330'); }
+};
+GP[T.FLOWER] = (g, ox, oy, tx, ty) => {
+  GP[T.GRASS](g, ox, oy, tx, ty);
+  const cols = ['#f2d14b', '#f07fa8', '#ffffff', '#b48cf2'];
+  for (let i = 0; i < 3; i++) {
+    const x = ox + 2 + Math.floor(hash(tx, ty, 20 + i) * 12), y = oy + 2 + Math.floor(hash(tx, ty, 30 + i) * 12), c = cols[Math.floor(hash(tx, ty, 40 + i) * 4)];
+    F(g, x - 1, y, 3, 1, c); F(g, x, y - 1, 1, 3, c); F(g, x, y, 1, 1, '#f9e79f');
+  }
+};
+GP[T.PATH] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#b8915f'); speck(g, ox, oy, 18, ['#a47e50', '#c9a46f', '#9a7449'], 2, tx, ty);
+  if (hash(tx, ty, 3) < 0.5) F(g, ox + Math.floor(hash(tx, ty, 4) * 13), oy + Math.floor(hash(tx, ty, 5) * 14), 2, 1, '#8f8a80');
+};
+GP[T.COBBLE] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#6f6c68');
+  g.save(); g.beginPath(); g.rect(ox, oy, 16, 16); g.clip();
+  for (let r = 0; r < 4; r++) {
+    const y = oy + r * 4, off = (r + ty) % 2 ? 4 : 0;
+    for (let k = -1; k < 3; k++) {
+      const x = ox + k * 8 + off, h = hash(tx * 4 + k, ty * 4 + r, 6);
+      F(g, x, y, 7, 3, h < 0.33 ? '#9a968f' : h < 0.66 ? '#918d86' : '#a39f97'); F(g, x, y, 7, 1, '#b0aca4');
+    }
+  }
+  g.restore();
+};
+GP[T.FIELD] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#7a5530');
+  for (const y of [2, 7, 12]) F(g, ox, oy + y, 16, 1, '#664626');
+  for (const y of [4, 9, 14]) for (let x = 1; x < 16; x += 3) { F(g, ox + x, oy + y - 1, 1, 2, '#6aa84f'); F(g, ox + x + 1, oy + y - 2, 1, 1, '#4f8a3c'); }
+};
+GP[T.FLOOR] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#a46e40');
+  for (let r = 0; r < 4; r++) { const y = oy + r * 4; F(g, ox, y + 3, 16, 1, '#7f532e'); F(g, ox + Math.floor(hash(tx, ty * 4 + r, 8) * 16), y, 1, 3, '#7f532e'); }
+  speck(g, ox, oy, 6, ['#b07a49', '#96613a'], 9, tx, ty);
+};
+GP[T.SFLOOR] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#6f6a63'); F(g, ox, oy + 7, 16, 1, '#5c5852'); F(g, ox + 7, oy, 1, 16, '#5c5852');
+  F(g, ox, oy + 15, 16, 1, '#5c5852'); F(g, ox + 15, oy, 1, 16, '#5c5852'); speck(g, ox, oy, 8, ['#7a756d', '#625e58'], 11, tx, ty);
+};
+
+// ---------- object painters ----------
+const OP = {};
+OP[T.TREE] = (g, ox, oy) => {
+  F(g, ox + 3, oy + 14, 10, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 6, oy + 10, 4, 6, '#6b4423'); F(g, ox + 6, oy + 10, 1, 6, '#5a381c');
+  blob(g, ox + 8, oy + 7, 7, '#2f6b2f'); blob(g, ox + 7, oy + 6, 5, '#3f8a3a'); blob(g, ox + 6, oy + 4, 2, '#5aa64c');
+  F(g, ox + 10, oy + 8, 1, 1, '#5aa64c'); F(g, ox + 4, oy + 9, 1, 1, '#2a5a29');
+};
+function houseOf(m, tx, ty) { return houses[m.owner[ty * m.w + tx]]; }
+OP[T.ROOF] = (g, ox, oy, tx, ty, m) => {
+  const h = houseOf(m, tx, ty), [c, d, l] = ROOFS[h.roof], row = ty - h.y;
+  F(g, ox, oy, 16, 16, c);
+  for (let k = 0; k < 4; k++) { const y = oy + k * 4; F(g, ox, y + 3, 16, 1, d); const off = ((k + row) % 2) * 4; for (let x = off; x < 16; x += 8) { F(g, ox + x, y, 1, 3, d); F(g, ox + x + 1, y, 3, 1, l); } }
+  if (row === 0) { F(g, ox, oy, 16, 2, d); F(g, ox, oy + 2, 16, 1, l); if (tx === h.x + h.w - 2) { F(g, ox + 5, oy - 0, 6, 9, '#7a706a'); F(g, ox + 4, oy, 8, 2, '#5a524c'); F(g, ox + 6, oy + 3, 1, 5, '#8e857e'); } }
+  if (row === 2) { F(g, ox, oy + 13, 16, 2, d); F(g, ox, oy + 15, 16, 1, '#2a1d14'); }
+  if (tx === h.x) { F(g, ox, oy, 1, 16, '#2a1d14'); F(g, ox + 1, oy, 1, 16, d); }
+  if (tx === h.x + h.w - 1) { F(g, ox + 15, oy, 1, 16, '#2a1d14'); F(g, ox + 14, oy, 1, 16, d); }
+};
+OP[T.WALL] = (g, ox, oy, tx, ty, m) => {
+  const h = houseOf(m, tx, ty), row = ty - h.y, beam = '#6b4a2b';
+  F(g, ox, oy, 16, 16, '#e8d7ae'); speck(g, ox, oy, 8, ['#d9c595', '#f1e3c0'], 7, tx, ty);
+  if (row === 3) { F(g, ox, oy, 16, 2, beam); F(g, ox, oy + 15, 16, 1, beam); }
+  if (row === 4) { F(g, ox, oy + 13, 16, 3, '#8e877c'); F(g, ox, oy + 13, 16, 1, '#6f695f'); F(g, ox + 5, oy + 14, 1, 2, '#6f695f'); F(g, ox + 11, oy + 14, 1, 2, '#6f695f'); }
+  if (tx === h.x) F(g, ox, oy, 2, 16, beam);
+  if (tx === h.x + h.w - 1) F(g, ox + 14, oy, 2, 16, beam);
+  if (row === 3 && m.tiles[ty * m.w + tx] === T.WALL && (tx - h.x) % 2 === 0 && tx !== h.x && tx !== h.x + h.w - 1) for (let i = 0; i < 12; i++) F(g, ox + 2 + i, oy + 2 + i, 2, 1, beam);
+};
+OP[T.WINDOW] = (g, ox, oy, tx, ty, m) => {
+  OP[T.WALL](g, ox, oy, tx, ty, m);
+  F(g, ox + 3, oy + 2, 10, 10, '#5a3b22'); F(g, ox + 4, oy + 3, 8, 8, '#8ec5d9');
+  F(g, ox + 7, oy + 3, 1, 8, '#5a3b22'); F(g, ox + 4, oy + 7, 8, 1, '#5a3b22'); F(g, ox + 5, oy + 4, 1, 2, '#d5f0f7');
+  F(g, ox + 3, oy + 12, 10, 2, '#7a4b24'); F(g, ox + 4, oy + 11, 1, 1, '#f07fa8'); F(g, ox + 7, oy + 11, 1, 1, '#f2d14b'); F(g, ox + 10, oy + 11, 1, 1, '#f07fa8');
+};
+OP[T.DOOR] = (g, ox, oy, tx, ty, m) => {
+  OP[T.WALL](g, ox, oy, tx, ty, m);
+  F(g, ox + 3, oy + 3, 10, 13, '#4a2e17'); F(g, ox + 5, oy + 2, 6, 1, '#4a2e17');
+  F(g, ox + 4, oy + 4, 8, 12, '#8a5a2b'); F(g, ox + 6, oy + 4, 1, 12, '#6e451f'); F(g, ox + 9, oy + 4, 1, 12, '#6e451f');
+  F(g, ox + 4, oy + 7, 8, 1, '#6e451f'); F(g, ox + 10, oy + 10, 1, 1, '#e8c45a'); F(g, ox + 2, oy + 15, 12, 1, '#9c968c');
+};
+function stoneTile(g, ox, oy, tx, ty) {
+  F(g, ox, oy, 16, 16, '#7f818a');
+  for (let r = 0; r < 4; r++) { const y = oy + r * 4; F(g, ox, y + 3, 16, 1, '#62646c'); const off = (r + ty) % 2 ? 4 : 0; for (let x = off; x < 16; x += 8) F(g, ox + x, y, 1, 3, '#62646c'); F(g, ox, y, 16, 1, '#8e9099'); }
+  speck(g, ox, oy, 5, ['#6f717a', '#93959e'], 12, tx, ty);
+}
+OP[T.STONE] = (g, ox, oy, tx, ty) => stoneTile(g, ox, oy, tx, ty);
+OP[T.JWIN] = (g, ox, oy, tx, ty) => { stoneTile(g, ox, oy, tx, ty); F(g, ox + 4, oy + 3, 8, 8, '#1b1c22'); for (let x = 5; x < 12; x += 2) F(g, ox + x, oy + 3, 1, 8, '#9a9ca6'); F(g, ox + 3, oy + 11, 10, 1, '#55575f'); };
+OP[T.JROOF] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 16, '#4b5068');
+  for (let k = 0; k < 4; k++) { const y = oy + k * 4; F(g, ox, y + 3, 16, 1, '#383c50'); const off = (k % 2) * 4; for (let x = off; x < 16; x += 8) { F(g, ox + x, y, 1, 3, '#383c50'); F(g, ox + x + 1, y, 3, 1, '#63698a'); } }
+  const m = maps.town, j = m.jail;
+  if (ty === j.y) { F(g, ox, oy, 16, 2, '#2c2f3e'); }
+  if (ty === j.y + 2) { F(g, ox, oy + 13, 16, 3, '#2c2f3e'); }
+  if (tx === j.x) F(g, ox, oy, 1, 16, '#1d1f2a'); if (tx === j.x + j.w - 1) F(g, ox + 15, oy, 1, 16, '#1d1f2a');
+};
+OP[T.JDOOR] = (g, ox, oy, tx, ty) => {
+  stoneTile(g, ox, oy, tx, ty);
+  F(g, ox + 3, oy + 2, 10, 14, '#2a2a30'); F(g, ox + 4, oy + 3, 8, 13, '#3a3a42');
+  F(g, ox + 4, oy + 6, 8, 1, '#57575f'); F(g, ox + 4, oy + 12, 8, 1, '#57575f');
+  for (const [x, y] of [[5, 6], [10, 6], [5, 12], [10, 12]]) F(g, ox + x, oy + y, 1, 1, '#a0a0aa');
+  F(g, ox + 10, oy + 9, 1, 2, '#c9a04a');
+};
+OP[T.FENCE] = (g, ox, oy) => { F(g, ox, oy + 6, 16, 2, '#a0703a'); F(g, ox, oy + 11, 16, 2, '#a0703a'); F(g, ox + 1, oy + 4, 2, 11, '#8a5a2b'); F(g, ox + 12, oy + 4, 2, 11, '#8a5a2b'); F(g, ox + 1, oy + 4, 2, 1, '#b98b52'); F(g, ox + 12, oy + 4, 2, 1, '#b98b52'); };
+OP[T.BUSH] = (g, ox, oy, tx, ty) => {
+  F(g, ox + 2, oy + 13, 12, 2, 'rgba(0,0,0,0.2)'); blob(g, ox + 8, oy + 9, 6, '#2f6e2f'); blob(g, ox + 7, oy + 8, 4, '#3f8a3a'); F(g, ox + 5, oy + 6, 2, 1, '#5aa64c');
+  if (hash(tx, ty, 50) < 0.5) { F(g, ox + 10, oy + 9, 1, 1, '#d23a3a'); F(g, ox + 5, oy + 11, 1, 1, '#d23a3a'); F(g, ox + 8, oy + 6, 1, 1, '#d23a3a'); }
+};
+function barrel(g, ox, oy) {
+  F(g, ox + 3, oy + 14, 10, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 3, oy + 3, 10, 12, '#7b4a22'); F(g, ox + 4, oy + 2, 8, 2, '#5a3416');
+  F(g, ox + 6, oy + 4, 1, 10, '#6a3e1b'); F(g, ox + 9, oy + 4, 1, 10, '#6a3e1b'); F(g, ox + 3, oy + 5, 10, 1, '#3b3b3b'); F(g, ox + 3, oy + 11, 10, 1, '#3b3b3b'); F(g, ox + 4, oy + 4, 1, 9, '#93602f');
+}
+OP[T.BARREL] = barrel; OP[T.IBARREL] = barrel;
+OP[T.CRATE] = (g, ox, oy) => {
+  F(g, ox + 2, oy + 14, 12, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 2, oy + 3, 12, 12, '#6e4a24'); F(g, ox + 3, oy + 4, 10, 10, '#a3743f');
+  for (let i = 0; i < 10; i++) { F(g, ox + 3 + i, oy + 4 + i, 1, 1, '#6e4a24'); F(g, ox + 12 - i, oy + 4 + i, 1, 1, '#6e4a24'); }
+};
+OP[T.LAMP] = (g, ox, oy) => {
+  F(g, ox + 5, oy + 14, 6, 2, '#2d2d33'); F(g, ox + 7, oy + 5, 2, 10, '#2d2d33'); F(g, ox + 5, oy + 1, 6, 5, '#2d2d33'); F(g, ox + 6, oy + 2, 4, 3, '#f7d774'); F(g, ox + 6, oy, 4, 1, '#2d2d33');
+};
+OP[T.WELL] = (g, ox, oy) => {
+  blob(g, ox + 8, oy + 10, 6, '#8a8680'); blob(g, ox + 8, oy + 10, 3, '#1d3550'); F(g, ox + 6, oy + 9, 2, 1, '#3d6590');
+  F(g, ox + 2, oy + 2, 1, 9, '#6b4a2b'); F(g, ox + 13, oy + 2, 1, 9, '#6b4a2b'); F(g, ox + 1, oy, 14, 3, '#8e3328'); F(g, ox + 1, oy + 2, 14, 1, '#6e2219'); F(g, ox + 3, oy + 4, 10, 1, '#6b4a2b');
+};
+OP[T.STALL] = (g, ox, oy, tx) => {
+  const cols = [['#c0392b', '#f4e9d8'], ['#2e6db4', '#f4e9d8'], ['#d68910', '#f4e9d8']][tx % 3];
+  F(g, ox + 1, oy + 9, 14, 6, '#8a5a2b'); F(g, ox + 1, oy + 9, 14, 1, '#a8743c'); F(g, ox + 1, oy + 6, 1, 4, '#6b4423'); F(g, ox + 14, oy + 6, 1, 4, '#6b4423');
+  for (let x = 0; x < 16; x += 2) F(g, ox + x, oy + 1, 2, 5, cols[(x / 2) % 2]);
+  for (let x = 0; x < 16; x += 4) F(g, ox + x + 1, oy + 6, 2, 1, cols[0]);
+  for (let x = 3; x < 13; x += 3) { F(g, ox + x, oy + 8, 2, 2, ['#d23a3a', '#f2d14b', '#6aa84f'][(x + tx) % 3]); }
+};
+OP[T.HAY] = (g, ox, oy, tx, ty) => {
+  F(g, ox + 1, oy + 13, 14, 3, 'rgba(0,0,0,0.25)'); blob(g, ox + 8, oy + 10, 7, '#c79f3c'); blob(g, ox + 8, oy + 9, 5, '#e3c25a');
+  for (let i = 0; i < 9; i++) F(g, ox + 2 + Math.floor(hash(tx, ty, 60 + i) * 12), oy + 4 + Math.floor(hash(tx, ty, 70 + i) * 10), 1, 2, '#a8852c');
+};
+// interior
+OP[T.IEDGE] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#2a1c13');
+OP[T.SEDGE] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#1e1d1c');
+OP[T.IWALL] = (g, ox, oy, tx, ty) => {
+  F(g, ox, oy, 16, 10, '#cdb98f'); speck(g, ox, oy, 5, ['#bfa97c', '#d9c79f'], 13, tx, ty);
+  F(g, ox, oy + 9, 16, 1, '#5e3e26'); F(g, ox, oy + 10, 16, 6, '#7a5233'); F(g, ox + 7, oy + 10, 1, 6, '#5e3e26'); F(g, ox + 15, oy + 10, 1, 6, '#5e3e26'); F(g, ox, oy + 15, 16, 1, '#4a301d');
+};
+OP[T.SWALL] = (g, ox, oy, tx, ty) => { stoneTile(g, ox, oy, tx, ty); F(g, ox, oy + 15, 16, 1, '#3a3b42'); };
+OP[T.FIRE] = (g, ox, oy) => {
+  F(g, ox, oy, 16, 16, '#6d6a66'); F(g, ox, oy + 3, 16, 2, '#5e3e26'); F(g, ox + 3, oy + 6, 10, 10, '#4f4c48'); F(g, ox + 4, oy + 7, 8, 9, '#1a1110');
+  F(g, ox + 5, oy + 13, 6, 3, '#e2672a'); F(g, ox + 6, oy + 11, 4, 3, '#f2a33a'); F(g, ox + 7, oy + 10, 2, 2, '#ffe08a');
+};
+OP[T.EXIT] = (g, ox, oy) => { F(g, ox, oy, 2, 16, '#2a1c13'); F(g, ox + 14, oy, 2, 16, '#2a1c13'); F(g, ox + 3, oy + 3, 10, 9, '#5e4f35'); F(g, ox + 4, oy + 4, 8, 7, '#7d6b4a'); F(g, ox + 2, oy + 14, 12, 2, '#f3d9a0'); };
+OP[T.BED] = (g, ox, oy, tx, ty, m) => { F(g, ox + 1, oy + 1, 14, 15, '#6b4423'); F(g, ox + 1, oy + 1, 14, 4, '#5a3a1d'); F(g, ox + 2, oy + 5, 12, 11, '#e9e4d8'); F(g, ox + 3, oy + 6, 10, 4, '#ffffff'); F(g, ox + 3, oy + 9, 10, 1, '#d0cabc'); F(g, ox + 2, oy + 13, 12, 3, m.blanket); };
+OP[T.BED2] = (g, ox, oy, tx, ty, m) => { F(g, ox + 1, oy, 14, 15, '#6b4423'); F(g, ox + 2, oy, 12, 13, m.blanket); F(g, ox + 2, oy + 4, 12, 1, shade(m.blanket, -0.2)); F(g, ox + 2, oy + 9, 12, 1, shade(m.blanket, -0.2)); F(g, ox + 1, oy + 14, 14, 2, '#4a2e17'); };
+OP[T.TABLE] = (g, ox, oy, tx) => {
+  F(g, ox + 1, oy + 13, 14, 3, 'rgba(0,0,0,0.25)'); F(g, ox, oy + 3, 16, 9, '#8b5a2b'); F(g, ox, oy + 11, 16, 2, '#6b4423'); F(g, ox + 1, oy + 13, 2, 3, '#5a381c'); F(g, ox + 13, oy + 13, 2, 3, '#5a381c');
+  if (tx % 2) { F(g, ox + 4, oy + 5, 3, 3, '#e8e0d0'); F(g, ox + 7, oy + 6, 1, 1, '#e8e0d0'); } else { blob(g, ox + 9, oy + 7, 2, '#c78d48'); }
+};
+OP[T.CHAIR] = (g, ox, oy) => { F(g, ox + 4, oy + 3, 8, 5, '#6b4423'); F(g, ox + 4, oy + 8, 8, 4, '#8b5a2b'); F(g, ox + 4, oy + 12, 1, 3, '#5a381c'); F(g, ox + 11, oy + 12, 1, 3, '#5a381c'); };
+OP[T.CHEST] = (g, ox, oy) => {
+  F(g, ox + 2, oy + 14, 12, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 1, oy + 4, 14, 11, '#4a2e17'); F(g, ox + 2, oy + 5, 12, 9, '#8b5a2b'); F(g, ox + 2, oy + 5, 12, 3, '#a06a35');
+  F(g, ox + 4, oy + 4, 1, 11, '#d4a63a'); F(g, ox + 11, oy + 4, 1, 11, '#d4a63a'); F(g, ox + 7, oy + 8, 2, 3, '#d4a63a'); F(g, ox + 7, oy + 9, 1, 1, '#4a2e17');
+};
+OP[T.SHELF] = (g, ox, oy, tx, ty) => {
+  F(g, ox + 1, oy, 14, 16, '#5e3c22'); F(g, ox + 2, oy + 1, 12, 6, '#3a2414'); F(g, ox + 2, oy + 8, 12, 6, '#3a2414');
+  const bc = ['#a83232', '#3a6ea8', '#3f8a3a', '#c9a04a', '#7a4ea8'];
+  for (const sy of [1, 8]) { let x = 2; while (x < 13) { const w = 1 + Math.floor(hash(tx * 9 + x, ty + sy, 80) * 2), h = 4 + Math.floor(hash(tx + x, ty * 9 + sy, 81) * 3); F(g, ox + x, oy + sy + 6 - h, w, h, bc[Math.floor(hash(x, sy, tx + 82) * 5)]); x += w + (hash(x, tx, 83) < 0.2 ? 2 : 0); if (x > 8 && sy === 8) break; } }
+  F(g, ox + 10, oy + 10, 3, 4, '#e8c45a'); F(g, ox + 11, oy + 9, 1, 1, '#fff2a8');
+};
+OP[T.DRESSER] = (g, ox, oy) => {
+  F(g, ox + 1, oy + 3, 14, 13, '#5e3c22'); F(g, ox + 2, oy + 5, 12, 4, '#8f5a31'); F(g, ox + 2, oy + 10, 12, 4, '#8f5a31');
+  F(g, ox + 7, oy + 6, 2, 1, '#e0c060'); F(g, ox + 7, oy + 11, 2, 1, '#e0c060'); F(g, ox + 4, oy + 1, 4, 3, '#a83232'); F(g, ox + 5, oy + 1, 2, 1, '#e8c45a');
+};
+OP[T.POT] = (g, ox, oy) => { F(g, ox + 3, oy + 14, 10, 2, 'rgba(0,0,0,0.25)'); blob(g, ox + 8, oy + 10, 5, '#b5653a'); F(g, ox + 6, oy + 3, 4, 3, '#a0552e'); F(g, ox + 5, oy + 2, 6, 2, '#c97a4a'); F(g, ox + 5, oy + 8, 1, 4, '#d9925e'); F(g, ox + 4, oy + 11, 8, 1, '#8a4524'); };
+OP[T.PLANT] = (g, ox, oy) => { F(g, ox + 5, oy + 11, 6, 5, '#b5653a'); F(g, ox + 4, oy + 11, 8, 1, '#c97a4a'); blob(g, ox + 8, oy + 7, 4, '#3f8a3a'); F(g, ox + 4, oy + 4, 2, 4, '#2f6b2f'); F(g, ox + 10, oy + 3, 2, 5, '#2f6b2f'); F(g, ox + 7, oy + 2, 2, 3, '#5aa64c'); };
+OP[T.BARS] = (g, ox, oy) => { for (let x = 1; x < 16; x += 3) { F(g, ox + x, oy, 1, 16, '#3c3c44'); F(g, ox + x + 1, oy, 1, 16, '#6a6a74'); } F(g, ox, oy + 2, 16, 1, '#3c3c44'); F(g, ox, oy + 13, 16, 1, '#3c3c44'); };
+OP[T.DESK] = (g, ox, oy, tx) => { F(g, ox, oy + 13, 16, 3, 'rgba(0,0,0,0.25)'); F(g, ox, oy + 3, 16, 10, '#6e4523'); F(g, ox, oy + 3, 16, 4, '#8b5a2b'); if (tx % 2) { F(g, ox + 3, oy + 4, 6, 3, '#efe8d6'); F(g, ox + 10, oy + 2, 1, 4, '#f2f2f2'); } else { F(g, ox + 4, oy + 1, 2, 4, '#efe8d6'); F(g, ox + 4, oy, 2, 1, '#f7d774'); F(g, ox + 9, oy + 4, 4, 2, '#3a3a42'); } };
+OP[T.BENCH] = (g, ox, oy) => { F(g, ox + 1, oy + 7, 14, 4, '#8b5a2b'); F(g, ox + 1, oy + 7, 14, 1, '#a8743c'); F(g, ox + 2, oy + 11, 2, 4, '#5a381c'); F(g, ox + 12, oy + 11, 2, 4, '#5a381c'); };
+
+// overlays for emptied containers
+const EMPTY = {};
+EMPTY[T.CHEST] = (g, ox, oy) => { F(g, ox + 1, oy, 14, 5, '#4a2e17'); F(g, ox + 2, oy + 1, 12, 3, '#a06a35'); F(g, ox + 2, oy + 5, 12, 4, '#1e130b'); F(g, ox + 4, oy, 1, 5, '#d4a63a'); F(g, ox + 11, oy, 1, 5, '#d4a63a'); };
+EMPTY[T.SHELF] = (g, ox, oy) => { F(g, ox + 9, oy + 8, 5, 6, '#3a2414'); F(g, ox + 2, oy + 1, 6, 6, '#3a2414'); F(g, ox + 3, oy + 5, 4, 1, '#a83232'); };
+EMPTY[T.DRESSER] = (g, ox, oy) => { F(g, ox + 1, oy + 10, 14, 5, '#a46b3c'); F(g, ox + 2, oy + 9, 12, 1, '#1e130b'); F(g, ox + 4, oy + 1, 4, 3, '#5e3c22'); };
+EMPTY[T.POT] = (g, ox, oy) => { F(g, ox + 5, oy + 2, 6, 2, '#1e130b'); F(g, ox + 11, oy + 13, 4, 2, '#c97a4a'); };
+
+function renderMap(m) {
+  const c = mk(m.w * TS, m.h * TS), g = c.getContext('2d');
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { const gr = m.ground[y * m.w + x]; (GP[gr] || GP[T.GRASS])(g, x * TS, y * TS, x, y, m); }
+  if (m.rug) {
+    const r = m.rug, x = r.x * TS + 3, y = r.y * TS + 3, w = r.w * TS - 6, h = r.h * TS - 6;
+    F(g, x, y, w, h, r.c2); F(g, x + 2, y + 2, w - 4, h - 4, r.c); F(g, x + 4, y + 4, w - 8, h - 8, r.c2); F(g, x + 5, y + 5, w - 10, h - 10, r.c);
+    for (let i = 8; i < w - 8; i += 6) { F(g, x + i, y + h / 2 - 1, 2, 2, r.c2); }
+  }
+  for (let y = 0; y < m.h; y++) for (let x = 0; x < m.w; x++) { const t = m.tiles[y * m.w + x]; if (OP[t]) OP[t](g, x * TS, y * TS, x, y, m); }
+  if (m.kind === 'town') { // Watch House shield above the jail door
+    const d = m.jail.door, ox = d.x * TS, oy = (d.y - 1) * TS;
+    F(g, ox + 4, oy + 2, 8, 9, '#c9a04a'); F(g, ox + 5, oy + 3, 6, 7, '#2f4f9e'); F(g, ox + 6, oy + 10, 4, 2, '#c9a04a'); F(g, ox + 7, oy + 12, 2, 1, '#c9a04a'); F(g, ox + 7, oy + 4, 2, 5, '#e8c45a'); F(g, ox + 6, oy + 5, 4, 1, '#e8c45a');
+  }
+  m.canvas = c;
+}
+
+// =====================================================================
+//  CHARACTERS
+// =====================================================================
+function drawChar(sp, dir, f) {
+  const c = mk(16, 22), g = c.getContext('2d'); const ox = 2, oy = 6;
+  const r = (x, y, w, h, col) => { if (!col) return; g.fillStyle = col; g.fillRect(ox + x, oy + y, w, h); };
+  const sd = shade(sp.shirt, -0.28), pd = shade(sp.pants, -0.25), sk = sp.skin, skd = shade(sk, -0.18), shoes = sp.shoes || '#2a1d14';
+  const hair = sp.hair, hc = sp.hatC, spearC = '#7a5a3a', tip = '#d6dae2', eye = '#1b1b1b';
+  if (sp.spear && dir === 'up') { r(-1, -3, 1, 18, spearC); r(-2, -4, 3, 1, tip); r(-1, -5, 1, 1, tip); }
+  if (dir === 'down' || dir === 'up') {
+    const l1 = f === 1 ? 1 : 0, l2 = f === 2 ? 1 : 0;
+    if (sp.dress) { r(2, 11, 8, 3, sp.pants); r(2, 13, 8, 1, pd); r(3, 14, 2, 1, skd); r(7, 14, 2, 1, skd); r(3, 15 - l1, 2, 1, shoes); r(7, 15 - l2, 2, 1, shoes); }
+    else { r(3, 12, 2, 3 - l1, sp.pants); r(3, 15 - l1, 2, 1, shoes); r(7, 12, 2, 3 - l2, sp.pants); r(7, 15 - l2, 2, 1, shoes); }
+    r(2, 7, 8, 5, sp.shirt); r(2, 11, 8, 1, sp.belt || sd);
+    if (dir === 'down' && sp.apron) r(3, 8, 6, 5, sp.apron);
+    if (dir === 'down' && sp.emblem) { r(5, 8, 2, 2, sp.emblem); }
+    if (dir === 'up' && sp.sack) { r(3, 7, 6, 5, '#9c7a4a'); r(4, 6, 4, 1, '#7a5a34'); r(5, 8, 1, 3, '#b8955f'); }
+    const a = f === 1 ? 1 : 0, b = f === 2 ? 1 : 0;
+    r(1, 7 + a, 1, 4, sd); r(1, 11 + a, 1, 1, sk); r(10, 7 + b, 1, 4, sd); r(10, 11 + b, 1, 1, sk);
+    r(2, 1, 8, 6, sk); r(2, 6, 8, 1, skd);
+    if (dir === 'down') {
+      r(3, 4, 1, 1, eye); r(8, 4, 1, 1, eye);
+      if (sp.beard) r(3, 5, 6, 2, hair);
+      if (sp.mask) r(2, 5, 8, 2, sp.mask);
+      if (sp.patch) { r(7, 3, 2, 2, '#111'); r(2, 2, 8, 1, '#111'); }
+      if (sp.rosy) { r(3, 5, 1, 1, '#e8908a'); r(8, 5, 1, 1, '#e8908a'); }
+      const st = sp.hairStyle;
+      if (st === 'short' || st === 'bun' || st === 'long') { r(2, 0, 8, 2, hair); r(2, 2, 1, 2, hair); r(9, 2, 1, 2, hair); }
+      if (st === 'long') { r(1, 2, 1, 7, hair); r(10, 2, 1, 7, hair); r(2, 2, 1, 4, hair); r(9, 2, 1, 4, hair); }
+      if (st === 'bun') r(4, -2, 4, 2, hair);
+      if (st === 'bald') { r(2, 1, 8, 1, skd); r(2, 2, 1, 2, hair); r(9, 2, 1, 2, hair); }
+    } else {
+      const st = sp.hairStyle;
+      if (st === 'bald') { r(2, 1, 8, 2, skd); r(2, 3, 8, 3, hair); }
+      else r(2, 0, 8, 6, hair);
+      if (st === 'long') r(1, 2, 10, 7, hair);
+      if (st === 'bun') r(4, -2, 4, 2, hair);
+    }
+    if (sp.hat === 'hood') {
+      if (dir === 'down') { r(1, -1, 10, 3, hc); r(1, 2, 2, 5, hc); r(9, 2, 2, 5, hc); r(3, 2, 6, 1, shade(hc, -0.35)); r(1, 7, 10, 2, hc); }
+      else { r(1, -1, 10, 8, hc); r(1, 7, 10, 3, hc); r(4, 0, 4, 1, shade(hc, 0.15)); }
+    } else if (sp.hat === 'helmet') {
+      r(2, -1, 8, 3, '#b9bec8'); r(1, 2, 10, 1, '#7f8590'); r(3, -1, 2, 1, '#e1e5ec'); r(5, -3, 2, 2, '#c0392b');
+      if (dir === 'down') r(5, 2, 2, 2, '#7f8590');
+    } else if (sp.hat === 'cap') {
+      r(2, -1, 8, 3, hc); if (dir === 'down') r(1, 2, 10, 1, shade(hc, -0.3));
+    } else if (sp.hat === 'kerchief') {
+      r(2, -1, 8, 3, hc); r(1, 1, 1, 2, hc); r(10, 1, 1, 2, hc); if (dir === 'up') { r(2, 2, 8, 2, hc); r(5, 4, 2, 2, hc); }
+    }
+    if (sp.spear && dir === 'down') { r(11, -3, 1, 18, spearC); r(10, -4, 3, 1, tip); r(11, -5, 1, 1, tip); r(10, 9, 2, 1, sk); }
+  } else { // left (right is mirrored)
+    if (sp.dress) { r(3, 11, 6, 3, sp.pants); r(3, 13, 6, 1, pd); if (f === 1) { r(2, 15, 3, 1, shoes); r(7, 15, 2, 1, shoes); } else r(3, 15, 5, 1, shoes); r(4, 14, 4, 1, skd); }
+    else if (f === 1) { r(2, 12, 2, 3, sp.pants); r(1, 15, 3, 1, shoes); r(7, 12, 2, 3, pd); r(7, 15, 3, 1, shoes); }
+    else if (f === 2) { r(4, 12, 2, 3, pd); r(5, 12, 2, 3, sp.pants); r(3, 15, 5, 1, shoes); }
+    else { r(4, 12, 3, 3, sp.pants); r(3, 15, 4, 1, shoes); }
+    r(3, 7, 6, 5, sp.shirt); r(3, 11, 6, 1, sp.belt || sd);
+    if (sp.sack) { r(8, 7, 3, 5, '#9c7a4a'); r(8, 6, 2, 1, '#7a5a34'); }
+    r(3, 1, 6, 6, sk); r(2, 4, 1, 1, sk); r(3, 6, 6, 1, skd); r(4, 4, 1, 1, eye);
+    if (sp.beard) r(3, 5, 4, 2, hair);
+    if (sp.mask) r(2, 5, 5, 2, sp.mask);
+    if (sp.patch) { r(3, 3, 2, 2, '#111'); r(5, 2, 4, 1, '#111'); }
+    const st = sp.hairStyle;
+    if (st !== 'bald') { r(3, 0, 6, 2, hair); r(7, 2, 2, 4, hair); } else r(7, 2, 2, 3, hair);
+    if (st === 'long') r(8, 2, 2, 7, hair);
+    if (st === 'bun') r(7, -1, 3, 2, hair);
+    if (sp.hat === 'hood') { r(3, -1, 7, 3, hc); r(7, 2, 3, 6, hc); r(3, 7, 7, 2, hc); }
+    else if (sp.hat === 'helmet') { r(3, -1, 7, 3, '#b9bec8'); r(2, 2, 8, 1, '#7f8590'); r(4, -1, 2, 1, '#e1e5ec'); r(5, -3, 3, 2, '#c0392b'); }
+    else if (sp.hat === 'cap') { r(3, -1, 6, 3, hc); r(1, 2, 4, 1, shade(hc, -0.3)); }
+    else if (sp.hat === 'kerchief') { r(3, -1, 6, 3, hc); r(8, 1, 2, 3, hc); }
+    const ao = f === 1 ? -1 : f === 2 ? 1 : 0;
+    r(5 + ao, 7, 2, 4, sd); r(5 + ao, 11, 2, 1, sk);
+    if (sp.spear) { r(1, -3, 1, 18, spearC); r(0, -4, 3, 1, tip); r(1, -5, 1, 1, tip); r(2, 9, 2, 1, sk); }
+  }
+  return c;
+}
+function makeSheet(sp) {
+  const sheet = {};
+  for (const d of ['down', 'up', 'left']) sheet[d] = [0, 1, 2].map(f => drawChar(sp, d, f));
+  sheet.right = sheet.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; });
+  return sheet;
+}
+const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
+const HAIRS = ['#2b1d14', '#5a3b22', '#b8860b', '#d9d9d9', '#7a2e1c', '#111111'];
+const SHIRTS = ['#a83232', '#3a6ea8', '#3f8a3a', '#c97a2a', '#7a4ea8', '#2a8a8a', '#b84a7a', '#6a6a2a'];
+const PLAYER_SHEET = makeSheet({ skin: '#f1c27d', hair: '#3a2a1c', hairStyle: 'short', hat: 'hood', hatC: '#3b3b4a', shirt: '#4a4a5c', pants: '#2e2e38', mask: '#22222a', sack: true, belt: '#6b4a2b' });
+function guardSheet(i) { return makeSheet({ skin: SKINS[i % 5], hair: HAIRS[i % 6], hairStyle: 'short', hat: 'helmet', shirt: '#2f4f9e', pants: '#3a3a46', emblem: '#e0b43a', belt: '#e0b43a', spear: true, beard: i % 3 === 1 }); }
+const FENCE_SHEETS = [
+  makeSheet({ skin: '#e0ac69', hair: '#7a2e1c', hairStyle: 'long', hat: 'hood', hatC: '#5b2d6e', shirt: '#4a2357', pants: '#2a1a30', dress: true }),
+  makeSheet({ skin: '#c68642', hair: '#111111', hairStyle: 'short', hat: 'cap', hatC: '#3a3a2a', shirt: '#5a4a2a', pants: '#2a2a2a', patch: true, beard: true }),
+];
+const JAILER_SHEET = makeSheet({ skin: '#ffdbac', hair: '#5a3b22', hairStyle: 'bald', shirt: '#2f4f9e', pants: '#3a3a46', emblem: '#e0b43a', beard: true });
+const PRISONER_SHEETS = [makeSheet({ skin: '#e0ac69', hair: '#5a3b22', hairStyle: 'short', shirt: '#8a8070', pants: '#5a5448', beard: true }), makeSheet({ skin: '#8d5524', hair: '#111111', hairStyle: 'bald', shirt: '#8a8070', pants: '#5a5448' })];
+function residentSheet(rng) {
+  const dress = rng() < 0.45;
+  return makeSheet({
+    skin: SKINS[Math.floor(rng() * 5)], hair: HAIRS[Math.floor(rng() * 6)], hairStyle: dress ? (rng() < 0.5 ? 'long' : 'bun') : (rng() < 0.2 ? 'bald' : 'short'),
+    hat: rng() < 0.25 ? (dress ? 'kerchief' : 'cap') : null, hatC: SHIRTS[Math.floor(rng() * 8)], shirt: SHIRTS[Math.floor(rng() * 8)],
+    pants: dress ? SHIRTS[Math.floor(rng() * 8)] : ['#4a3a2a', '#3a3a4a', '#5a4a3a'][Math.floor(rng() * 3)], dress, beard: !dress && rng() < 0.35,
+    apron: rng() < 0.3 ? '#efe8d6' : null, rosy: rng() < 0.5,
+  });
+}
+
+// =====================================================================
+//  WORLD GENERATION
+// =====================================================================
+const FAMILIES = ['Miller', 'Baker', 'Cooper', 'Fletcher', 'Thatcher', 'Weaver', 'Smith', 'Tanner', 'Chandler', 'Potter', 'Mason', 'Carter', 'Brewer', 'Draper', 'Cobb'];
+const ITEMS = [['Silver Spoon', 8, 1], ['Wine Bottle', 10, 1], ['Silk Scarf', 12, 1], ['Candlestick', 16, 1], ['Coin Purse', 22, 1], ['Old Painting', 30, 2], ['Pocket Watch', 35, 2], ['Pearl Necklace', 45, 2], ['Jeweled Ring', 55, 3], ['Gold Goblet', 70, 3], ['Ruby Brooch', 90, 3]];
+function rollItem(w, rng = Math.random) {
+  const pool = ITEMS.filter(i => i[2] <= w), ws = pool.map(i => 1 / Math.sqrt(i[1]));
+  let s = ws.reduce((a, b) => a + b, 0), r = rng() * s;
+  for (let i = 0; i < pool.length; i++) { r -= ws[i]; if (r <= 0) return { name: pool[i][0], value: pool[i][1] }; }
+  return { name: pool[0][0], value: pool[0][1] };
+}
+
+const town = newMap('town', 60, 44, 'town');
+const lamps = [], windows = [], hays = [];
+function genTown() {
+  const m = town, W = m.w, H = m.h, R = mulberry32(7);
+  const setG = (x, y, id) => { const i = y * W + x; m.ground[i] = id; m.tiles[i] = id; };
+  const setO = (x, y, id) => { m.tiles[y * W + x] = id; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) setG(x, y, R() < 0.06 ? T.FLOWER : T.GRASS);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < 2 || y < 2 || x >= W - 2 || y >= H - 2) setO(x, y, T.TREE);
+  for (let x = 2; x <= W - 3; x++) for (const y of [10, 11, 22, 23, 34, 35]) setG(x, y, T.PATH);
+  for (let y = 2; y <= H - 3; y++) for (const x of [12, 13, 29, 30, 46, 47]) setG(x, y, T.PATH);
+  for (let y = 21; y <= 24; y++) for (let x = 23; x <= 36; x++) setG(x, y, T.COBBLE);
+  for (let y = 15; y <= 20; y++) for (let x = 22; x <= 28; x++) setG(x, y, T.COBBLE);
+  for (let y = 37; y <= 40; y++) { for (let x = 16; x <= 27; x++) setG(x, y, T.FIELD); for (let x = 33; x <= 43; x++) setG(x, y, T.FIELD); }
+  const defs = [[3, 4, 7], [15, 4, 6], [22, 4, 6], [32, 4, 6], [39, 4, 6], [49, 4, 7], [3, 16, 7], [15, 16, 6], [49, 16, 7], [3, 28, 7], [15, 28, 6], [22, 28, 6], [32, 28, 6], [39, 28, 6], [49, 28, 7]];
+  defs.forEach(([hx, hy, hw], i) => {
+    const dx = hx + Math.floor(hw / 2);
+    const h = { idx: i, x: hx, y: hy, w: hw, h: 5, door: { x: dx, y: hy + 4 }, approach: { x: dx, y: hy + 5 }, roof: i % 5, family: FAMILIES[i],
+      wealth: hy === 4 ? 2 + (i % 2) : hy === 16 ? 2 : 1 + (i % 2), cooldown: 0, discoverT: 0, doorOpenT: 0, visitStolen: 0, key: 'h' + i };
+    houses.push(h);
+    for (let yy = 0; yy < 5; yy++) for (let xx = 0; xx < hw; xx++) {
+      const x = hx + xx, y = hy + yy; m.owner[y * W + x] = i;
+      let t = yy < 3 ? T.ROOF : T.WALL;
+      if (yy >= 3 && (xx === 1 || xx === hw - 2)) t = T.WINDOW;
+      if (yy === 4 && x === dx) t = T.DOOR;
+      setO(x, y, t); if (t === T.WINDOW) windows.push({ x, y });
+    }
+    setG(dx, hy + 5, T.PATH);
+  });
+  const j = m.jail = { x: 32, y: 15, w: 9, h: 6, door: { x: 36, y: 20 }, approach: { x: 36, y: 21 } };
+  for (let yy = 0; yy < j.h; yy++) for (let xx = 0; xx < j.w; xx++) {
+    const x = j.x + xx, y = j.y + yy; let t = yy < 3 ? T.JROOF : T.STONE;
+    if (yy === 4 && [1, 3, 5, 7].includes(xx)) t = T.JWIN;
+    if (x === j.door.x && y === j.door.y) t = T.JDOOR;
+    setO(x, y, t);
+  }
+  for (const [x, y] of [[23, 16], [25, 16], [27, 16]]) setO(x, y, T.STALL);
+  setO(25, 19, T.WELL); setO(22, 15, T.BARREL); setO(28, 15, T.BARREL); setO(28, 19, T.CRATE);
+  for (const [x, y] of [[11, 12], [14, 12], [28, 12], [31, 12], [45, 12], [48, 12], [11, 24], [14, 24], [22, 25], [37, 25], [45, 24], [48, 24], [11, 36], [14, 36], [28, 36], [31, 36], [45, 36], [48, 36]]) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+  for (const [x, y] of [[9, 13], [44, 26], [19, 26], [32, 39], [50, 39], [57, 26], [24, 13]]) { setO(x, y, T.HAY); hays.push({ x, y }); }
+  for (const [x, y] of [[4, 13], [7, 14], [18, 13], [21, 14], [34, 13], [38, 14], [41, 13], [52, 14], [3, 26], [6, 25], [17, 25], [26, 26], [40, 26], [51, 25], [54, 26], [9, 40], [8, 37], [45, 39], [48, 40], [55, 38], [56, 40], [36, 13]]) setO(x, y, T.TREE);
+  for (const [x, y] of [[16, 25], [44, 13], [33, 26], [15, 41], [28, 41], [32, 41], [44, 41], [27, 13], [20, 13]]) setO(x, y, T.BUSH);
+  for (let x = 16; x <= 27; x++) if (x !== 21 && x !== 22) setO(x, 36, T.FENCE);
+  for (let x = 33; x <= 43; x++) if (x !== 38 && x !== 39) setO(x, 36, T.FENCE);
+  // fence hideouts
+  for (const [x, y, t] of [[3, 38, T.CRATE], [3, 39, T.CRATE], [4, 37, T.BARREL], [7, 40, T.BARREL], [55, 13, T.CRATE], [56, 13, T.CRATE], [56, 14, T.BARREL]]) setO(x, y, t);
+}
+
+function genInterior(h) {
+  const r = mulberry32(1000 + h.idx * 77), ri = (a, b) => a + Math.floor(r() * (b - a + 1));
+  const w = ri(11, 14), hh = ri(9, 10), m = newMap(h.key, w, hh, 'house');
+  m.house = h; h.map = m;
+  for (let i = 0; i < w * hh; i++) { m.ground[i] = T.FLOOR; m.tiles[i] = T.FLOOR; }
+  const set = (x, y, t) => { m.tiles[y * w + x] = t; };
+  for (let x = 0; x < w; x++) { set(x, 0, T.IEDGE); set(x, 1, T.IWALL); set(x, hh - 1, T.IEDGE); }
+  for (let y = 0; y < hh; y++) { set(0, y, T.IEDGE); set(w - 1, y, T.IEDGE); }
+  m.exit = { x: Math.floor(w / 2), y: hh - 1 }; set(m.exit.x, m.exit.y, T.EXIT);
+  m.entry = { x: m.exit.x, y: hh - 2 }; m.approach = h.approach;
+  m.blanket = ['#a83232', '#3a6ea8', '#3f8a3a', '#7a4ea8', '#c97a2a'][ri(0, 4)];
+  const bedLeft = r() < 0.5, bx = bedLeft ? 1 : w - 2; set(bx, 2, T.BED); set(bx, 3, T.BED2);
+  let fx = ri(2, w - 3); set(fx, 1, T.FIRE);
+  const top = []; for (let x = 2; x <= w - 3; x++) top.push([x, 2]);
+  const sides = []; for (let y = 4; y <= hh - 3; y++) { sides.push([1, y]); sides.push([w - 2, y]); }
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  shuffle(top); shuffle(sides);
+  const lootTiles = [];
+  const nShelf = ri(1, 2); for (let i = 0; i < nShelf; i++) { const [x, y] = top.pop(); set(x, y, T.SHELF); lootTiles.push([x, y]); }
+  { const [x, y] = top.pop(); set(x, y, T.DRESSER); lootTiles.push([x, y]); }
+  const nChest = h.wealth >= 2 ? 2 : 1; for (let i = 0; i < nChest; i++) { const [x, y] = sides.pop(); set(x, y, T.CHEST); lootTiles.push([x, y]); }
+  { const [x, y] = sides.pop(); set(x, y, T.POT); lootTiles.push([x, y]); }
+  if (sides.length) { const [x, y] = sides.pop(); set(x, y, r() < 0.5 ? T.IBARREL : T.PLANT); }
+  set(1, hh - 2, T.PLANT); set(w - 2, hh - 2, T.IBARREL);
+  const cx = Math.floor(w / 2), cy = hh - 5;
+  set(cx - 1, cy, T.TABLE); set(cx, cy, T.TABLE); set(cx - 2, cy, T.CHAIR); set(cx + 1, cy, T.CHAIR);
+  m.rug = { x: cx - 3, y: cy - 1, w: 6, h: 3, c: ['#9b2d30', '#2d4f9b', '#5a7a2d', '#7a2d6a'][ri(0, 3)], c2: '#d4a24c' };
+  for (const [x, y] of lootTiles) m.loot.set(y * w + x, { x, y, item: rollItem(h.wealth, r), taken: false, t: 0 });
+  // resident
+  const rs = residentSheet(r);
+  h.resident = { kind: 'resident', map: h.key, x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet: rs, animT: 0, state: 'idle', mode: 'watch', modeT: 0, sus: 0, path: null, repath: 0, wait: 0, bubble: null, house: h, warned: false, alarmT: 0 };
+  const t = randFloor(m); h.resident.x = t.x * TS + 8; h.resident.y = t.y * TS + 12;
+}
+function genJail() {
+  const w = 13, h = 10, m = newMap('jail', w, h, 'jail');
+  for (let i = 0; i < w * h; i++) { m.ground[i] = T.SFLOOR; m.tiles[i] = T.SFLOOR; }
+  const set = (x, y, t) => { m.tiles[y * w + x] = t; };
+  for (let x = 0; x < w; x++) { set(x, 0, T.SEDGE); set(x, 1, T.SWALL); set(x, h - 1, T.SEDGE); }
+  for (let y = 0; y < h; y++) { set(0, y, T.SEDGE); set(w - 1, y, T.SEDGE); }
+  for (const y of [2, 3]) { set(4, y, T.BARS); set(8, y, T.BARS); }
+  for (let x = 1; x < w - 1; x++) set(x, 4, T.BARS);
+  for (const x of [2, 6, 10]) set(x, 4, T.CELLDOOR);
+  set(2, 6, T.DESK); set(3, 6, T.DESK); set(10, 7, T.BENCH); set(11, 5, T.IBARREL); set(1, 8, T.IBARREL); set(1, 2, T.BENCH); set(11, 2, T.BENCH);
+  m.exit = { x: 6, y: h - 1 }; set(6, h - 1, T.EXIT); m.entry = { x: 6, y: h - 2 };
+  m.approach = town.jail.approach; m.cell = { x: 6, y: 4 }; m.cellOpen = true;
+}
+function randFloor(m) {
+  for (let i = 0; i < 200; i++) {
+    const x = 1 + Math.floor(Math.random() * (m.w - 2)), y = 2 + Math.floor(Math.random() * (m.h - 3));
+    if (!isSolid(m, x, y) && !(x === m.exit.x && y === m.exit.y)) return { x, y };
+  }
+  return { x: m.entry.x, y: m.entry.y };
+}
+
+genTown();
+houses.forEach(genInterior);
+genJail();
+Object.values(maps).forEach(renderMap);
+
+// minimap
+const MINI_COL = { [T.GRASS]: '#4a7f3a', [T.FLOWER]: '#4a7f3a', [T.PATH]: '#a88a5c', [T.COBBLE]: '#8a8680', [T.TREE]: '#1f4f22', [T.WALL]: '#d8c8a0', [T.WINDOW]: '#d8c8a0', [T.DOOR]: '#6b4423', [T.STONE]: '#6a6c74', [T.JROOF]: '#3a3e52', [T.JWIN]: '#6a6c74', [T.JDOOR]: '#2a2a30', [T.FIELD]: '#6a4a2a', [T.HAY]: '#d4ae45', [T.BUSH]: '#2f6e2f' };
+const miniCv = mk(town.w, town.h);
+{
+  const g = miniCv.getContext('2d');
+  for (let y = 0; y < town.h; y++) for (let x = 0; x < town.w; x++) {
+    const t = town.tiles[y * town.w + x];
+    F(g, x, y, 1, 1, t === T.ROOF ? ROOFS[houses[town.owner[y * town.w + x]].roof][0] : (MINI_COL[t] || MINI_COL[town.ground[y * town.w + x]] || '#4a7f3a'));
+  }
+}
+
+// =====================================================================
+//  ENTITIES & STATE
+// =====================================================================
+const GUARD_ROUTES = [[[3, 10], [56, 10]], [[3, 22], [56, 22]], [[3, 35], [56, 35]], [[29, 3], [29, 41]], [[12, 10], [12, 34], [46, 34], [46, 10]], [[24, 24], [35, 24]]];
+const GUARD_NAMES = ['Sgt. Bramble', 'Cpl. Hobb', 'Watchman Pell', 'Watchman Odo', 'Sgt. Varn', 'Watchman Tibb'];
+let guards = [];
+const fences = [
+  { kind: 'fence', name: 'Shady Mags', map: 'town', x: 5 * TS + 8, y: 39 * TS + 12, dir: 'right', fa: 0, sheet: FENCE_SHEETS[0], animT: 0, bubble: null, chatT: 3 },
+  { kind: 'fence', name: 'One-Eyed Rook', map: 'town', x: 54 * TS + 8, y: 14 * TS + 12, dir: 'left', fa: Math.PI, sheet: FENCE_SHEETS[1], animT: 0, bubble: null, chatT: 6 },
+];
+const jailNPCs = [
+  { kind: 'decor', map: 'jail', x: 3 * TS + 8, y: 5 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
+  { kind: 'decor', map: 'jail', x: 2 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[0], animT: 0, bubble: null, lines: ['Got any bread?', 'I was framed, I tell ya!', 'Psst... nice sack.'] },
+  { kind: 'decor', map: 'jail', x: 10 * TS + 8, y: 3 * TS + 8, dir: 'down', sheet: PRISONER_SHEETS[1], animT: 0, bubble: null, lines: ['Fourth time this week.', 'The food is awful.', 'Zzz...'] },
+];
+let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
+
+function newGame() {
+  player = { kind: 'player', map: 'town', x: 27 * TS + 8, y: 23 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
+    loot: [], smoke: 1, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
+  gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
+  up = { sack: false, boots: false, tongue: false }; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
+  guards = GUARD_ROUTES.map((route, i) => ({ kind: 'guard', name: GUARD_NAMES[i], map: 'town', x: route[0][0] * TS + 8, y: route[0][1] * TS + 12, fa: 0, dir: 'right', sheet: guardSheet(i), animT: 0,
+    route: route.map(([x, y]) => ({ x, y })), wi: 1, state: 'patrol', path: null, repath: 0, bubble: null, lostT: 0, lastKnown: null, searchT: 0, stunT: 0, pause: 0, target: null, stuckT: 0 }));
+  for (const h of houses) { h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.resident.state = 'idle'; h.resident.sus = 0; }
+  maps.jail.cellOpen = true;
+}
+newGame();
+state = 'title';
+
+function msg(text, color = '#ffffff') { msgs.push({ text, color, t: 5 }); if (msgs.length > 5) msgs.shift(); }
+function say(e, text, dur = 2.6) { e.bubble = { text, t: dur }; }
+const sackCap = () => up.sack ? 10 : 6;
+const lootValue = () => player.loot.reduce((a, b) => a + b.value, 0);
+function dayInfo() {
+  const t = ((gameTime + 60) % DAY_LEN) / DAY_LEN; let dark = 0, name = 'Day';
+  if (t < 0.55) { dark = 0; name = 'Day'; } else if (t < 0.65) { dark = (t - 0.55) / 0.1 * 0.62; name = 'Dusk'; }
+  else if (t < 0.9) { dark = 0.62; name = 'Night'; } else { dark = (1 - (t - 0.9) / 0.1) * 0.62; name = 'Dawn'; }
+  return { dark, name, day: Math.floor((gameTime + 60) / DAY_LEN) + 1 };
+}
+const isNight = () => dayInfo().dark > 0.35;
+
+// =====================================================================
+//  MOVEMENT / PATHING / SIGHT
+// =====================================================================
+function tileOfE(e) { return { x: Math.floor(e.x / TS), y: Math.floor((e.y - 3) / TS) }; }
+function boxFree(m, x, y) {
+  const x0 = Math.floor((x - 4) / TS), x1 = Math.floor((x + 3.99) / TS), y0 = Math.floor((y - 5) / TS), y1 = Math.floor((y - 0.01) / TS);
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) if (isSolid(m, tx, ty)) return false;
+  return true;
+}
+function moveEntity(e, dx, dy) {
+  const m = maps[e.map];
+  if (dx) {
+    if (boxFree(m, e.x + dx, e.y)) e.x += dx;
+    else if (!dy) { for (let k = 1; k <= 6; k++) { if (boxFree(m, e.x + dx, e.y - k)) { e.y -= Math.min(k, Math.abs(dx) + 0.3); break; } if (boxFree(m, e.x + dx, e.y + k)) { e.y += Math.min(k, Math.abs(dx) + 0.3); break; } } }
+  }
+  if (dy) {
+    if (boxFree(m, e.x, e.y + dy)) e.y += dy;
+    else if (!dx) { for (let k = 1; k <= 6; k++) { if (boxFree(m, e.x - k, e.y + dy)) { e.x -= Math.min(k, Math.abs(dy) + 0.3); break; } if (boxFree(m, e.x + k, e.y + dy)) { e.x += Math.min(k, Math.abs(dy) + 0.3); break; } } }
+  }
+}
+function bfs(m, sx, sy, gx, gy) {
+  const w = m.w, h = m.h; if (sx === gx && sy === gy) return [];
+  if (sx < 0 || sy < 0 || sx >= w || sy >= h || gx < 0 || gy < 0 || gx >= w || gy >= h) return null;
+  const prev = new Int32Array(w * h).fill(-1), q = new Int32Array(w * h); let qh = 0, qt = 0;
+  const s = sy * w + sx, gI = gy * w + gx; prev[s] = s; q[qt++] = s;
+  while (qh < qt) {
+    const c = q[qh++]; if (c === gI) break; const cx = c % w, cy = (c / w) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+      const n = ny * w + nx; if (prev[n] !== -1) continue; if (n !== gI && isSolid(m, nx, ny)) continue; prev[n] = c; q[qt++] = n;
+    }
+  }
+  if (prev[gI] === -1) return null;
+  const path = []; let c = gI; while (c !== s) { path.push({ x: c % w, y: (c / w) | 0 }); c = prev[c]; } path.reverse(); return path;
+}
+function followPath(e, spd, dt) {
+  if (!e.path || !e.path.length) return true;
+  const n = e.path[0], tx = n.x * TS + 8, ty = n.y * TS + 12, dx = tx - e.x, dy = ty - e.y, d = Math.hypot(dx, dy), step = spd * dt;
+  e.moving = true; e.fa = turnToward(e.fa, Math.atan2(dy, dx), dt * 12);
+  if (d <= step) { e.x = tx; e.y = ty; e.path.shift(); return !e.path.length; }
+  e.x += dx / d * step; e.y += dy / d * step; return false;
+}
+// Walk toward a tile on any map, passing through house doors as needed. Returns true on arrival.
+function navTo(e, mkey, tx, ty, spd, dt, dyn) {
+  let gx, gy, tr = 0;
+  if (e.map === mkey) { gx = tx; gy = ty; }
+  else if (e.map === 'town') { const m = maps[mkey]; gx = m.approach.x; gy = m.approach.y; tr = 1; }
+  else { const m = maps[e.map]; gx = m.exit.x; gy = m.exit.y; tr = 2; }
+  const key = e.map + ':' + gx + ',' + gy; e.repath -= dt;
+  if (e.pathKey !== key || !e.path || (dyn && e.repath <= 0)) {
+    const t = tileOfE(e); const p = bfs(maps[e.map], t.x, t.y, gx, gy);
+    e.path = p || []; e.pathKey = key; e.repath = 0.35; e.noPath = !p;
+  }
+  if (e.noPath) { e.stuckT = (e.stuckT || 0) + dt; return false; }
+  e.stuckT = 0;
+  if (followPath(e, spd, dt)) {
+    const t = tileOfE(e);
+    if (t.x === gx && t.y === gy) {
+      if (tr === 1) { const m = maps[mkey]; e.map = mkey; e.x = m.entry.x * TS + 8; e.y = m.entry.y * TS + 12; e.path = null; e.fa = -Math.PI / 2; return false; }
+      if (tr === 2) { const m = maps[e.map]; e.map = 'town'; e.x = m.approach.x * TS + 8; e.y = m.approach.y * TS + 12; e.path = null; e.fa = Math.PI / 2; return false; }
+      return true;
+    }
+    e.path = null;
+  }
+  return false;
+}
+function inSmoke(map, x, y) { for (const c of clouds) if (c.map === map && Math.hypot(c.x - x, c.y - y) < c.r) return true; return false; }
+function losClear(map, x0, y0, x1, y1) {
+  const m = maps[map], d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 4);
+  for (let i = 1; i < n; i++) {
+    const x = x0 + (x1 - x0) * i / n, y = y0 + (y1 - y0) * i / n;
+    if (isOpaque(m, Math.floor(x / TS), Math.floor(y / TS))) return false;
+    if (clouds.length && inSmoke(map, x, y)) return false;
+  }
+  return true;
+}
+function canSee(e, t, range, cosHalf) {
+  if (e.map !== t.map || t.state === 'hidden') return false;
+  const ex = e.x, ey = e.y - 8, tx = t.x, ty = t.y - 6, dx = tx - ex, dy = ty - ey, d = Math.hypot(dx, dy);
+  if (d > range) return false;
+  if (d > 14 && (dx * Math.cos(e.fa) + dy * Math.sin(e.fa)) / d < cosHalf) return false;
+  if (inSmoke(e.map, ex, ey)) return false;
+  return losClear(e.map, ex, ey, tx, ty);
+}
+const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? 100 - dayInfo().dark * 55 : 110; };
+const guardSees = g => canSee(g, player, guardRange(), 0.62);
+function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
+function roughDist(a, b) { const pa = townPos(a), pb = townPos(b); return Math.hypot(pa.x - pb.x, pa.y - pb.y) + (a.map === b.map ? 0 : 60); }
+
+// =====================================================================
+//  GAME ACTIONS
+// =====================================================================
+let fade = { a: 0, dir: 0, fn: null };
+function transition(fn) { if (fade.dir) return; fade.dir = 1; fade.fn = fn; }
+
+function setWanted(reason) {
+  if (!wanted) msg(reason, '#ff6b6b');
+  wanted = true; lastSeenT = gameTime;
+}
+function dispatchGuards(mapKey, tx, ty, n) {
+  const target = { map: mapKey, x: tx, y: ty };
+  const spot = { map: mapKey, x: tx * TS + 8, y: ty * TS + 12 };
+  const free = guards.filter(g => ['patrol', 'pause', 'return', 'search'].includes(g.state)).sort((a, b) => roughDist(a, spot) - roughDist(b, spot));
+  free.slice(0, n).forEach(g => { g.state = 'respond'; g.target = target; g.path = null; say(g, pick(["On my way!", "Trouble at the " + (maps[mapKey].house ? maps[mapKey].house.family + "s'!" : "square!"), "I hear you!"])); });
+  return free.slice(0, n);
+}
+function raiseAlarm(h) {
+  const r = h.resident; if (r.state === 'alarm') return;
+  r.state = 'alarm'; r.alarmT = 30; r.sus = 100; say(r, 'THIEF! WATCH! WATCH!', 3.5);
+  SFX.alarm(); h.cooldown = 180;
+  setWanted(`The ${h.family}s are calling the Watch! RUN!`);
+  const sent = dispatchGuards(h.key, h.map.entry.x, h.map.entry.y, 1);
+  const g2 = dispatchGuards('town', h.approach.x, h.approach.y, 1);
+  alertPing = { x: h.approach.x, y: h.approach.y, t: 8 };
+  if (sent.length) msg(`${sent[0].name} is coming to the ${h.family} house!`, '#ffb36b');
+}
+function theftDiscovered(h) {
+  h.cooldown = 180; h.resident.state = 'alarm'; h.resident.alarmT = 20; say(h.resident, 'We were robbed!!', 4);
+  SFX.alarm(); setWanted(`The ${h.family}s discovered the theft! The Watch is searching.`);
+  dispatchGuards('town', h.approach.x, h.approach.y, 2); alertPing = { x: h.approach.x, y: h.approach.y, t: 8 };
+}
+
+function knock(h) {
+  const p = player; p.state = 'knocking'; p.knockT = 1.45; p.knockHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2; SFX.knock(); say(p, '*knock knock*', 1.4);
+}
+function resolveKnock(h) {
+  const p = player; p.state = 'free'; let refuse = null;
+  const doorSpot = { x: h.door.x * TS + 8, y: h.door.y * TS + 6 }; const doorE = { x: doorSpot.x, y: doorSpot.y };
+  if (h.resident.state === 'alarm') refuse = 'Get away from my door, thief!';
+  else if (wanted) refuse = pick(['I heard the whistles. Go away!', 'Not with the Watch about!']);
+  else if (h.cooldown > 0) refuse = pick(['You again? Clear off!', "I've had enough visitors today.", 'Come back another day.']);
+  else if (isNight() && Math.random() < 0.35) refuse = "It's the middle of the night!";
+  else if (Math.random() < 0.08) { refuse = '...(no answer)...'; h.cooldown = 8; }
+  if (refuse) { doorBubble = { x: doorE.x, y: doorE.y, text: refuse, t: 2.8 }; SFX.deny(); return; }
+  h.doorOpenT = 0.8; SFX.door();
+  doorBubble = { x: doorE.x, y: doorE.y, text: pick(['Come in, come in!', 'Oh, a visitor! Do come in.', 'Welcome, friend!', 'Wipe your boots!']), t: 1.6 };
+  transition(() => enterHouse(h));
+}
+let doorBubble = null;
+function enterHouse(h) {
+  const p = player, m = h.map;
+  p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
+  h.visitStolen = 0;
+  const r = h.resident; r.state = 'host'; r.mode = 'watch'; r.modeT = rnd(3, 4.5); r.sus = 0; r.warned = false; r.path = null;
+  const spot = { x: m.entry.x, y: Math.max(2, m.entry.y - 2) }; if (!isSolid(m, spot.x, spot.y)) { r.x = spot.x * TS + 8; r.y = spot.y * TS + 12; }
+  say(r, pick(['Make yourself at home!', 'Lovely to have company.', 'Care for some tea?', 'Mind the rug, dear.', 'What brings you by?']), 3);
+}
+function leaveHouse(h) {
+  transition(() => {
+    const p = player; p.map = 'town'; p.x = h.approach.x * TS + 8; p.y = h.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+    for (const g of guards) if (g.state === 'chase' && g.map === h.key && g.lostT < 2) { g.lastKnown = { map: 'town', x: p.x, y: p.y }; }
+    const r = h.resident;
+    if (r.state !== 'alarm') {
+      r.state = 'idle'; h.cooldown = Math.max(h.cooldown, 60);
+      if (h.visitStolen > 0 && Math.random() < Math.min(0.75, 0.18 * h.visitStolen)) h.discoverT = rnd(8, 18);
+    }
+  });
+}
+function startSteal(e) {
+  if (player.loot.length >= sackCap()) { msg('Your sack is full! Sell to a fence.', '#ffb36b'); SFX.deny(); return; }
+  player.state = 'stealing'; player.stealT = 0; player.stealTarget = e;
+}
+function finishSteal() {
+  const p = player, e = p.stealTarget; e.taken = true; e.t = 0; p.loot.push(e.item); maps[p.map].house.visitStolen++;
+  SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free';
+}
+function useSmoke() {
+  const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
+  p.smoke--; clouds.push({ map: p.map, x: p.x, y: p.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke();
+  for (const g of guards) if (g.map === p.map && Math.hypot(g.x - p.x, g.y - p.y) < 44 && !['hold', 'assist', 'escort_lead', 'escort_follow'].includes(g.state)) { g.state = 'stunned'; g.stunT = 2.6; say(g, '*cough cough*', 2); }
+  msg('Smoke bomb!', '#cfcfcf'); return true;
+}
+function hide(hay) {
+  if (wanted && guards.some(g => guardSees(g))) { msg("They're watching you! Break line of sight first.", '#ffb36b'); SFX.deny(); return; }
+  player.state = 'hidden'; player.hay = hay; SFX.rustle();
+}
+function openFence(f) {
+  if (wanted) { say(f, 'Lose the Watch first, then we talk.'); SFX.deny(); return; }
+  state = 'menu'; menu = { fence: f, items: [] }; say(f, pick(['What have you got for me?', 'Psst. Quick, show me.', 'Nice and quiet now...']));
+}
+function sellAll() {
+  const v = lootValue();
+  if (!v) { say(menu.fence, "You've got nothing to sell!"); SFX.deny(); return; }
+  gold += v; totalEarned += v; player.loot = []; SFX.coins(); msg(`Sold your loot for ${v}g`, '#f7d774');
+  say(menu.fence, pick(['Pleasure doing business.', 'Ill-gotten gains... my favourite.', "I'll find a buyer. Eventually."]));
+  if (!won && totalEarned >= GOAL) { won = true; wonT = 7; SFX.win(); msg('You earned 1000g — LEGENDARY THIEF! Keep going if you like.', '#9df0a0'); }
+}
+function buy(kind, cost) {
+  if (kind !== 'smoke' && up[kind]) return;
+  if (kind === 'smoke' && player.smoke >= 3) { say(menu.fence, "You can't carry more than 3."); SFX.deny(); return; }
+  if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
+  gold -= cost; SFX.buy();
+  if (kind === 'smoke') player.smoke++; else up[kind] = true;
+  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
+}
+
+// ---------- the catch ----------
+function grab(g) {
+  const p = player; p.state = 'grabbed'; p.grabG = g; p.struggle = 45; p.grabT = 0; g.state = 'grab'; g.path = null;
+  SFX.grab(); say(g, pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
+}
+function breakFree() {
+  const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, 'Oof!'); }
+  p.state = 'free'; p.invuln = 1.6; p.boostT = 1.6; escapes++; SFX.free(); msg('You wriggled free! RUN!', '#9df0a0'); say(p, 'Not today!', 1.5);
+}
+function arrest() {
+  const p = player, A = p.grabG; p.state = 'held'; A.state = 'hold'; wanted = false; SFX.jail();
+  for (const g of guards) if (g !== A && ['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
+  const others = guards.filter(g => g !== A && !['stunned'].includes(g.state)).sort((a, b) => roughDist(a, p) - roughDist(b, p));
+  const B = others[0];
+  escort = { A, B: B || null, waitT: 0, t: 0 };
+  say(A, pick(["You're nicked!", 'By order of the Watch, you are under arrest!', "That's enough running."]), 3);
+  msg('CAUGHT! A second watchman is coming to escort you to jail.', '#ff6b6b');
+  if (B) { B.state = 'assist'; B.path = null; say(B, 'Coming, Sarge!'); } else startEscort();
+}
+function startEscort() {
+  const p = player, { A, B } = escort; A.state = 'escort_lead'; A.path = null; maps.jail.cellOpen = true;
+  if (B) B.state = 'escort_follow';
+  p.state = 'escorted'; trail = [];
+  const from = B || p;
+  for (let i = 0; i <= 10; i++) trail.push({ map: p.map, x: from.x + (p.x - from.x) * i / 10, y: from.y + (p.y - from.y) * i / 10 });
+  for (let i = 1; i <= 10; i++) trail.push({ map: p.map, x: p.x + (A.x - p.x) * i / 10, y: p.y + (A.y - p.y) * i / 10 });
+  escort.t = 0; say(A, pick(['Move along.', 'Off to the cells with you.', 'Walk. Slowly.']));
+  msg('Two watchmen march you to the Watch House jail...', '#ffb36b');
+}
+function finishEscort() {
+  const { A, B } = escort;
+  transition(() => {
+    const p = player, j = maps.jail; p.map = 'jail'; p.x = 6 * TS + 8; p.y = 2 * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+    j.cellOpen = false; p.state = 'jailed'; arrests++;
+    const lost = lootValue(), fine = Math.floor(gold * 0.2); gold -= fine; p.loot = [];
+    p.jailT = Math.min(45, 12 + arrests * 6); p.sentence = p.jailT;
+    SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g) and fined ${fine}g.`, '#ff6b6b');
+    say(jailNPCs[0], pick(jailNPCs[0].lines), 3);
+    for (const g of [A, B]) if (g) { g.state = 'return'; g.path = null; g.x = j.entry.x * TS + 8 + (g === B ? -16 : 16); g.y = 5 * TS + 12; g.map = 'jail'; }
+    escort = null; trail = []; escapes = 0;
+  });
+}
+function release() {
+  transition(() => {
+    const p = player, j = maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+    p.state = 'free'; p.stamina = 100; j.cellOpen = true; wanted = false;
+    msg("You've served your time. Behave yourself... or don't.", '#9df0a0'); say(p, 'Free at last.', 2);
+  });
+}
+
+// =====================================================================
+//  INPUT
+// =====================================================================
+const keys = new Set(), pressed = new Set();
+const KEYMAP = { ' ': ' ', 'spacebar': ' ' };
+addEventListener('keydown', e => {
+  const k = KEYMAP[e.key.toLowerCase()] || e.key.toLowerCase();
+  if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k)) e.preventDefault();
+  if (!keys.has(k)) pressed.add(k); keys.add(k); audioInit();
+});
+addEventListener('keyup', e => { const k = KEYMAP[e.key.toLowerCase()] || e.key.toLowerCase(); keys.delete(k); });
+addEventListener('blur', () => keys.clear());
+const held = k => keys.has(k), hit = k => pressed.has(k);
+
+// touch
+let touchMode = false; const touch = { vx: 0, vy: 0, joy: null, btns: new Map() };
+const BTN = () => [
+  { id: 'act', k: 'e', x: VW - 30, y: VH - 38, r: 17, label: 'E' },
+  { id: 'run', k: 'shift', x: VW - 68, y: VH - 24, r: 13, label: 'RUN' },
+  { id: 'smk', k: 'q', x: VW - 64, y: VH - 62, r: 11, label: 'Q' },
+  { id: 'esc', k: 'escape', x: VW - 14, y: 80, r: 9, label: 'II' },
+];
+function toV(cx, cy) { const r = cv.getBoundingClientRect(); return { x: (cx - r.left) * DPR / S, y: (cy - r.top) * DPR / S }; }
+cv.addEventListener('touchstart', e => {
+  e.preventDefault(); touchMode = true; audioInit();
+  for (const t of e.changedTouches) {
+    const v = toV(t.clientX, t.clientY);
+    if (tapUI(v)) continue;
+    const b = BTN().find(b => Math.hypot(b.x - v.x, b.y - v.y) < b.r + 6);
+    if (b) { touch.btns.set(t.identifier, b); keys.add(b.k); pressed.add(b.k); continue; }
+    if (v.x < VW * 0.55 && !touch.joy) touch.joy = { id: t.identifier, ox: v.x, oy: v.y, x: v.x, y: v.y };
+  }
+}, { passive: false });
+cv.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (touch.joy && t.identifier === touch.joy.id) {
+    const v = toV(t.clientX, t.clientY); let dx = v.x - touch.joy.ox, dy = v.y - touch.joy.oy; const d = Math.hypot(dx, dy), mx = 22;
+    if (d > mx) { dx *= mx / d; dy *= mx / d; } touch.joy.x = touch.joy.ox + dx; touch.joy.y = touch.joy.oy + dy; touch.vx = dx / mx; touch.vy = dy / mx;
+  }
+}, { passive: false });
+function touchEnd(e) {
+  for (const t of e.changedTouches) {
+    if (touch.joy && t.identifier === touch.joy.id) { touch.joy = null; touch.vx = touch.vy = 0; }
+    const b = touch.btns.get(t.identifier); if (b) { keys.delete(b.k); touch.btns.delete(t.identifier); }
+  }
+}
+cv.addEventListener('touchend', touchEnd); cv.addEventListener('touchcancel', touchEnd);
+cv.addEventListener('mousedown', e => { audioInit(); tapUI(toV(e.clientX, e.clientY)); });
+function tapUI(v) {
+  if (state === 'title') { startGame(); return true; }
+  if (state === 'menu') {
+    const it = menu.items.find(i => v.x >= i.x && v.x <= i.x + i.w && v.y >= i.y && v.y <= i.y + i.h);
+    if (it) it.fn(); else if (!(v.x >= menu.px && v.x <= menu.px + menu.pw && v.y >= menu.py && v.y <= menu.py + menu.ph)) closeMenu();
+    return true;
+  }
+  if (paused) { paused = false; return true; }
+  return false;
+}
+function startGame() { newGame(); state = 'play'; audioInit(); msg('Knock on doors [E]. Steal when nobody is looking.', '#f7d774'); msg('Sell your loot to a fence ($ on the map). Earn 1000g!', '#f7d774'); }
+function closeMenu() { state = 'play'; menu = null; }
+
+// =====================================================================
+//  UPDATE
+// =====================================================================
+const WALK = [1, 0, 2, 0];
+function readMove() {
+  let ix = 0, iy = 0;
+  if (held('a') || held('arrowleft')) ix--; if (held('d') || held('arrowright')) ix++;
+  if (held('w') || held('arrowup')) iy--; if (held('s') || held('arrowdown')) iy++;
+  ix += touch.vx; iy += touch.vy; const l = Math.hypot(ix, iy);
+  if (l < 0.2) return { ix: 0, iy: 0, l: 0 };
+  if (l > 1) { ix /= l; iy /= l; } return { ix, iy, l: Math.min(1, l) };
+}
+function doMove(dt, canRun) {
+  const p = player, { ix, iy } = readMove();
+  let spd = P_WALK * (up.boots ? 1.15 : 1);
+  if (p.stamina <= 0) p.tired = true; if (p.tired && p.stamina > 30) p.tired = false;
+  if (canRun && held('shift') && (ix || iy) && !p.tired) { spd = P_RUN * (up.boots ? 1.12 : 1); p.stamina = Math.max(0, p.stamina - STAM_DRAIN * dt); p.running = true; }
+  else { p.running = false; p.stamina = Math.min(100, p.stamina + STAM_REGEN * (up.boots ? 1.5 : 1) * dt); }
+  if (p.boostT > 0) spd *= 1.3;
+  p.moving = !!(ix || iy);
+  if (p.moving) { moveEntity(p, ix * spd * dt, iy * spd * dt); p.fa = Math.atan2(iy, ix); p.dir = dirFromAngle(p.fa); p.animT += dt * (p.running ? 1.6 : 1); }
+}
+function findInteraction() {
+  const p = player, m = maps[p.map]; p.inter = null;
+  if (m.kind === 'town') {
+    const doorNear = d => Math.abs(p.x - (d.x * TS + 8)) < 10 && p.y - (d.y * TS + 16) >= 0 && p.y - (d.y * TS + 16) < 16;
+    for (const h of houses) if (doorNear(h.door)) { p.inter = { label: `Knock - ${h.family}s ${'$'.repeat(h.wealth)}`, act: () => knock(h) }; return; }
+    if (doorNear(town.jail.door)) { p.inter = { label: 'Watch House', act: () => say(p, "Not going in there willingly.") }; return; }
+    for (const f of fences) if (dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => openFence(f) }; return; }
+    for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
+  } else if (m.kind === 'house') {
+    let best = null, bd = 21;
+    for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
+    if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: 'Steal (hold E)', act: () => startSteal(best) };
+  }
+}
+function updatePlayer(dt) {
+  const p = player; p.invuln = Math.max(0, p.invuln - dt); p.boostT = Math.max(0, p.boostT - dt); p.shake = Math.max(0, p.shake - dt);
+  p.moving = false; p.inter = null;
+  if (fade.dir) return;
+  const m = maps[p.map];
+  switch (p.state) {
+    case 'stealing': {
+      const mv = readMove();
+      if (!held('e') || mv.l > 0) { p.state = 'free'; break; }
+      p.stealT += dt; p.dir = dirFromAngle(Math.atan2(p.stealTarget.y * TS + 8 - p.y, p.stealTarget.x * TS + 8 - p.x));
+      if (p.stealT >= STEAL_TIME) finishSteal();
+      p.stamina = Math.min(100, p.stamina + STAM_REGEN * dt);
+      return;
+    }
+    case 'free': {
+      doMove(dt, true);
+      if (m.kind === 'house') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveHouse(m.house); return; } }
+      findInteraction();
+      if (p.inter && hit('e')) p.inter.act();
+      if (hit('q')) useSmoke();
+      break;
+    }
+    case 'knocking': p.knockT -= dt; if (p.knockT <= 0) resolveKnock(p.knockHouse); break;
+    case 'hidden': if (hit('e') || readMove().l > 0.6) { p.state = 'free'; SFX.rustle(); } break;
+    case 'grabbed': {
+      p.grabT += dt; p.struggle -= 24 * dt;
+      if (hit(' ') || hit('e')) { p.struggle += Math.max(5, 13 - escapes * 2.5); SFX.struggle(); p.shake = 0.12; }
+      if (hit('q') && p.smoke > 0) { useSmoke(); breakFree(); break; }
+      if (p.struggle >= 100) breakFree(); else if (p.struggle <= 0 || p.grabT > 4) arrest();
+      break;
+    }
+    case 'jailed': {
+      doMove(dt, false); p.jailT -= dt;
+      if (p.jailT <= 0) release();
+      break;
+    }
+  }
+}
+
+function updateGuard(g, dt) {
+  g.moving = false;
+  const spdFor = { chase: G_CHASE, respond: G_RUN, assist: 50, escort_lead: 34 };
+  const spd = spdFor[g.state] || G_PATROL;
+  const sameMap = g.map === player.map, dP = sameMap ? dist(g, player) : 1e9;
+  const canSpot = wanted && ['patrol', 'pause', 'respond', 'search', 'return'].includes(g.state) && ['free', 'stealing', 'knocking', 'hidden'].includes(player.state);
+  if (canSpot && guardSees(g)) startChase(g);
+  switch (g.state) {
+    case 'patrol': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { g.wi = (g.wi + 1) % g.route.length; g.state = 'pause'; g.pause = rnd(0.8, 2.2); } break; }
+    case 'pause': g.pause -= dt; g.fa += Math.sin(gameTime * 1.7 + g.wi) * dt * 1.5; if (g.pause <= 0) g.state = 'patrol'; break;
+    case 'respond': if (navTo(g, g.target.map, g.target.x, g.target.y, spd, dt) || g.stuckT > 3) { g.state = 'search'; g.searchT = 4; say(g, pick(['Where are they?', 'Hmm...', 'Show yourself!'])); } break;
+    case 'chase': {
+      const sees = guardSees(g);
+      if (sees) { g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.lostT = 0; lastSeenT = gameTime; } else g.lostT += dt;
+      if (sees && dP < 52) {
+        const dx = player.x - g.x, dy = player.y - g.y, d = Math.hypot(dx, dy) || 1;
+        moveEntity(g, dx / d * spd * dt, dy / d * spd * dt); g.fa = Math.atan2(dy, dx); g.moving = true; g.path = null;
+      } else {
+        const lk = g.lastKnown, t = { x: Math.floor(lk.x / TS), y: Math.floor((lk.y - 3) / TS) };
+        if (navTo(g, lk.map, t.x, t.y, spd, dt, true) && !sees) { g.state = 'search'; g.searchT = 3.5; say(g, pick(["Where'd they go?", 'Blast!', 'I know you\'re here...'])); }
+      }
+      if (g.lostT > 6) { g.state = 'search'; g.searchT = 3; }
+      if (sameMap && dP < 10 && ['free', 'stealing', 'knocking'].includes(player.state) && player.invuln <= 0 && !fade.dir) grab(g);
+      break;
+    }
+    case 'search': {
+      g.searchT -= dt; g.fa += dt * 2.6;
+      if (player.state === 'hidden' && sameMap && player.hay && Math.hypot(g.x - (player.hay.x * TS + 8), g.y - (player.hay.y * TS + 12)) < 26 && Math.random() < 0.7 * dt) {
+        player.state = 'free'; say(g, 'Found you!'); grab(g); break;
+      }
+      if (g.searchT <= 0) { g.state = 'return'; g.path = null; say(g, pick(['Hmph.', 'Back to my rounds.', 'Lost them...'])); }
+      break;
+    }
+    case 'return': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) g.state = 'patrol'; break; }
+    case 'stunned': g.stunT -= dt; g.fa += dt * 6; if (g.stunT <= 0) { g.state = wanted ? 'search' : 'return'; g.searchT = 2; } break;
+    case 'grab': case 'hold': if (sameMap) g.fa = Math.atan2(player.y - g.y, player.x - g.x); break;
+    case 'assist': {
+      escort.waitT += dt; const t = tileOfE(player);
+      navTo(g, player.map, t.x, t.y, spd, dt, true);
+      if ((sameMap && dP < 26) || escort.waitT > 25) { if (!sameMap) { g.map = player.map; g.x = player.x - 12; g.y = player.y; } startEscort(); }
+      break;
+    }
+    case 'escort_lead': {
+      escort.t += dt;
+      if (navTo(g, 'jail', 6, 5, spd, dt) || escort.t > 120) { g.state = 'hold'; finishEscort(); }
+      const last = trail[trail.length - 1];
+      if (!last || last.map !== g.map || Math.hypot(last.x - g.x, last.y - g.y) >= 2) trail.push({ map: g.map, x: g.x, y: g.y });
+      if (trail.length > 600) trail.splice(0, 100);
+      break;
+    }
+  }
+  if (g.moving) g.animT += dt;
+  g.dir = dirFromAngle(g.fa);
+}
+function startChase(g) {
+  g.state = 'chase'; g.lostT = 0; g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.path = null; lastSeenT = gameTime;
+  say(g, pick(['Halt, thief!', 'Stop right there!', 'Thief! THIEF!', 'You there! Stop!']));
+  if (whistleCD <= 0) { SFX.whistle(); whistleCD = 2.5; }
+  for (const o of guards) if (o !== g && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
+}
+function placeFollower(e, c, dt) {
+  if (!c) return;
+  if (e.map !== c.map) { e.map = c.map; if (e === player) { fade.a = 1; fade.dir = -1; } }
+  const dx = c.x - e.x, dy = c.y - e.y;
+  if (Math.abs(dx) + Math.abs(dy) > 0.05) { e.fa = Math.atan2(dy, dx); e.moving = true; e.animT += dt; }
+  e.x = c.x; e.y = c.y; e.dir = dirFromAngle(e.fa);
+}
+
+function updateResident(r, dt) {
+  const h = r.house, m = h.map, p = player, here = p.map === h.key;
+  r.moving = false;
+  const goWander = (spd) => {
+    if (r.wait > 0) { r.wait -= dt; return; }
+    if (!r.wtarget) r.wtarget = randFloor(m);
+    if (navTo(r, h.key, r.wtarget.x, r.wtarget.y, spd, dt) || r.stuckT > 2) { r.wtarget = null; r.wait = rnd(1, 3); r.stuckT = 0; }
+  };
+  switch (r.state) {
+    case 'idle': goWander(20); break;
+    case 'host': {
+      if (!here) { r.state = 'idle'; break; }
+      r.modeT -= dt;
+      if (r.modeT <= 0) {
+        if (r.mode === 'watch') { r.mode = 'chore'; r.modeT = rnd(3.5, 6.5); r.wtarget = randFloor(m); r.wait = 0; if (Math.random() < 0.6) say(r, pick(['Let me fetch the kettle...', 'Excuse me a moment.', 'Now where did I put it...', '*hums a tune*', 'Dusting, dusting...']), 2.2); }
+        else { r.mode = 'watch'; r.modeT = rnd(2.5, 4.5); if (Math.random() < 0.5) say(r, pick(['So! Lovely weather.', 'Have you heard the news?', 'More tea?', 'The Watch caught a thief last week!', 'Where are you from, dear?']), 2.4); }
+      }
+      if (r.mode === 'watch') {
+        r.fa = turnToward(r.fa, Math.atan2(p.y - r.y, p.x - r.x), dt * 8);
+        if (dist(r, p) > 64) { const t = tileOfE(p); navTo(r, h.key, t.x, t.y, 26, dt, true); }
+      } else {
+        if (r.wtarget) { if (navTo(r, h.key, r.wtarget.x, r.wtarget.y, 24, dt) || r.stuckT > 2) { r.wtarget = null; r.stuckT = 0; r.fa = -Math.PI / 2 + rnd(-0.6, 0.6); } }
+      }
+      const sees = canSee(r, p, 120, 0.55);
+      const tongue = up.tongue ? 0.6 : 1, greed = 0.8 + h.wealth * 0.2;
+      let rate = 1.4 * tongue * greed;
+      if (sees && p.state === 'stealing') {
+        rate = 160;
+        if (r.mode !== 'watch' || !r.caught) { r.mode = 'watch'; r.modeT = 4; r.caught = true; say(r, 'Hey!! What are you doing?!', 2); }
+      } else if (sees && p.running) rate = 10 * tongue;
+      r.sus = Math.min(100, r.sus + rate * dt);
+      if (r.sus >= 60 && !r.warned) { r.warned = true; say(r, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
+      if (r.sus >= 100) raiseAlarm(h);
+      break;
+    }
+    case 'alarm': {
+      r.alarmT -= dt;
+      if (here) { r.fa = Math.atan2(p.y - r.y, p.x - r.x); if (!r.bubble || r.bubble.t <= 0) say(r, pick(['THIEF!', 'HELP! WATCH!', 'Somebody stop them!']), 1.6); }
+      if (r.alarmT <= 0 && !here) { r.state = 'idle'; r.sus = 0; r.caught = false; }
+      break;
+    }
+  }
+  if (r.moving) r.animT += dt;
+  r.dir = dirFromAngle(r.fa);
+}
+
+function updateWorld(dt) {
+  gameTime += dt; whistleCD -= dt;
+  if (fade.dir === 1) { fade.a += dt * 5; if (fade.a >= 1) { fade.a = 1; const f = fade.fn; fade.fn = null; fade.dir = -1; f && f(); } }
+  else if (fade.dir === -1) { fade.a -= dt * 4; if (fade.a <= 0) { fade.a = 0; fade.dir = 0; } }
+  updatePlayer(dt);
+  for (const g of guards) updateGuard(g, dt);
+  if (player.state === 'escorted' && escort) {
+    placeFollower(player, trail[Math.max(0, trail.length - 1 - 9)], dt);
+    if (escort.B) placeFollower(escort.B, trail[Math.max(0, trail.length - 1 - 18)], dt);
+  }
+  for (const h of houses) {
+    updateResident(h.resident, dt);
+    h.cooldown = Math.max(0, h.cooldown - dt); h.doorOpenT = Math.max(0, h.doorOpenT - dt);
+    if (h.discoverT > 0) { h.discoverT -= dt; if (h.discoverT <= 0 && ['free', 'stealing', 'hidden', 'knocking'].includes(player.state)) theftDiscovered(h); }
+    for (const e of h.map.loot.values()) if (e.taken) { e.t += dt; if (e.t > 200 && player.map !== h.key) { e.taken = false; e.item = rollItem(h.wealth); } }
+  }
+  for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
+  if (wanted) {
+    if (guards.some(g => g.state === 'chase' && g.lostT === 0)) lastSeenT = gameTime;
+    if (gameTime - lastSeenT > HEAT_TIME && ['free', 'hidden', 'stealing', 'knocking'].includes(player.state)) {
+      wanted = false; escapes = 0; msg('You lost the Watch. The heat is off.', '#9df0a0');
+      for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
+    }
+  }
+  if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
+  for (const f of fences) { f.chatT -= dt; if (f.chatT <= 0) { f.chatT = rnd(6, 12); if (player.map === 'town' && dist(f, player) < 90) say(f, pick(['Psst. Got goods?', 'Buying shiny things...', 'No questions asked.', 'Over here, friend.']), 2.2); } }
+  for (const n of jailNPCs) { if (Math.random() < dt * 0.08 && player.map === 'jail') say(n, pick(n.lines), 2.5); }
+  if (doorBubble) { doorBubble.t -= dt; if (doorBubble.t <= 0) doorBubble = null; }
+  for (const e of allChars()) if (e.bubble) { e.bubble.t -= dt; if (e.bubble.t <= 0) e.bubble = null; }
+  for (const mm of msgs) mm.t -= dt; msgs = msgs.filter(mm => mm.t > 0);
+  if (wonT > 0) wonT -= dt;
+}
+function allChars() { return [player, ...guards, ...fences, ...jailNPCs, ...houses.map(h => h.resident)]; }
+
+// =====================================================================
+//  RENDER
+// =====================================================================
+let camX = 0, camY = 0;
+function updateCamera(dt, mapKey, fx, fy) {
+  const m = maps[mapKey], mw = m.w * TS, mh = m.h * TS;
+  let tx = fx - VW / 2, ty = fy - VH / 2;
+  tx = mw <= VW ? (mw - VW) / 2 : clamp(tx, 0, mw - VW);
+  ty = mh <= VH ? (mh - VH) / 2 - 8 : clamp(ty, 0, mh - VH);
+  if (dt === null) { camX = tx; camY = ty; } else { camX += (tx - camX) * Math.min(1, dt * 8); camY += (ty - camY) * Math.min(1, dt * 8); }
+  if (Math.abs(tx - camX) > 200 || Math.abs(ty - camY) > 200) { camX = tx; camY = ty; }
+}
+function drawEntity(e) {
+  const fr = e.moving ? WALK[Math.floor(e.animT * 8) % 4] : 0;
+  let sx = Math.round(e.x), sy = Math.round(e.y);
+  if (e.shake > 0 || (e.kind === 'resident' && e.state === 'alarm')) sx += Math.random() < 0.5 ? -1 : 1;
+  ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
+  ctx.drawImage(e.sheet[e.dir][fr], sx - 8, sy - 22);
+}
+function drawCone(e, range, half, color) {
+  const ex = e.x, ey = e.y - 8, m = maps[e.map], N = 16;
+  ctx.beginPath(); ctx.moveTo(ex, ey);
+  for (let i = 0; i <= N; i++) {
+    const a = e.fa - half + (2 * half) * i / N, c = Math.cos(a), s = Math.sin(a); let d = 0;
+    while (d < range) { d += 4; const x = ex + c * d, y = ey + s * d; if (isOpaque(m, Math.floor(x / TS), Math.floor(y / TS)) || (clouds.length && inSmoke(e.map, x, y))) break; }
+    ctx.lineTo(ex + c * d, ey + s * d);
+  }
+  ctx.closePath(); ctx.fillStyle = color; ctx.fill();
+}
+function txt(str, x, y, size = 8, color = '#fff', align = 'left', shadow = '#000') {
+  ctx.font = size + 'px ' + FONT; ctx.textAlign = align; ctx.textBaseline = 'top';
+  if (shadow) { ctx.fillStyle = shadow; ctx.fillText(str, x + 1, y + 1); }
+  ctx.fillStyle = color; ctx.fillText(str, x, y);
+}
+function panel(x, y, w, h, a = 0.72) { F(ctx, x, y, w, h, `rgba(12,10,20,${a})`); F(ctx, x, y, w, 1, 'rgba(255,255,255,0.15)'); F(ctx, x, y + h - 1, w, 1, 'rgba(0,0,0,0.5)'); }
+function bubbleAt(x, y, text, color = '#fff8e7') {
+  const fs = 5, lines = wrap(text, 22); ctx.font = fs + 'px ' + FONT;
+  const w = Math.ceil(Math.max(...lines.map(l => ctx.measureText(l).width))) + 6, h = lines.length * (fs + 2) + 4;
+  const bx = Math.round(x - w / 2), by = Math.round(y - h);
+  F(ctx, bx - 1, by, w + 2, h, '#222'); F(ctx, bx, by - 1, w, h + 2, '#222'); F(ctx, bx, by, w, h, color); F(ctx, Math.round(x) - 1, by + h, 3, 2, '#222'); F(ctx, Math.round(x), by + h, 1, 1, color);
+  lines.forEach((l, i) => txt(l, bx + 3, by + 3 + i * (fs + 2), fs, '#1a1a1a', 'left', null));
+}
+function render(dt) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  const p = player, camMap = state === 'title' ? 'town' : p.map, m = maps[camMap];
+  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : '#0d0906');
+  const cx = Math.round(camX), cy = Math.round(camY);
+  ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
+  ctx.drawImage(m.canvas, 0, 0);
+  const di = dayInfo();
+  // dynamic tiles
+  if (m.kind === 'town') {
+    for (const h of houses) if (h.doorOpenT > 0) { F(ctx, h.door.x * TS + 4, h.door.y * TS + 4, 8, 12, '#1a120b'); F(ctx, h.door.x * TS + 5, h.door.y * TS + 12, 6, 4, '#f3c47a'); }
+    if (di.dark > 0.1) for (const w of windows) F(ctx, w.x * TS + 4, w.y * TS + 3, 8, 8, `rgba(255,200,90,${di.dark * 0.9})`);
+  } else {
+    for (const e of m.loot.values()) if (e.taken) EMPTY[m.tiles[e.y * m.w + e.x]](ctx, e.x * TS, e.y * TS);
+    for (let x = 0; x < m.w; x++) if (m.tiles[m.w + x] === T.FIRE) { const f = Math.floor(gameTime * 10) % 3; F(ctx, x * TS + 6 + f % 2, 1 * TS + 9 - f, 2, 2, '#ffe08a'); }
+    if (m.kind === 'jail') for (const x of [2, 6, 10]) if (!(m.cellOpen && x === 6)) { OP[T.BARS](ctx, x * TS, 4 * TS); F(ctx, x * TS + 6, 4 * TS + 7, 4, 3, '#c9a04a'); }
+  }
+  // vision cones
+  const range = guardRange();
+  for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
+    if (['hold', 'assist', 'escort_lead', 'escort_follow', 'grab'].includes(g.state)) continue;
+    const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
+    drawCone(g, range, Math.acos(0.62), col);
+  }
+  if (m.kind === 'house') { const r = m.house.resident; if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
+  // characters
+  const list = [];
+  if (state !== 'title' && p.state !== 'hidden') list.push(p);
+  for (const g of guards) if (g.map === camMap) list.push(g);
+  if (camMap === 'town') list.push(...fences);
+  if (camMap === 'jail') list.push(...jailNPCs);
+  if (m.kind === 'house') list.push(m.house.resident);
+  list.sort((a, b) => a.y - b.y);
+  for (const e of list) drawEntity(e);
+  if (p.state === 'escorted' && escort && escort.A.map === p.map) { ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 0.5, p.y - 10); ctx.lineTo(escort.A.x + 0.5, escort.A.y - 10); ctx.stroke(); }
+  if (p.state === 'hidden' && p.map === camMap) { const hx = p.hay.x * TS, hy = p.hay.y * TS; if (Math.floor(gameTime * 3) % 4 === 0) F(ctx, hx + 6, hy + 2, 1, 2, '#a8852c'); F(ctx, hx + 9, hy + 5, 2, 1, '#2a2a33'); }
+  // smoke
+  for (const c of clouds) if (c.map === camMap) {
+    const a = Math.min(1, c.t / 1.5) * 0.8;
+    for (let i = 0; i < 9; i++) { const ang = i * 0.7 + gameTime * 0.4, rr = c.r * (0.3 + (i % 3) * 0.25); ctx.fillStyle = `rgba(200,200,205,${a * 0.5})`; ctx.beginPath(); ctx.arc(c.x + Math.cos(ang) * rr, c.y + Math.sin(ang) * rr * 0.7, c.r * 0.45, 0, 7); ctx.fill(); }
+  }
+  // lighting
+  if (m.kind === 'town' && di.dark > 0.01) drawLighting(di.dark, cx, cy);
+  ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
+  // overhead UI in world space
+  for (const e of list) if (e.bubble) bubbleAt(e.x, e.y - 24, e.bubble.text, e.kind === 'guard' && e.state === 'chase' ? '#ffd9d9' : '#fff8e7');
+  if (p.state === 'hidden' && p.bubble) bubbleAt(p.hay.x * TS + 8, p.hay.y * TS, p.bubble.text);
+  if (doorBubble && camMap === 'town') bubbleAt(doorBubble.x, doorBubble.y - 4, doorBubble.text);
+  for (const g of list) if (g.kind === 'guard') {
+    if (g.state === 'chase') txt('!', g.x - 2, g.y - 34, 8, '#ff4040');
+    else if (g.state === 'search' || g.state === 'respond') txt('?', g.x - 2, g.y - 34, 8, '#ffb040');
+  }
+  if (m.kind === 'house') {
+    const r = m.house.resident;
+    if (r.state === 'host') { const w = 14, x = Math.round(r.x - w / 2), y = Math.round(r.y - 27); F(ctx, x - 1, y - 1, w + 2, 4, '#111'); F(ctx, x, y, Math.round(w * r.sus / 100), 2, r.sus < 50 ? '#8bd46a' : r.sus < 80 ? '#f0c040' : '#f05040'); F(ctx, x - 6, y - 1, 4, 3, '#fff'); F(ctx, x - 5, y, 2, 1, '#111'); }
+    if (r.state === 'alarm') txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
+  }
+  if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * p.stealT / STEAL_TIME), 3, '#f7d774'); }
+  if (p.inter && p.state === 'free' && !fade.dir) {
+    const label = (touchMode ? '' : '[E] ') + p.inter.label; ctx.font = '5px ' + FONT; const w = ctx.measureText(label).width + 6;
+    const x = Math.round(p.x - w / 2), y = Math.round(p.y - 34); F(ctx, x, y, w, 9, 'rgba(10,10,20,0.85)'); txt(label, x + 3, y + 2, 5, '#f7d774', 'left', null);
+  }
+  // HUD
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  if (state === 'title') { drawTitle(); }
+  else drawHUD(di);
+  if (state === 'menu') drawMenu();
+  if (paused && state === 'play') { panel(0, 0, VW, VH, 0.6); txt('PAUSED', VW / 2, VH / 2 - 20, 12, '#fff', 'center'); txt('P / Esc to resume', VW / 2, VH / 2, 6, '#ccc', 'center'); drawHelp(VW / 2 - 110, VH / 2 + 14); }
+  if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
+}
+function drawLighting(dark, cx, cy) {
+  const g = lctx; g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, VW, VH);
+  g.fillStyle = `rgba(10,12,40,${dark})`; g.fillRect(0, 0, VW, VH); g.globalCompositeOperation = 'destination-out';
+  const light = (x, y, r, a) => {
+    const sx = x - cx, sy = y - cy; if (sx < -r || sy < -r || sx > VW + r || sy > VH + r) return;
+    const gr = g.createRadialGradient(sx, sy, 0, sx, sy, r); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(sx - r, sy - r, r * 2, r * 2);
+  };
+  for (const l of lamps) light(l.x * TS + 8, l.y * TS + 4, 50, 1);
+  for (const w of windows) light(w.x * TS + 8, w.y * TS + 10, 22, 0.75);
+  for (const gd of guards) if (gd.map === 'town') light(gd.x, gd.y - 8, 30, 0.85);
+  for (const f of fences) light(f.x, f.y - 8, 22, 0.7);
+  if (player.map === 'town' && state !== 'title') light(player.x, player.y - 8, 26, 0.6);
+  g.globalCompositeOperation = 'source-over';
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.imageSmoothingEnabled = true; ctx.drawImage(lightCv, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.globalCompositeOperation = 'lighter';
+  for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
+  ctx.globalCompositeOperation = 'source-over';
+}
+function coinIcon(x, y) { F(ctx, x + 1, y, 4, 6, '#e8b830'); F(ctx, x, y + 1, 6, 4, '#e8b830'); F(ctx, x + 2, y + 1, 1, 4, '#fff2a8'); }
+function sackIcon(x, y) { F(ctx, x + 1, y + 2, 5, 5, '#9c7a4a'); F(ctx, x + 2, y + 1, 3, 1, '#7a5a34'); F(ctx, x + 2, y, 3, 1, '#9c7a4a'); }
+function drawHUD(di) {
+  const p = player, narrow = VW < 300;
+  panel(4, 4, 112, 46);
+  coinIcon(9, 9); txt(`${gold}g`, 18, 9, 6, '#f7d774');
+  sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
+  txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
+  F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
+  txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
+  if (up.sack || up.boots || up.tongue) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : ''].filter(Boolean).join(' '), 6, 53, 4, '#9df0a0');
+  // clock + minimap
+  const mw = town.w, mh = town.h, mx = VW - mw - 6, my = 4;
+  panel(mx - 2, my, mw + 4, 12); txt(`Day ${di.day} ${di.name}`, mx + mw / 2, my + 3, 5, di.name === 'Night' ? '#9ab0ff' : '#ffe9a8', 'center', null);
+  if (!narrow || state === 'play') {
+    panel(mx - 2, my + 13, mw + 4, mh + 4); ctx.drawImage(miniCv, mx, my + 15);
+    for (const f of fences) { F(ctx, mx + Math.floor(f.x / TS) - 1, my + 15 + Math.floor(f.y / TS) - 1, 3, 3, '#000'); F(ctx, mx + Math.floor(f.x / TS), my + 15 + Math.floor(f.y / TS), 1, 1, '#f7d774'); }
+    const j = town.jail.door; F(ctx, mx + j.x - 1, my + 15 + j.y - 1, 3, 3, '#5a8aff');
+    if (alertPing && Math.floor(gameTime * 4) % 2) F(ctx, mx + alertPing.x - 1, my + 15 + alertPing.y - 1, 3, 3, '#ff4040');
+    if (wanted) for (const g of guards) if (g.state === 'chase') { const tp = townPos(g); F(ctx, mx + Math.floor(tp.x / TS), my + 15 + Math.floor(tp.y / TS), 1, 1, '#ff4040'); }
+    const pp = townPos(p); if (Math.floor(gameTime * 3) % 3) { F(ctx, mx + Math.floor(pp.x / TS) - 1, my + 15 + Math.floor(pp.y / TS) - 1, 3, 3, '#fff'); F(ctx, mx + Math.floor(pp.x / TS), my + 15 + Math.floor(pp.y / TS), 1, 1, '#e03030'); }
+  }
+  // status banners
+  if (wanted) {
+    const left = Math.max(0, HEAT_TIME - (gameTime - lastSeenT)), seen = gameTime - lastSeenT < 0.3;
+    const flash = Math.floor(gameTime * 4) % 2;
+    panel(VW / 2 - 52, 4, 104, 22, 0.8); txt('WANTED', VW / 2, 7, 8, flash ? '#ff4040' : '#ff9090', 'center');
+    txt(seen ? 'They see you! RUN!' : `Stay hidden: ${Math.ceil(left)}s`, VW / 2, 17, 5, '#fff', 'center');
+  }
+  if (p.state === 'grabbed') {
+    panel(VW / 2 - 80, VH / 2 + 20, 160, 30, 0.85); txt(touchMode ? 'BREAK FREE! Tap E fast!' : 'BREAK FREE! Mash SPACE!', VW / 2, VH / 2 + 24, 6, '#ff6b6b', 'center');
+    F(ctx, VW / 2 - 60, VH / 2 + 36, 120, 6, '#222'); F(ctx, VW / 2 - 59, VH / 2 + 37, Math.round(118 * clamp(p.struggle, 0, 100) / 100), 4, '#f7d774');
+    if (p.smoke > 0) txt('or [Q] smoke bomb', VW / 2, VH / 2 + 45, 4, '#ccc', 'center', null);
+  }
+  if (p.state === 'held') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('CAUGHT! Waiting for a second watchman...', VW / 2, 35, 5, '#ffb36b', 'center'); }
+  if (p.state === 'escorted') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('Being escorted to the jail cell...', VW / 2, 35, 5, '#ffb36b', 'center'); }
+  if (p.state === 'jailed') { panel(VW / 2 - 70, 30, 140, 24, 0.8); txt('IN JAIL', VW / 2, 33, 8, '#ff6b6b', 'center'); txt(`Release in ${Math.ceil(p.jailT)}s`, VW / 2, 44, 5, '#fff', 'center'); }
+  if (p.state === 'hidden') { panel(VW / 2 - 60, VH - 70, 120, 14, 0.8); txt('Hiding in the hay... [E] leave', VW / 2, VH - 66, 4, '#e3c25a', 'center'); }
+  if (wonT > 0) { panel(VW / 2 - 100, VH / 2 - 40, 200, 30, 0.85); txt('LEGENDARY THIEF!', VW / 2, VH / 2 - 34, 10, '#9df0a0', 'center'); txt('1000g earned. The village trembles.', VW / 2, VH / 2 - 20, 5, '#fff', 'center'); }
+  // messages
+  let y = VH - 10 - (touchMode ? 76 : 0);
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const mm = msgs[i], lines = wrap(mm.text, Math.floor((VW - 16) / 5)); const a = Math.min(1, mm.t);
+    for (let j = lines.length - 1; j >= 0; j--) { ctx.globalAlpha = a; txt(lines[j], 6, y, 5, mm.color); ctx.globalAlpha = 1; y -= 8; }
+  }
+  if (touchMode) drawTouch();
+  else txt('H: help', VW - 6, VH - 9, 4, 'rgba(255,255,255,0.5)', 'right', null);
+  if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 60, 232, 120, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
+}
+function drawHelp(x, y) {
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['P / Esc', 'pause'], ['M', 'mute']];
+  L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
+  txt('Residents watch you. Steal when they look away.', x, y + 76, 4, '#bbb');
+  txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
+  txt('Caught = 2 watchmen march you to jail.', x, y + 92, 4, '#bbb');
+}
+function drawTouch() {
+  for (const b of BTN()) {
+    const active = [...touch.btns.values()].some(x => x.id === b.id);
+    ctx.fillStyle = active ? 'rgba(255,230,150,0.45)' : 'rgba(255,255,255,0.18)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1; ctx.stroke(); txt(b.label, b.x, b.y - 3, b.label.length > 1 ? 5 : 7, '#fff', 'center', null);
+  }
+  if (touch.joy) { ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.arc(touch.joy.ox, touch.joy.oy, 22, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(touch.joy.x, touch.joy.y, 9, 0, 7); ctx.fill(); }
+  else txt('drag to move', 30, VH - 20, 4, 'rgba(255,255,255,0.4)', 'center', null);
+}
+function drawMenu() {
+  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 132, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph; menu.items = [];
+  panel(px, py, pw, ph, 0.92); F(ctx, px, py, pw, 14, 'rgba(90,45,110,0.9)');
+  txt(f.name + ' - Fence', px + 6, py + 4, 6, '#f7d774'); coinIcon(px + pw - 50, py + 4); txt(`${gold}g`, px + pw - 42, py + 4, 6, '#f7d774');
+  const v = lootValue();
+  txt(`Your sack: ${player.loot.length} item${player.loot.length === 1 ? '' : 's'} worth ${v}g`, px + 6, py + 19, 5, '#ddd');
+  const opts = [
+    ['1', `Sell everything (+${v}g)`, '', () => sellAll(), v > 0],
+    ['2', 'Bigger Sack (10 slots)', up.sack ? 'OWNED' : '120g', () => buy('sack', 120), !up.sack && gold >= 120],
+    ['3', 'Swift Boots (+speed)', up.boots ? 'OWNED' : '150g', () => buy('boots', 150), !up.boots && gold >= 150],
+    ['4', 'Silver Tongue (less suspicion)', up.tongue ? 'OWNED' : '130g', () => buy('tongue', 130), !up.tongue && gold >= 130],
+    ['5', `Smoke Bomb (${player.smoke}/3)`, '50g', () => buy('smoke', 50), player.smoke < 3 && gold >= 50],
+  ];
+  opts.forEach(([k, label, price, fn, ok], i) => {
+    const y = py + 30 + i * 16, item = { x: px + 4, y: y - 2, w: pw - 8, h: 14, fn }; menu.items.push(item);
+    F(ctx, item.x, item.y, item.w, item.h, ok ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)');
+    txt(touchMode ? '' : `[${k}]`, px + 8, y + 2, 5, '#f7d774'); txt(label, px + (touchMode ? 8 : 28), y + 2, 5, ok ? '#fff' : '#888'); txt(price, px + pw - 8, y + 2, 5, price === 'OWNED' ? '#9df0a0' : ok ? '#f7d774' : '#886', 'right');
+  });
+  const cy = py + ph - 16, close = { x: px + 4, y: cy - 2, w: pw - 8, h: 14, fn: closeMenu }; menu.items.push(close);
+  txt(touchMode ? 'Tap here to leave' : '[Esc] Leave', px + pw / 2, cy + 2, 5, '#aaa', 'center');
+}
+function drawTitle() {
+  panel(0, 0, VW, VH, 0.45);
+  const cxm = VW / 2, ty = Math.max(20, VH / 2 - 80);
+  txt('LIGHT FINGERS', cxm, ty, VW < 300 ? 12 : 18, '#f7d774', 'center', '#5a2d0a');
+  txt('a village of easy marks', cxm, ty + 26, 6, '#e8dcc0', 'center');
+  ctx.drawImage(PLAYER_SHEET.down[Math.floor(performance.now() / 200) % 2 ? 1 : 2], cxm - 8, ty + 38);
+  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
+  lines.forEach((l, i) => txt(l, cxm, ty + 66 + i * 10, 5, '#ddd', 'center'));
+  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, ty + 122, 7, '#fff', 'center');
+  if (!touchMode) txt('WASD move · Shift run · E act · Space struggle · Q smoke', cxm, VH - 14, 4, '#aaa', 'center');
+}
+
+// =====================================================================
+//  MAIN LOOP
+// =====================================================================
+let last = performance.now();
+function frame(now) {
+  const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
+  if (hit('m')) { muted = !muted; msg(muted ? 'Sound off' : 'Sound on', '#aaa'); }
+  if (state === 'title') {
+    gameTime += dt; for (const g of guards) updateGuard(g, dt);
+    updateCamera(dt, 'town', 30 * TS + Math.sin(now / 9000) * 240, 22 * TS + Math.cos(now / 11000) * 120);
+    if (hit('enter') || hit(' ') || hit('e')) startGame();
+  } else if (state === 'menu') {
+    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50);
+    if (hit('escape') || hit('e')) closeMenu();
+    for (const f of fences) if (f.bubble) { f.bubble.t -= dt; if (f.bubble.t <= 0) f.bubble = null; }
+    for (const mm of msgs) mm.t -= dt * 0.3;
+  } else {
+    if (hit('p') || hit('escape')) paused = !paused;
+    if (!paused) updateWorld(dt);
+    updateCamera(paused ? 0 : dt, player.map, player.state === 'hidden' ? player.hay.x * TS + 8 : player.x, player.y - 8);
+  }
+  render(dt);
+  pressed.clear();
+  requestAnimationFrame(frame);
+}
+updateCamera(null, 'town', 30 * TS, 22 * TS);
+requestAnimationFrame(frame);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
+
+// debug / test hook
+window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
+  get wanted() { return wanted; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
+</script>
+</body>
+</html>
