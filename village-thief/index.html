@@ -2742,6 +2742,7 @@ function placeFollower(e, c, dt) {
 function witness(r) {
   if (r.map !== 'town' || player.map !== 'town' || r.reportCD > 0 || r.state === 'alarm') return;
   if (isFriend(r)) return; // friends never turn you in
+  if (!r.sawYou) return; // only folk who've caught you robbing them will point you out to the Watch
   const knows = bounty >= 3 && r.sawYou;
   if (!(wanted || player.state === 'picking' || knows) || !canSee(r, player, 90, 0.35)) return;
   r.reportCD = 8; r.fa = Math.atan2(player.y - r.y, player.x - r.x);
