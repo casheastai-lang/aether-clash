@@ -1887,6 +1887,21 @@ function genJail() {
   m.approach = town.jail.approach; m.cell = { x: 14, y: 5 }; m.cellOpen = true; m.cellSpot = { x: 14, y: 3 }; m.escortSpot = { x: 14, y: 7 };
   m.links.push({ x: m.exit.x, y: m.exit.y, to: 'town', ax: m.approach.x, ay: m.approach.y, walk: true });
   town.links.push({ x: m.approach.x, y: m.approach.y, to: 'jail', ax: m.entry.x, ay: m.entry.y });
+  // stairs from the office up to the high-security cell block, where the guild's people are held
+  set(22, 14, T.STAIRS_UP);
+  const u = newMap('jail_2', w, 13, 'jail'), su = (x, y, t) => { u.tiles[y * w + x] = t; };
+  for (let i = 0; i < w * 13; i++) { u.ground[i] = T.SFLOOR; u.tiles[i] = T.SFLOOR; }
+  for (let x = 0; x < w; x++) { su(x, 0, T.SEDGE); su(x, 1, T.SWALL); su(x, 12, T.SEDGE); }
+  for (let y = 0; y < 13; y++) { su(0, y, T.SEDGE); su(w - 1, y, T.SEDGE); }
+  u.cellDoors = [];
+  for (let x = 1; x < w - 1; x++) su(x, 5, T.BARS);
+  for (const y of [2, 3, 4]) for (let x = 4; x < w - 1; x += 4) { su(x, y, T.BARS); if (x + 1 === w - 2) su(x + 1, y, T.BARS); }
+  for (let k = 0; k < 7; k++) { const dx = 2 + 4 * k; su(dx, 5, T.CELLDOOR); u.cellDoors.push({ x: dx, y: 5, k }); su(1 + 4 * k, 2, T.BENCH); }
+  su(22, 10, T.STAIRS_DN); su(3, 10, T.DESK); su(4, 10, T.DESK); su(28, 10, T.IBARREL); su(29, 10, T.CRATE); su(12, 11, T.BENCH); su(13, 11, T.BENCH);
+  for (const x of [8, 22]) su(x, 1, T.TORCH); u.torches = [{ x: 8, y: 1 }, { x: 22, y: 1 }];
+  u.cell = { x: -1, y: -1 }; u.cellOpen = false; u.exit = { x: -1, y: -1 }; u.entry = { x: 22, y: 9 }; u.approach = m.approach; u.upper = true;
+  m.links.push({ x: 22, y: 14, to: 'jail_2', ax: 22, ay: 9, walk: true });
+  u.links.push({ x: 22, y: 10, to: 'jail', ax: 22, ay: 15, walk: true });
 }
 function randFloor(m) {
   for (let i = 0; i < 200; i++) {
@@ -2320,8 +2335,10 @@ function setupPosts() {
       ['dog', 'Brutus', DOG_SHEET, [[464, 50], [512, 50], [512, 14], [464, 14]]]] });
   extraPosts.push({ name: 'Mudford', map: 'town', inArea: inMudford, welcome: () => true,
     staff: [['guard', 'Constable Hobbes', CONSTABLE_SHEETS[0], [[300, 104], [376, 104]]], ['guard', 'Constable Penny', CONSTABLE_SHEETS[1], [[316, 95], [316, 120]]], ['guard', 'Constable Dunn', CONSTABLE_SHEETS[2], [[346, 120], [346, 113], [376, 113], [298, 113]]]] });
-  extraPosts.push({ name: 'the Watch House', map: 'jail', nightOnly: true, welcome: () => !isNight() && !wanted && player.y >= 14 * TS,
-    staff: [['guard', 'Night Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Night Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
+  extraPosts.push({ name: 'the Watch House cell block', map: 'jail_2', welcome: () => false, // nobody visits the upstairs cells
+    staff: [['guard', 'Turnkey Hobb', guardSheet(5), [[3, 6], [13, 6]]], ['guard', 'Turnkey Marlow', guardSheet(6), [[27, 6], [15, 6]]]] });
+  extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !isNight() && !wanted && player.y >= 14 * TS,
+    staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
 }
 function makeExtraPosts() {
   if (!extraPosts.length) setupPosts();
@@ -2676,7 +2693,7 @@ function loadSave(d, from) {
   bankBal = d.bankBal || 0; evidence = d.evidence || [];
   leader = !!d.leader; lastWageDay = d.lastWageDay ?? -1; supplies = Object.assign({ picks: 0, smoke: 0, rations: 0 }, d.supplies); orders = d.orders || []; bigJob = d.bigJob || null;
   for (const k of Object.keys(d.owned || {})) { const h = houses[+k]; if (!h || !(h.forSale || h.abandoned)) continue; owned[h.idx] = { basement: false }; setupBase(h); if (d.owned[k].basement && createBasement(h)) owned[h.idx].basement = true; }
-  gang = (d.gang || []).map(s => { const g = { kind: 'gang', kit: { picks: 0, smoke: 0, rations: 0 }, ...s, sheet: gangSheet(s.look), map: 'limbo', x: 0, y: 0, fa: Math.PI / 2, dir: 'down', animT: 0, bubble: null, path: null, wait: 0 }; if (g.state === 'base') placeAtBase(g); return g; });
+  gang = (d.gang || []).map(s => { const g = { kind: 'gang', kit: { picks: 0, smoke: 0, rations: 0 }, ...s, sheet: gangSheet(s.look), map: 'limbo', x: 0, y: 0, fa: Math.PI / 2, dir: 'down', animT: 0, bubble: null, path: null, wait: 0 }; if (g.state === 'base') placeAtBase(g); else if (g.state === 'jail') jailGang(g); return g; });
   heist = d.heist || null; exiled = !!d.exiled; halfBounty = !!d.halfBounty; stash = d.stash || []; contest = d.contest || null; treasure = d.treasure || null; if (heist) { const t = thieves[heist.partner]; t.state = 'partner'; t.map = player.map; t.x = player.x + 12; t.y = player.y; }
   rep = d.rep || 0; job = d.job || null; if (job && !job.got) { const e = jobEntry(job); if (e && !e.taken) e.contract = true; else job = null; }
   curDay = dayInfo().day; syncForce();
@@ -3055,12 +3072,27 @@ function resolveBigJob() {
     rep += 2; msg(`THE HEIST WORKED! Your crew hit ${T.name}: ${got.length} prizes worth ${value}g are in your stash. Their cut: ${cut}g. (+2 rep)`, '#f7d774'); SFX.coins(); unlock('big_score');
   } else {
     const caught = crew.filter(g => !(g.kit.smoke > 0 && Math.random() < 0.6 && (g.kit.smoke--, true)));
-    for (const g of crew) { if (caught.includes(g)) { g.state = 'jail'; g.jailUntil = gameTime + DAY_LEN; g.map = 'limbo'; } else { g.state = 'base'; placeAtBase(g); } }
+    for (const g of crew) { if (caught.includes(g)) { g.jailUntil = gameTime + DAY_LEN; jailGang(g); } else { g.state = 'base'; placeAtBase(g); } }
     if (h) { h.alarmT = Math.max(h.alarmT, 30); h.cooldown = 300; }
     msg(`The heist on ${T.name} went wrong! ${caught.length ? caught.map(g => g.name).join(', ') + ' got caught' : 'Everyone smoked their way out'}.${caught.length ? ' The Watch knows the guild was behind it.' : ''}`, '#ff8a6b'); SFX.alarm();
     if (caught.length) raiseBounty();
   }
 }
+function jailGang(g) {
+  const u = maps.jail_2, taken = gang.filter(o => o !== g && o.state === 'jail' && o.cell != null).map(o => o.cell);
+  const k = [0, 1, 2, 3, 4, 5, 6].find(i => !taken.includes(i));
+  g.state = 'jail'; g.path = null;
+  if (k === undefined) { g.cell = null; g.map = 'limbo'; return; } // cells full: held in the cellar
+  g.cell = k; g.map = 'jail_2'; g.x = u.cellDoors[k].x * TS + 8; g.y = 3 * TS + 12; g.fa = Math.PI / 2; g.dir = 'down';
+}
+function releaseGang(g, how) { g.cell = null; g.jailUntil = null; g.state = 'base'; placeAtBase(g); if (how) msg(how, '#9df0a0'); }
+function freeGang(g) {
+  const d = maps.jail_2.cellDoors[g.cell]; d.openUntil = gameTime + 20;
+  g.cell = null; g.jailUntil = null; g.state = 'follow'; g.path = null; g.x = d.x * TS + 8; g.y = 7 * TS + 12;
+  rep += 1; SFX.unlock(); say(g, pick(['Knew you\'d come, boss!', 'Let\'s get out of here!', 'Freedom!']), 2.5);
+  msg(`You broke ${g.name} out of the cells! They're following you - get them out of the Watch House. (+1 rep)`, '#c9a0ff'); unlock('jailbreak');
+}
+const bailFor = g => 30 + 25 * g.skill;
 function hire(r) {
   if (gang.length >= gangMax()) return;
   if (gold < r.fee) { chat.reply = `${r.name} wants ${r.fee}g up front.`; SFX.deny(); return; }
@@ -3096,7 +3128,7 @@ function resolveJob(g) {
   if (g.kit.picks > 0) g.kit.picks--;
   if (Math.random() > chance && g.kit.smoke > 0 && Math.random() < 0.6) { g.kit.smoke--; g.state = 'base'; placeAtBase(g); msg(`${g.name} was spotted at the ${h.family} house, but smoked their way out and came back empty-handed.`, '#ffb36b'); return; }
   if (Math.random() > chance) {
-    g.state = 'jail'; g.jailUntil = gameTime + DAY_LEN * 0.8; g.map = 'limbo'; h.cooldown = Math.max(h.cooldown, 120);
+    g.jailUntil = gameTime + DAY_LEN * 0.8; jailGang(g); h.cooldown = Math.max(h.cooldown, 120);
     msg(`${g.name} got caught robbing the ${h.family} house! They're in the Watch House cells until tomorrow.`, '#ff8a6b'); SFX.alarm(); return;
   }
   const got = [];
@@ -3137,10 +3169,10 @@ function updateGangMember(g, dt) {
   g.moving = false; const bx = g.x, by = g.y, bm = g.map;
   if (g.state === 'job') { if (gameTime >= g.jobUntil) resolveJob(g); return; }
   if (g.state === 'heist') return; // out with the crew
-  if (g.state === 'jail') { if (gameTime >= g.jailUntil) { g.state = 'base'; placeAtBase(g); msg(`${g.name} is out of the cells and back at your base.`, '#cfd8ff'); } return; }
+  if (g.state === 'jail') { if (gameTime >= g.jailUntil) releaseGang(g, `${g.name} served their time and is back at your base.`); else if (g.map === 'jail_2' && g.cell != null) { g.moving = false; g.dir = 'down'; } return; }
   if (g.state === 'follow') {
     const pm = maps[player.map];
-    if (!pm || player.map === 'jail' || captured()) { g.state = 'base'; placeAtBase(g); }
+    if (!pm || captured()) { g.state = 'base'; placeAtBase(g); }
     else if (pm.kind === 'house' && !isBaseMap(player.map) && pm.house.residents.some(r => isHome(r) && r.state !== 'sleep')) { const a = pm.house.approach; navTo(g, 'town', a.x + 1, a.y + 1, 60, dt); } // waits outside while folk are awake
     else if (!gangSteal(g, dt)) followPlayer(g, dt);
   } else { // at the base
@@ -3319,8 +3351,9 @@ function chatOptions() {
     add('Buy a smoked fish (3g)', () => { chatClose(); buyFish(t); }, 3);
     add('Any tips?', () => { chat.reply = pick(['The Watch walks the quay at night. Mind yourself.', 'Carriage east goes to Mudford, and on to Kingsbridge.', 'Silas the smuggler comes out after dark.']); });
   } else if (t.name === 'Jailer Grubb') {
+    for (const g of gang) if (g.state === 'jail') add(`Pay ${g.name}'s bail (${bailFor(g)}g)`, () => { if (wanted) { chat.reply = 'Bail? You\'re wanted yourself!'; return; } if (!pay(bailFor(g))) return; releaseGang(g, `You paid ${g.name}'s bail. They're back at your base.`); chat.reply = 'Paid in full. Off they go. Tell them to keep their fingers to themselves.'; }, bailFor(g));
     if ((bounty > 0 || halfBounty) && !wanted) add(`Pay off your bounty (${bounty * 60 + (halfBounty ? 30 : 0)}g)`, () => { if (!pay(bounty * 60 + (halfBounty ? 30 : 0))) return; halfBounty = false; bounty = 0; syncForce(); chat.reply = 'Paid in full. Your slate is clean... for now.'; msg('Bounty cleared!', '#9df0a0'); }, bounty * 60 + (halfBounty ? 30 : 0));
-    add('Who\'s locked up?', () => { const j = thieves.filter(o => o.state === 'jailed' && o.cell).map(o => o.name); chat.reply = j.length ? `Got ${j.join(' and ')} in the cells. Thieves, the lot of 'em.` : 'Just the usual drunks and layabouts.'; });
+    add('Who\'s locked up?', () => { const j = thieves.filter(o => o.state === 'jailed' && o.cell).map(o => o.name).concat(gang.filter(g => g.state === 'jail').map(g => g.name + ' (upstairs)')); chat.reply = j.length ? `Got ${j.join(' and ')} in the cells. Thieves, the lot of 'em.` : 'Just the usual drunks and layabouts.'; });
   } else if (t.kind === 'thief' && t.state === 'jailed') {
     add('Small talk', () => { chat.reply = pick(['Get me out of here! Pick the lock, quick!', 'Watch the turnkeys - they walk the corridor at night.', "They'll let me out tomorrow. Probably."]); });
   } else if (t.kind === 'thief' && exiled) {
@@ -3834,7 +3867,12 @@ function findInteraction() {
     if (mark && !p.inter) { p.inter = { label: `Pickpocket ${mark.name.split(' (')[0]}`, act: () => startPocket(mark) }; return; }
   } else if (m.kind === 'jail' && p.state === 'free') {
     const lk = m.locker;
-    if (Math.hypot(p.x - (lk.x * TS + 8), p.y - 4 - (lk.y * TS + 8)) < 22) {
+    for (const g of gang) if (g.state === 'jail' && g.map === p.map && g.cell != null) { const d = m.cellDoors[g.cell]; if (Math.hypot(p.x - (d.x * TS + 8), p.y - 4 - (d.y * TS + 8)) < 22) {
+      p.inter = { label: `${g.name}'s cell`, act: () => say(g, pick(['Boss! Get me out of here!', 'Pick the lock, quick - before the turnkeys come back!', 'I didn\'t say a word, boss. Not one.']), 2.2) };
+      p.inter2 = { label: `Pick the lock - free ${g.name}`, act: () => startPick(null, () => freeGang(g), 7, 'Cell door') };
+      return;
+    } }
+    if (lk && Math.hypot(p.x - (lk.x * TS + 8), p.y - 4 - (lk.y * TS + 8)) < 22) {
       p.inter = { label: `Evidence locker${evidence.length ? ` (${evidence.length} confiscated)` : ' (empty)'}`, act: () => say(p, evidence.length ? 'My loot is in there...' : 'Nothing of mine in there.', 1.5) };
       if (evidence.length) p.inter2 = { label: 'Pick the evidence locker', act: () => startPick(null, () => { const room = sackCap() - p.loot.length, back = evidence.splice(0, Math.max(0, room)); p.loot.push(...back); SFX.steal(); msg(`You took back ${back.length} confiscated item${back.length === 1 ? '' : 's'}!`, '#f7d774'); unlock('evidence'); }, 7, 'Evidence locker') };
       return;
@@ -3961,7 +3999,7 @@ function updatePlayer(dt) {
     case 'free': {
       doMove(dt, true);
       if (m.kind === 'house') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { if (L.to === 'town') leaveHouse(m.house, L); else changeFloor(L); return; } }
-      if (m.kind === 'jail') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveWatchHouse(); return; } }
+      if (m.kind === 'jail') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveWatchHouse(); return; } const L = m.links.find(l => l.walk && l.to !== 'town' && l.x === t.x && l.y === t.y); if (L) { changeFloor(L); return; } }
       if (m.plates && m.house.alarmT <= 0) { const t = tileOfE(p); if (m.tiles[t.y * m.w + t.x] === T.PLATE && !p.sneak && (!m.lobby || t.y < m.lobby.y0)) bankBell(m.house); }
       findInteraction();
       p.talk = talkTarget();
@@ -4490,7 +4528,7 @@ function render(dt) {
       else if ((e.hint || e.contract) && Math.floor(gameTime * 4) % 2) { F(ctx, e.x * TS + 7, e.y * TS - 3, 2, 6, '#fff6b0'); F(ctx, e.x * TS + 5, e.y * TS - 1, 6, 2, '#fff6b0'); }
     for (let x = 0; x < m.w; x++) if (m.tiles[m.w + x] === T.FIRE) { const f = Math.floor(gameTime * 10) % 3; F(ctx, x * TS + 6 + f % 2, 1 * TS + 9 - f, 2, 2, '#ffe08a'); }
     if (m.locks) for (const L of m.locks.values()) if (!L.shut) GP[T.FLOOR](ctx, L.x * TS, L.y * TS, L.x, L.y, m);
-    if (m.kind === 'jail') for (const d of m.cellDoors) if (!(m.cellOpen && d.x === m.cell.x && d.y === m.cell.y)) { OP[T.BARS](ctx, d.x * TS, d.y * TS); F(ctx, d.x * TS + 6, d.y * TS + 7, 4, 3, '#c9a04a'); }
+    if (m.kind === 'jail') for (const d of m.cellDoors) if (!(m.cellOpen && d.x === m.cell.x && d.y === m.cell.y) && !(d.openUntil > gameTime)) { OP[T.BARS](ctx, d.x * TS, d.y * TS); F(ctx, d.x * TS + 6, d.y * TS + 7, 4, 3, '#c9a04a'); }
   }
   // vision cones
   const range = guardRange();
@@ -5255,7 +5293,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, get supplies() { return supplies; }, get orders() { return orders; }, get bigJob() { return bigJob; }, gangMax, startBigJob, resolveBigJob, gangMorning, BIG_TARGETS, digBasement, jobTargets, buyBase, hqHouse, calledOut, theftDiscovered, get leader() { return leader; }, get owned() { return owned; }, get gang() { return gang; }, get stash() { return stash; }, chatClose, enterHouse, sendOnJob, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, jailGang, freeGang, releaseGang, get supplies() { return supplies; }, get orders() { return orders; }, get bigJob() { return bigJob; }, gangMax, startBigJob, resolveBigJob, gangMorning, BIG_TARGETS, digBasement, jobTargets, buyBase, hqHouse, calledOut, theftDiscovered, get leader() { return leader; }, get owned() { return owned; }, get gang() { return gang; }, get stash() { return stash; }, chatClose, enterHouse, sendOnJob, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
