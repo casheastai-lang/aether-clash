@@ -2285,7 +2285,7 @@ function drawHUD(di) {
   // clock + minimap
   const ms = VW < 330 ? 0.5 : 0.8, mw = Math.round(town.w * ms), mh = Math.round(town.h * ms), mx = VW - mw - 6, my = 4, mm = v => Math.floor(v * ms);
   panel(mx - 2, my, mw + 4, 12); txt(`${di.weekday} - ${di.name}`, mx + mw / 2, my + 3, 5, isMarketDay() ? '#f7d774' : di.name === 'Night' ? '#9ab0ff' : '#ffe9a8', 'center', null);
-  if (!narrow || state === 'play') {
+  if ((!narrow || state === 'play') && p.map === 'town') { // the minimap only shows the streets, so it stays out of the way indoors
     panel(mx - 2, my + 13, mw + 4, mh + 4); ctx.drawImage(miniCv, mx, my + 15, mw, mh);
     const dot = (tx, ty, col, big) => { if (big) F(ctx, mx + mm(tx) - 1, my + 15 + mm(ty) - 1, 3, 3, '#000'); F(ctx, mx + mm(tx), my + 15 + mm(ty), 1, 1, col); };
     for (const f of fences) dot(Math.floor(f.x / TS), Math.floor(f.y / TS), '#f7d774', true);
