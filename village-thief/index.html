@@ -1684,6 +1684,7 @@ function pickMark(t) {
 function freeBeside(m, x, y) { for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1]]) if (!isSolid(m, x + dx, y + dy) && !m.links.some(l => l.x === x + dx && l.y === y + dy)) return { x: x + dx, y: y + dy }; return null; }
 function dropClaim(t) { if (t.loot) t.loot.claimed = null; t.loot = null; }
 function thiefSpotted(t, h) {
+  watchAlert(h, t);
   dropClaim(t); t.state = 'flee'; t.fleeSpd = rnd(48, 70); t.path = null; t.mark = null;
   say(t, pick(['Blast! Leg it!', 'Oh no no no...', 'Run!']), 2);
   const r = h.residents.find(isHome); if (r) say(r, 'THIEF! THIEF! WATCH!', 3);
@@ -1695,6 +1696,7 @@ function thiefSpotted(t, h) {
 }
 function robTake(t, m) {
   const e = t.loot, h = m.house; e.taken = true; e.t = 0; e.claimed = null; t.loot = null; t.grabs--;
+  h.robbedBy = t.i; h.robbedAt = gameTime; e.robbedBy = t.i; // clues for the Watch
   if (contest && contest.thief === t.i) contest.theirs += e.item.value;
   const anyone = h.residents.some(isHome);
   if (inHouse(h, player.map)) h.wake += rnd(8, 20); // their clumsy hands make noise you'll be blamed for
@@ -1833,6 +1835,7 @@ function updateThief(t, dt) {
     case 'caught': // walked along by the watchman holding them; if he's knocked out (smoke!) they wriggle free
       if (!t.captor || t.captor.state !== 'haul') { t.captor = null; t.state = 'flee'; t.fleeSpd = 70; t.path = null; say(t, 'Ha! Free!', 1.8); }
       return;
+    case 'escorted': updateEscorted(t, dt); return;
     case 'jailed': if (gameTime > t.freeAt) { const [x, y] = DEN_SPOTS[t.i]; Object.assign(t, { cell: null, state: 'den', map: 'sewer', x: x * TS + 8, y: y * TS + 12, path: null, wtarget: null }); } return;
   }
   if (t.map === before.map && (t.x !== before.x || t.y !== before.y)) { t.moving = true; t.animT += dt; }
@@ -1954,7 +1957,7 @@ let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, cu
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
-  career = { type: 'thief' };
+  career = { type: 'thief' }; clearHomes();
   player = { disguiseDay: -1, keys: 0, bones: 0, cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
@@ -2277,7 +2280,7 @@ function setupPosts() {
       ['dog', 'Brutus', DOG_SHEET, [[464, 50], [512, 50], [512, 14], [464, 14]]]] });
   extraPosts.push({ name: 'Mudford', map: 'town', inArea: inMudford, welcome: () => true,
     staff: [['guard', 'Constable Hobbes', CONSTABLE_SHEETS[0], [[300, 104], [376, 104]]], ['guard', 'Constable Penny', CONSTABLE_SHEETS[1], [[316, 95], [316, 120]]], ['guard', 'Constable Dunn', CONSTABLE_SHEETS[2], [[346, 120], [346, 113], [376, 113], [298, 113]]]] });
-  extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !isNight() && !wanted && player.y >= 14 * TS,
+  extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
     staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
 }
 function makeExtraPosts() {
@@ -2434,6 +2437,10 @@ function knock(h) {
 function resolveKnock(h) {
   const p = player; p.state = 'free'; let refuse = null;
   const doorSpot = { x: h.door.x * TS + 8, y: h.door.y * TS + 6 }; const doorE = { x: doorSpot.x, y: doorSpot.y };
+  if (isWatch() && !wanted && !houseEmpty(h)) { // nobody turns the Watch away
+    h.doorOpenT = 0.8; SFX.door(); doorBubble = { x: doorE.x, y: doorE.y, text: pick(['Oh! The Watch! Come in, officer.', 'Is something wrong, officer? Come in.', 'Of course, come in.']), t: 1.8 };
+    transition(() => enterHouse(h)); return;
+  }
   const knower = bounty >= 3 && !disguised() && h.residents.find(r => isHome(r) && r.sawYou && !isFriend(r));
   const friend = h.residents.find(r => isHome(r) && isFriend(r)), enemy = h.residents.find(r => isHome(r) && isEnemy(r));
   if (houseEmpty(h)) refuse = isMarketDay() ? "...(no answer) They're all at the market." : "...(no answer) Nobody's home.";
@@ -2597,15 +2604,15 @@ function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); if (
 function snapshot() {
   const p = player, d = dayInfo();
   return { v: 3, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
-    career, est: estates.map(E => [E.invited ? 1 : 0, E.banned ? 1 : 0]), rep, job, bankBal, evidence, heist, exiled, halfBounty, stash, contest, treasure,
+    career, homeIdx, est: estates.map(E => [E.invited ? 1 : 0, E.banned ? 1 : 0]), rep, job, bankBal, evidence, heist, exiled, halfBounty, stash, contest, treasure,
     player: { map: p.map, x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks, cakes: p.cakes, rings: p.rings, room: p.room, bones: p.bones, keys: p.keys || 0 },
     houses: houses.map(h => ({ c: h.cooldown, r: h.residents.map(r => [r.friend || 0, r.sawYou ? 1 : 0]), pet: h.pet ? (h.pet.friend || 0) : null,
       loot: h.floors.map(f => [...f.loot.values()].map(e => e.taken ? [1, Math.round(e.t)] : [0, e.item.name, e.item.value])) })) };
 }
 // you can save outdoors, or in your rented room at the inn
-function canSave() { return (player.map === 'town' || player.map === 'sewer' || (player.room && player.map === player.room.map)) && player.state === 'free' && !wanted; }
+function canSave() { return (player.map === 'town' || player.map === 'sewer' || !!(maps[player.map].house && maps[player.map].house.playerHome) || (player.room && player.map === player.room.map)) && player.state === 'free' && !wanted; }
 function writeSlot(n) {
-  if (!canSave()) { msg('You can only save outdoors, in the sewers, or in your room at the inn, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
+  if (!canSave()) { msg('You can only save outdoors, in the sewers, in your own home or your room at the inn, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
   const d = snapshot(); let ok = false; slotCache[n] = d;
   try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(d)); ok = true; } catch (e) { }
   if (cloud.db) { cloudPut('save' + n, d); ok = true; }
@@ -2627,7 +2634,7 @@ function loadSave(d, from) {
     hs.loot.forEach((list, fi) => { const f = h.floors[fi]; if (!f) return; [...f.loot.values()].forEach((e, k) => { const s = list[k]; if (!s) return; if (s[0]) { e.taken = true; e.t = s[1]; } else { e.taken = false; e.item = { name: s[1], value: s[2] }; } }); });
   });
   bankBal = d.bankBal || 0; evidence = d.evidence || [];
-  career = d.career || { type: 'thief' }; player.sheet = isWatch() ? WATCH_SHEET : PLAYER_SHEET;
+  career = d.career || { type: 'thief' }; player.sheet = isWatch() ? WATCH_SHEET : PLAYER_SHEET; if (d.homeIdx != null) applyHome(houses[d.homeIdx]);
   curDay = dayInfo().day; syncForce();
   state = 'play'; saves = null; paused = false; if (multi()) syncWorldClock('load');
   updateCamera(null, p.map, p.x, p.y - 8);
@@ -2862,7 +2869,25 @@ function takeJob(job, who) {
 function joinWatch(town, shift) {
   career = { type: 'watch', town, shift, strikes: 0, shiftNo: -1, onT: 0, tot: 0, post: null, arrests: 0 };
   player.sheet = WATCH_SHEET; SFX.buy(); stat('watchJoin');
+  if (homeIdx == null) { const h = homeFor(town); if (h) { applyHome(h); msg(`The Watch gives you a little cottage of your own: the old ${h.family} place in ${TOWN_NAMES[town]} (on your minimap). Sleep and save there.`, '#9df0a0'); } }
   msg(`You're sworn in to the Watch of ${TOWN_NAMES[town]}: ${shift} shift, ${WATCH_PAY[town]}g a shift. Stand your POST, and arrest any robbers you catch (+20g each).`, '#9ab0ff');
+}
+var homeIdx = null; // your cottage, if the Watch gave you one
+function homeFor(town) { return houses.filter(h => h.type === 'cottage' && !h.yard && !h.shop && !h.estate && !h.woods && townIdxAt(h.x) === town && (town !== 0 || h.x < 118)).sort((a, b) => hash(a.idx, 5, 77) - hash(b.idx, 5, 77))[0]; }
+function applyHome(h) {
+  if (!h || h.playerHome) return;
+  h.homeBackup = { residents: h.residents, pet: h.pet, loot: h.floors.map(f => new Map(f.loot)) };
+  if (h.pet) { pets.splice(pets.indexOf(h.pet), 1); h.pet = null; }
+  h.residents = []; for (const f of h.floors) f.loot.clear(); h.playerHome = true; homeIdx = h.idx;
+}
+function clearHomes() {
+  if (typeof houses === 'undefined') return;
+  for (const h of houses) if (h.playerHome) { h.residents = h.homeBackup.residents; if (h.homeBackup.pet) { h.pet = h.homeBackup.pet; pets.push(h.pet); } h.floors.forEach((f, i) => { f.loot.clear(); for (const [k, v] of h.homeBackup.loot[i]) f.loot.set(k, v); }); h.playerHome = false; h.homeBackup = null; }
+  homeIdx = null;
+}
+function sleepAtHome() {
+  if (wanted) { msg("You can't sleep with the Watch after you.", '#ffb36b'); SFX.deny(); return; }
+  transition(() => { const d = dayInfo(); gameTime = d.day * DAY_LEN - 60 + 1; player.stamina = 100; player.tired = false; msg(`You wake in your own bed on ${dayInfo().weekday} morning.`, '#9ab0ff'); });
 }
 function quitCareer(why) { career = { type: 'thief' }; player.sheet = PLAYER_SHEET; msg(why, '#ffb36b'); msg('You\'re free to live as a thief again - steal, pick locks, pick pockets.', '#c9a0ff'); }
 // Honest folk don't steal: a watchman or a worker has to quit first.
@@ -2883,8 +2908,10 @@ function updateCareer(dt) {
     if (on) c.missed = false;
   } else if (isWatch()) {
     const c = career;
-    if (on && c.shiftNo !== id) { c.shiftNo = id; c.onT = 0; c.tot = 0; c.post = pick(watchPosts(c.town)); msg(`On duty: your post tonight is marked POST in ${TOWN_NAMES[c.town]}. Stay near it.`, '#9ab0ff'); }
-    if (on && c.post) { c.tot += dt; if (p.map === 'town' && Math.hypot(p.x - (c.post.x * TS + 8), p.y - (c.post.y * TS + 8)) < 6 * TS) c.onT += dt; }
+    if (c.alert) { const ax = c.alert.x * TS + 8, ay = c.alert.y * TS + 12, pp = townPos(p); if (gameTime > c.alert.until) c.alert = null; else if (Math.hypot(pp.x - ax, pp.y - ay) < 5 * TS) { msg(`You reach the ${c.alert.house} house. Catch ${c.alert.who} if they're still about!`, '#9ab0ff'); c.alert = null; } }
+    if (on && c.shiftNo !== id) { c.shiftNo = id; c.onT = 0; c.tot = 0; c.post = pick(watchPosts(c.town)); c.moveAt = gameTime + DAY_LEN * rnd(0.08, 0.14); msg(`On duty: your post is marked POST in ${TOWN_NAMES[c.town]}. Stay near it - the sergeant moves you about.`, '#9ab0ff'); }
+    if (on && c.post && gameTime >= c.moveAt) { const old = c.post, opts = watchPosts(c.town).filter(l => Math.hypot(l.x - old.x, l.y - old.y) > 8); c.post = opts.length ? pick(opts) : old; c.moveAt = gameTime + DAY_LEN * rnd(0.08, 0.14); const pp = townPos(p), dx = c.post.x * TS - pp.x, dy = c.post.y * TS - pp.y; msg(`Sergeant's orders: move to a new post, ${Math.round(Math.hypot(dx, dy) / TS)}m ${compass(dx, dy)}. (Time to get there doesn't count against you.)`, '#9ab0ff'); c.grace = gameTime + 25; }
+    if (on && c.post && !(c.grace > gameTime)) { c.tot += dt; if (p.map === 'town' && Math.hypot(p.x - (c.post.x * TS + 8), p.y - (c.post.y * TS + 8)) < 6 * TS) c.onT += dt; }
     if (!on && c.post) {
       const frac = c.tot ? c.onT / c.tot : 0, wage = WATCH_PAY[c.town]; c.post = null;
       if (frac >= 0.5) { gold += wage; totalEarned += wage; SFX.coins(); msg(`Shift over. ${Math.round(frac * 100)}% of it at your post - paid ${wage}g.`, '#9df0a0'); stat('wages', wage); }
@@ -2892,16 +2919,48 @@ function updateCareer(dt) {
     }
   }
 }
+const compass = (dx, dy) => { const a = Math.atan2(dy, dx) * 180 / Math.PI; return ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'][Math.round(((a + 360) % 360) / 45) % 8]; };
+function watchAlert(h, t) {
+  if (!isWatch() || wanted) return;
+  const pp = townPos(player), dx = h.approach.x * TS + 8 - pp.x, dy = h.approach.y * TS + 12 - pp.y, d = Math.round(Math.hypot(dx, dy) / TS);
+  career.alert = { x: h.approach.x, y: h.approach.y, until: gameTime + 120, house: h.family, who: t ? t.name : 'a thief' };
+  const where = `the ${h.family} house in ${TOWN_NAMES[townIdxAt(h.x)]}`;
+  msg(`ALARM! Someone's shouting for the Watch at ${where} - ${d}m ${compass(dx, dy)} of you! Follow the ALARM marker.`, '#ff6b6b'); SFX.whistle();
+  const sarge = guards.filter(g => g.map === player.map && g.unit === 'guard').sort((a, b) => dist(a, player) - dist(b, player))[0];
+  say(sarge && dist(sarge, player) < 200 ? sarge : player, sarge && dist(sarge, player) < 200 ? `Thief at the ${h.family} house! ${compass(dx, dy)[0].toUpperCase() + compass(dx, dy).slice(1)}! GO!` : `The ${h.family} house - ${compass(dx, dy)}!`, 3);
+}
+// ---- investigating: search a robbed house for clues, or ask the family; then arrest the culprit
+const recentRobbery = h => h && h.robbedBy != null && gameTime - h.robbedAt < DAY_LEN * 2;
+function openCase(h, how) {
+  const t = thieves[h.robbedBy]; if (!t) return;
+  career.caseOn = { thief: t.i, house: h.family }; h.robbedBy = null;
+  msg(`${how} It was ${t.name}! Robbers lie low in the sewers by day and prowl at night. Arrest them to close the case (+40g bonus). Follow the SUSPECT marker.`, '#9ab0ff'); SFX.pick(); stat('cases');
+}
 function finishTask() {
   const c = career, p = player; p.state = 'free'; c.done++; SFX.pick();
   if (c.done >= c.need && !c.paid) { c.paid = true; gold += c.job.wage; totalEarned += c.job.wage; SFX.coins(); stat('wages', c.job.wage); msg(`Day's work done! Paid ${c.job.wage}g as ${c.job.title}.`, '#9df0a0'); }
   else msg(`${c.job.task}: done (${c.done}/${c.need}).`, '#cfd8ff');
 }
+function arrestRobber(t) {
+  if (career.escort != null && thieves[career.escort] && thieves[career.escort].state === 'escorted') { msg('You already have a prisoner in tow. Take them to the Watch House first.', '#ffb36b'); SFX.deny(); return; }
+  dropClaim(t); t.state = 'escorted'; t.path = null; t.captor = null; career.escort = t.i; SFX.pick();
+  say(t, pick(['Alright, alright! I\'ll come quietly.', 'You got me, copper.', 'Not the cells...']), 2);
+  msg(`You've got ${t.name} in irons. Walk them to the Watch House in the big town (JAIL marker), or hand them to any guard on the way.`, '#9ab0ff');
+}
+function updateEscorted(t, dt) {
+  const p = player;
+  if (!isWatch() || career.escort !== t.i || wanted) { if (career.escort === t.i) career.escort = null; t.state = 'flee'; t.fleeSpd = 50; t.path = null; say(t, 'So long, sucker!', 1.6); return; }
+  if (p.map === 'jail' && t.map === 'jail') { say(jailNPCs[1] || p, 'In you go.', 1.5); jailRobber(t); return; }
+  if (t.map !== p.map || dist(t, p) > 90) { t.map = p.map; t.x = p.x; t.y = p.y + 6; t.path = null; t.stuckT = 0; return; }
+  if (dist(t, p) > 18) { const pt = tileOfE(p); navTo(t, p.map, pt.x, pt.y, 62, dt, true); if (t.stuckT > 2) { t.x = p.x; t.y = p.y + 6; t.stuckT = 0; } }
+}
 function jailRobber(t) {
+  if (career.escort === t.i) career.escort = null;
   dropClaim(t); t.state = 'jailed'; t.captor = null; t.freeAt = gameTime + DAY_LEN; t.path = null;
   const d = jailCellFor(t); if (d) { t.cell = d; t.map = 'jail'; t.x = d.x * TS + 8; t.y = (d.y === 5 ? 3 : 11) * TS + 12; t.dir = d.y === 5 ? 'down' : 'up'; } else t.map = 'limbo';
-  gold += 20; totalEarned += 20; career.arrests = (career.arrests || 0) + 1; SFX.coins(); stat('arrests');
-  msg(`You arrested ${t.name}! They're off to the cells. Reward: 20g.`, '#9df0a0');
+  const solved = career.caseOn && career.caseOn.thief === t.i, pay = solved ? 60 : 20; if (solved) career.caseOn = null;
+  gold += pay; totalEarned += pay; career.arrests = (career.arrests || 0) + 1; SFX.coins(); stat('arrests');
+  msg(solved ? `CASE CLOSED! You arrested ${t.name}, the robber you tracked down. Reward: 20g + 40g case bonus.` : `You arrested ${t.name}! They're off to the cells. Reward: 20g.`, '#9df0a0');
 }
 // what you can do because of your job: work a task, or arrest a robber
 function careerInteraction(p) {
@@ -2909,7 +2968,11 @@ function careerInteraction(p) {
     const sp = career.spots[career.done];
     if (sp && p.map === sp.map && Math.hypot(p.x - (sp.x * TS + 8), p.y - (sp.y * TS + 12)) < 16) { p.inter = { label: `${career.job.task} (hold E)`, act: () => { p.state = 'working'; p.workT = 0; } }; return true; }
   }
-  if (isWatch() && !wanted) for (const t of thieves) if (t.map === p.map && ['out', 'rob', 'flee', 'home'].includes(t.state) && (isNight() || t.state === 'rob') && dist(t, p) < 22) { p.inter = { label: `Arrest ${t.name}!`, act: () => jailRobber(t) }; return true; }
+  if (isWatch() && !wanted) for (const t of thieves) { const suspect = career.caseOn && career.caseOn.thief === t.i && !['jailed', 'escorted'].includes(t.state); if (t.map === p.map && dist(t, p) < 22 && (suspect || (['out', 'rob', 'flee', 'home'].includes(t.state) && (isNight() || t.state === 'rob')))) { p.inter = { label: suspect ? `Arrest ${t.name} (your suspect)!` : `Arrest ${t.name}!`, act: () => arrestRobber(t) }; return true; } }
+  if (isWatch() && career.escort != null && !wanted) { const t = thieves[career.escort], g = guards.find(g => g.unit !== 'dog' && g.map === p.map && dist(g, p) < 24 && !['stunned', 'nab', 'haul'].includes(g.state)); if (t && g) { p.inter = { label: `Hand ${t.name} over to ${g.name || 'the guard'}`, act: () => { say(g, 'I\'ll take it from here. Good work.', 2); jailRobber(t); } }; return true; } }
+  if (isWatch() && !wanted && maps[p.map].house && recentRobbery(maps[p.map].house)) {
+    const m = maps[p.map]; for (const e of m.loot.values()) if (e.taken && e.robbedBy != null && Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)) < 24) { p.inter = { label: 'Search for clues (hold E)', act: () => { p.state = 'investigate'; p.workT = 0; } }; return true; }
+  }
   return false;
 }
 function careerLabel() {
@@ -2934,11 +2997,12 @@ function chatOptions() {
   if (t.kind === 'resident' && t.state !== 'sleep') {
     const host = t.state === 'host', h = t.house;
     if (wanted && !isFriend(t)) { add('Goodbye', () => chatClose()); return o; } // they won't talk to a wanted thief
+    if (isWatch() && recentRobbery(h)) add('Ask about the robbery', () => { chat.reply = pick(['We heard someone in the night - a skinny sort, smelled of the sewers.', 'Our best things, gone! I saw a face at the window...', 'They went off towards the manhole, I\'m sure of it.']); openCase(h, 'The family\'s description is clear:'); });
     const sj = h.shop && SHOP_JOBS[h.shop], wood = ['Woodcutter', 'Axeworth'].includes(h.family);
     if (!t.child && (sj || wood)) {
       const mine = isWorker() && (career.job.h === h.idx || (wood && career.job.kind === 'wood'));
       if (mine) { add(`Quit your job (${career.job.title})`, () => { quitCareer(`You quit as ${career.job.title}.`); chat.reply = 'Suit yourself. Door\'s that way.'; }); add('How am I doing?', () => { chat.reply = career.strikes ? `${career.strikes} missed shift${career.strikes > 1 ? 's' : ''}. ${STRIKES_OUT} and you're out.` : 'Good worker. Keep it up.'; }); }
-      else add(`Ask for work: ${sj ? sj[0] : 'Woodcutter'} (${sj ? sj[1] : 16}g a day)`, () => { if (bounty || halfBounty) { chat.reply = 'Hire a wanted thief? I don\'t think so.'; return; } takeJob(sj ? { kind: 'shop', h: h.idx, shop: h.shop, title: sj[0], wage: sj[1], task: sj[2] } : { kind: 'wood', title: 'Woodcutter', wage: 16, task: 'Split logs' }, sj ? 'You start tomorrow - well, today, if you\'re quick.' : 'Grab an axe. The log piles and stumps want splitting.'); });
+      else add(`Ask for work: ${sj ? sj[0] : 'Woodcutter'} (${sj ? sj[1] : 16}g a day)`, () => { if (bounty || halfBounty) { chat.reply = 'Hire someone with a price on their head? Clear your bounty first - pay it off at Jailer Grubb\'s desk in the Watch House, or lie low till it fades.'; return; } takeJob(sj ? { kind: 'shop', h: h.idx, shop: h.shop, title: sj[0], wage: sj[1], task: sj[2] } : { kind: 'wood', title: 'Woodcutter', wage: 16, task: 'Split logs' }, sj ? 'You start tomorrow - well, today, if you\'re quick.' : 'Grab an axe. The log piles and stumps want splitting.'); });
     }
     add('Small talk', () => {
       const grumpy = irritated(t);
@@ -2995,8 +3059,8 @@ function chatOptions() {
       add(`Switch to the ${career.shift === 'day' ? 'night' : 'day'} shift`, () => { career.shift = career.shift === 'day' ? 'night' : 'day'; career.post = null; career.shiftNo = -1; chat.reply = `${career.shift === 'day' ? 'Day' : 'Night'} shift it is.`; });
       add('Hand in your badge (quit the Watch)', () => { quitCareer('You hand in your badge. Just a citizen again.'); chat.reply = 'Shame. You had the look.'; });
     } else {
-      for (const sh of ['day', 'night']) add(`Join the Watch of ${TOWN_NAMES[town]} (${sh} shift, ${WATCH_PAY[town]}g a shift)`, () => { if (bounty || halfBounty) { chat.reply = 'With a bounty on your head? Pull the other one.'; return; } if (isWorker()) msg(`You quit as ${career.job.title}.`, '#cfd8ff'); joinWatch(town, sh); chat.reply = 'Welcome to the Watch. Here\'s your helmet. Don\'t lose the spear.'; });
-      if (!(isWorker() && career.job.kind === 'lamp')) add(`Any work for a lamplighter? (10g a day)`, () => { if (bounty || halfBounty) { chat.reply = 'Not for you.'; return; } takeJob({ kind: 'lamp', town, title: 'Lamplighter', wage: 10, task: 'Light the lamp' }, 'Light the street lamps at dusk. All of \'em on your list.'); });
+      for (const sh of ['day', 'night']) add(`Join the Watch of ${TOWN_NAMES[town]} (${sh} shift, ${WATCH_PAY[town]}g a shift)`, () => { if (bounty || halfBounty) { chat.reply = 'With a bounty on your head? Pay it off at Jailer Grubb\'s desk first, then we\'ll talk.'; return; } if (isWorker()) msg(`You quit as ${career.job.title}.`, '#cfd8ff'); joinWatch(town, sh); chat.reply = 'Welcome to the Watch. Here\'s your helmet. Don\'t lose the spear.'; });
+      if (!(isWorker() && career.job.kind === 'lamp')) add(`Any work for a lamplighter? (10g a day)`, () => { if (bounty || halfBounty) { chat.reply = 'Not with a bounty on you. Clear it first.'; return; } takeJob({ kind: 'lamp', town, title: 'Lamplighter', wage: 10, task: 'Light the lamp' }, 'Light the street lamps at dusk. All of \'em on your list.'); });
       else add('Quit lamplighting', () => { quitCareer('You quit as lamplighter.'); chat.reply = 'Somebody else will do it.'; });
     }
     add('Small talk', () => { chat.reply = pick(TALK.guard); });
@@ -3278,7 +3342,7 @@ function enterWatchHouse() {
   if (wanted) { say(player, 'Walk in there with the Watch after me? No.', 2); SFX.deny(); return; }
   SFX.door();
   transition(() => { const p = player, j = maps.jail; p.map = 'jail'; p.x = j.entry.x * TS + 8; p.y = j.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
-    say(jailNPCs[0], isNight() ? '...zzz... wha? Who\'s there?' : 'Visiting hours. Don\'t touch anything.', 2.5); });
+    say(jailNPCs[0], isWatch() ? pick(['Evening, officer.', 'Morning, officer. All quiet.', 'Brought me another one?']) : isNight() ? '...zzz... wha? Who\'s there?' : 'Visiting hours. Don\'t touch anything.', 2.5); });
 }
 function leaveWatchHouse() {
   transition(() => { const p = player, from = p.map, j = maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
@@ -3465,6 +3529,7 @@ function findInteraction() {
   if (careerInteraction(p)) return;
   if (m.kind === 'town') {
     const doorNear = d => Math.abs(p.x - (d.x * TS + 8)) < 10 && p.y - (d.y * TS + 16) >= 0 && p.y - (d.y * TS + 16) < 16;
+    for (const h of houses) if (h.playerHome && doorNear(h.door)) { p.inter = { label: 'Enter your home', act: () => { h.doorOpenT = 0.8; SFX.door(); transition(() => enterHouse(h)); } }; return; }
     for (const h of houses) if (doorNear(h.door) && h.shop) {
       const open = h.type === 'inn' || !isNight();
       p.inter = open ? { label: `Enter ${h.shopName}`, act: () => enterShop(h) } : { label: `${h.shopName} (closed)`, act: () => { doorBubble = { x: h.door.x * TS + 8, y: h.door.y * TS + 6, text: "We're closed! Come back in the morning.", t: 2.5 }; SFX.deny(); } };
@@ -3561,6 +3626,7 @@ function findInteraction() {
     for (const f of fences) if (f.map === p.map && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => openFence(f) }; return; }
     for (const r of rats) if (raiding(r) && r.map === p.map && dist(r, p) < 26 && !exiled) { p.inter = { label: `Run ${r.name.split(' (')[0]} out of town!`, act: () => runOutOfTown(r) }; return; }
     if (m.guestsOnly && !p.room && Math.hypot(p.x - (m.stairs.x * TS + 8), p.y - 4 - (m.stairs.y * TS + 12)) < 30) { p.inter = { label: 'Upstairs (locked)', act: () => say(p, 'Guests only. I\'d need to rent a room.', 2) }; return; }
+    if (m.house.playerHome) for (const b of m.beds) if (Math.hypot(p.x - (b.x * TS + 8), p.y - 4 - (b.y * TS + 16)) < 22) { p.inter = { label: 'Sleep in your own bed', act: sleepAtHome }; return; }
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
     if (p.room && p.map === p.room.map && Math.hypot(p.x - (p.room.bed.x * TS + 8), p.y - 4 - (p.room.bed.y * TS + 16)) < 24) { p.inter = { label: 'Sleep until morning', act: sleepInRoom }; return; }
@@ -3631,6 +3697,12 @@ function updatePlayer(dt) {
       else { pp.pos += pp.dirn * pp.speed * (1 + pp.stage * 0.3) * dt; if (pp.pos > 1) { pp.pos = 2 - pp.pos; pp.dirn = -1; } if (pp.pos < 0) { pp.pos = -pp.pos; pp.dirn = 1; } }
       if (p.stealT > 9) { pocketCaught(r); break; } // dawdle with your hand in a pocket and they'll notice
       if (hit('e') || hit(' ')) pocketTap();
+      return;
+    }
+    case 'investigate': { // searching a robbed house for clues
+      const mv = readMove();
+      if (!held('e') || mv.l > 0 || !isWatch()) { p.state = 'free'; break; }
+      p.workT += dt; if (p.workT >= 2.5) { p.state = 'free'; const h = maps[p.map].house; if (recentRobbery(h)) openCase(h, pick(['Muddy bootprints by the window, and a scrap of cloth on the latch.', 'A dropped lockpick, and a sewer smell.', 'Scratches on the lock and a familiar calling card.'])); }
       return;
     }
     case 'working': { // an honest task: hold E
@@ -3969,7 +4041,8 @@ function houseTick(h, dt) {
   const seen = h.seenSteal; h.seenSteal = false;
   if (here && h.alarmT <= 0) {
     const hosts = h.residents.filter(r => r.state === 'host');
-    if (hosts.length) {
+    if (hosts.length && isWatch() && !h.caught) h.sus = 0; // the Watch can look around all it likes
+    else if (hosts.length) {
       const tongue = up.tongue ? 0.6 : 1;
       const pal = (h.type === 'inn' && p.room ? 0 : 1) * (h.lead && isFriend(h.lead) ? 0.5 : 1) * (h.type === 'inn' ? 0.3 : h.shop ? 0.6 : 1) * (up.clothes ? 0.8 : 1);
       if (h.tourT > 0) h.tourT -= dt; // nobody minds a guest who's being shown around
@@ -4234,6 +4307,7 @@ function render(dt) {
     else if (g.state === 'search' || g.state === 'respond') txt('?', g.x - 2, g.y - 34, 8, '#ffb040');
   }
   for (const r of resHere) if (r.state === 'alarm' && !r.bubble) txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
+  if (p.state === 'investigate') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.workT / 2.5)), 3, '#9ab0ff'); }
   if (p.state === 'working') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.workT / 2.2)), 3, '#7af0a0'); }
   if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.stealT / stealTime())), 3, '#f7d774'); }
   { const z = Math.floor(gameTime * 1.5) % 3, done = {}; for (const r of resHere) if (r.state === 'sleep' && !done[r.bed.x]) { done[r.bed.x] = 1; txt('z'.repeat(z + 1), r.bed.x * TS + 10, r.bed.y * TS - 4 - z * 2, 5, '#cfd8ff'); } }
@@ -4271,12 +4345,12 @@ function render(dt) {
     panel(0, 0, VW, VH, 0.6); const cy = Math.max(10, VH / 2 - 76);
     txt('PAUSED', VW / 2, cy, 12, '#fff', 'center');
     if (pauseView === 'history') { drawHistory(); if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`); return; }
-    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')], ['Message history', 'N', () => { pauseView = 'history'; histScroll = 0; }]].map(([label, k, fn], i) => {
+    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')], ['Message history', 'N', () => { pauseView = 'history'; histScroll = 0; }], ['Main menu', 'Q', toMainMenu]].map(([label, k, fn], i) => {
       const it = { x: VW / 2 - 60, y: cy + 18 + i * 15, w: 120, h: 12, fn }; F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.1)');
       txt((touchMode ? '' : `[${k}] `) + label, VW / 2, it.y + 3, 5, i === 1 && !canSave() ? '#888' : '#fff', 'center', null); return it;
     });
-    if (!canSave()) txt('(save outdoors, when not wanted)', VW / 2, cy + 79, 4, '#999', 'center', null);
-    drawHelp(VW / 2 - 110, cy + 89);
+    if (!canSave()) txt('(save outdoors or at home, when not wanted)', VW / 2, cy + 94, 4, '#999', 'center', null);
+    drawHelp(VW / 2 - 110, cy + 104);
   }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
 }
@@ -4436,6 +4510,7 @@ function drawHUD(di) {
     { const cv = houses.find(h => h.type === 'cave'); dot(cv.door.x, cv.door.y, '#8a8a8a', true); }
     if (exiled && Math.floor(gameTime * 2) % 2) dot(manholes[1].x + 1, manholes[1].y, '#ff6b6b', true);
     for (const E of estates) dot(E.gate[0].x, E.gate[0].y, E.invited ? '#9df0a0' : '#c070ff', true);
+    if (homeIdx != null) { const d = houses[homeIdx].door; dot(d.x, d.y + 1, '#7af0a0', true); }
     const j = town.jail.door; dot(j.x, j.y, '#5a8aff', true);
     if (alertPing && Math.floor(gameTime * 4) % 2) dot(alertPing.x, alertPing.y, '#ff4040', true);
     if (wanted) for (const g of guards) if (g.state === 'chase') { const tp = townPos(g); dot(Math.floor(tp.x / TS), Math.floor(tp.y / TS), '#ff4040'); }
@@ -4695,7 +4770,10 @@ function questTargets() {
   }
   if (treasure) T0.push({ x: treasure.x, y: treasure.y, col: '#ff5a4a', label: 'X' });
   if (typeof career !== 'undefined' && isWorker() && shiftWindow() && career.done < career.need) { const sp = career.spots[career.done]; if (sp) { if (sp.map === 'town') T0.push({ x: sp.x, y: sp.y, col: '#7af0a0', label: 'WORK' }); else if (p.map !== sp.map) { const d = maps[sp.map].house.door; T0.push({ x: d.x, y: d.y, col: '#7af0a0', label: 'WORK' }); } } }
+  if (typeof career !== 'undefined' && isWatch() && career.escort != null && player.map !== 'jail') T0.push({ x: town.jail.approach.x, y: town.jail.approach.y - 1, col: '#9ab0ff', label: 'JAIL' });
+  if (typeof career !== 'undefined' && isWatch() && career.caseOn) { const t = thieves[career.caseOn.thief]; if (t && t.state !== 'jailed') { const tp = t.map === 'sewer' ? { x: manholes[1].x * TS, y: manholes[1].y * TS } : townPos(t); T0.push({ x: Math.floor(tp.x / TS), y: Math.floor(tp.y / TS), col: '#ff9a6b', label: 'SUSPECT' }); } }
   if (typeof career !== 'undefined' && isWatch() && career.post) T0.push({ x: career.post.x, y: career.post.y, col: '#9ab0ff', label: 'POST' });
+  if (typeof career !== 'undefined' && isWatch() && career.alert && gameTime < career.alert.until) T0.push({ x: career.alert.x, y: career.alert.y, col: '#ff5a4a', label: 'ALARM' });
   return T0;
 }
 // on-screen pointers: a marker over the spot when it's in view, an arrow at the screen edge when it isn't
@@ -4769,6 +4847,12 @@ const RESUME_KEY = 'lightfingers_resume', RESUME_FRESH = 5 * 60 * 1000;
 let autoT = 5, lastResume = null;
 let resumeRaw = null, resumeParsed = null; // the title asks every frame: only re-parse when it changes
 function readResume() { try { const r = localStorage.getItem(RESUME_KEY); if (r) { if (r !== resumeRaw) { resumeRaw = r; resumeParsed = JSON.parse(r); } return resumeParsed; } } catch (e) { } return lastResume; }
+// back to the title screen; your spot is kept as 'Resume last game' (when you're somewhere you could save)
+function toMainMenu() {
+  const kept = autosave(); if (kept && cloud.db) cloudPut('resume', kept);
+  paused = false; pauseView = null; online.chat = false; state = 'title';
+  msg(kept ? 'Saved your spot - pick "Resume last game" to carry on.' : 'Left the game.', '#cfd8ff');
+}
 function autosave() {
   if (state !== 'play' || !canSave()) return null;
   const d = { snap: snapshot(), mode: online.mode, at: Date.now() }; lastResume = d;
@@ -4926,6 +5010,7 @@ function frame(now) {
     else if (paused && hit('n')) { pauseView = 'history'; histScroll = 0; }
     else if (paused && hit('s')) openSaves('save', 'play');
     else if (paused && hit('l')) openSaves('load', 'play');
+    else if (paused && hit('q')) toMainMenu();
     if (!paused && online.chat) { for (let i = 1; i <= QUICK.length; i++) if (hit(String(i))) { sendQuick(i - 1); break; } if (hit('y') || hit('escape')) { online.chat = false; pressed.delete('escape'); } }
     else if (!paused && hit('y') && multi() && online.room && online.canChat) online.chat = true;
     if (!paused && state === 'play') syncWorldClock(false);
@@ -4945,7 +5030,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
