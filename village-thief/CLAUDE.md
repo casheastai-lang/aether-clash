@@ -10,6 +10,9 @@
 - Saves: `localStorage` (version 3 snapshot); the profile (achievements, skins, chosen world) is separate.
 - Online layer (the "ONLINE" section): uses the Claude Artifacts `room` and `user` capabilities. `claude.use()` resolves
   `null` outside claude.ai, so the game must always work without it. Singleplayer/Multiplayer is `online.mode`.
+  On localhost / file:// there is no `window.claude`; `localRoom()` stands in (BroadcastChannel between tabs).
+- Cloud saves ("CLOUD SAVES" section): `db` docs `data/users/<id>/save1..3`, `profile`, `resume` (private per player).
+  The game autosaves to `lightfingers_resume` every 5 s and resumes on load if it is under 5 minutes old.
 - Testing: `window.__game` exposes internals for Playwright; `__game.sim(seconds)` steps the world without rendering.
   Avoid `const`/`let` used before `newGame()` runs (temporal dead zone errors at startup).
 
@@ -18,6 +21,6 @@
 - Artifact: https://claude.ai/artifact/T8myLiyYTPiXW76Z9Gisvg
 - Run `npm run build:artifact`, then publish `dist/light-fingers.html` to that URL with the Artifact tool
   (read it first, then publish with `url` set so the link is kept).
-- Keep its capabilities: `{"room": {"topics": {"chat": "interact"}}, "user": {"scopes": ["profile"]}}`
+- Keep its capabilities: `{"room": {"topics": {"chat": "interact"}}, "user": {"scopes": ["profile"]}, "db": {}}`
   (omitting `capabilities` on a republish keeps the stored ones).
-- Every new version reloads everyone currently playing and empties the multiplayer room.
+- Every new version reloads everyone currently playing; the autosave puts them straight back where they were.

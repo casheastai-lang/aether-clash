@@ -15,11 +15,18 @@
   #chatbox { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); width: min(560px, calc(100vw - 32px)); box-sizing: border-box; display: none;
     font: 12px 'Press Start 2P', monospace; color: #eaffef; background: rgba(10,22,14,0.92); border: 2px solid #5af07a; border-radius: 4px; padding: 10px 12px; outline: none; user-select: text; -webkit-user-select: text; }
   #chatbox::placeholder { color: #6f9a7c; }
+  #codewrap { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(5,6,14,0.75); }
+  #codepanel { width: min(560px, calc(100vw - 32px)); box-sizing: border-box; background: #14121e; border: 2px solid #f7d774; border-radius: 4px; padding: 14px; font: 10px 'Press Start 2P', monospace; color: #f4ecd8; }
+  #codetitle { line-height: 1.7; margin-bottom: 10px; }
+  #codebox { width: 100%; height: 120px; box-sizing: border-box; background: #0b0a12; color: #cfe8d8; border: 1px solid #5a5070; font: 10px monospace; padding: 6px; resize: none; user-select: text; -webkit-user-select: text; }
+  #codepanel button { font: 10px 'Press Start 2P', monospace; margin: 10px 8px 0 0; padding: 8px 10px; background: #2a5a3a; color: #fff; border: 1px solid #7af0a0; border-radius: 3px; cursor: pointer; }
+  #codepanel button.alt { background: #3a3446; border-color: #8a80a0; }
   canvas { display: block; width: 100vw; height: 100vh; image-rendering: pixelated; image-rendering: crisp-edges; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="codewrap"><div id="codepanel"><div id="codetitle"></div><textarea id="codebox" spellcheck="false"></textarea><div><button id="codeok"></button><button id="codecancel" class="alt">Close</button></div></div></div>
 <input id="chatbox" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Say something to everyone... (Enter to send, Esc to cancel)">
 <script>
 'use strict';
@@ -660,9 +667,10 @@ let PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true);
 
 // ---------- profile: lifetime stats, achievements and skins (kept across games, in this browser) ----------
 const PROFILE_KEY = 'lightfingers_profile';
+var profDirty = false; // var: saveProfile runs during start-up, before the cloud code below exists
 let profile = { stats: {}, sets: {}, unlocked: [], skin: 'teal' };
 try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = Object.assign(profile, JSON.parse(raw)); } catch (e) { }
-function saveProfile() { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { } }
+function saveProfile() { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { } profDirty = true; }
 function applySkin(id) {
   const sk = THIEF_SKINS.find(k => k.id === id) || THIEF_SKINS[0];
   PLAYER_SHEET = thiefSheet(false, sk.pal); PLAYER_BOUND = thiefSheet(true, sk.pal);
@@ -2485,7 +2493,8 @@ function talkTo(t) {
 // ---------- save slots (stored in this browser) ----------
 const SAVE_KEY = n => 'lightfingers_save_' + n;
 let saves = null; // { mode: 'save' | 'load', from: 'play' | 'title', items }
-function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+const slotCache = {}; // cloud copies, for browsers that block storage
+function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); if (raw) return JSON.parse(raw); } catch (e) { } return slotCache[n] || null; }
 function snapshot() {
   const p = player, d = dayInfo();
   return { v: 3, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
@@ -2498,12 +2507,15 @@ function snapshot() {
 function canSave() { return (player.map === 'town' || player.map === 'sewer' || (player.room && player.map === player.room.map)) && player.state === 'free' && !wanted; }
 function writeSlot(n) {
   if (!canSave()) { msg('You can only save outdoors, in the sewers, or in your room at the inn, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
-  try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(snapshot())); msg(`Game saved to slot ${n}.`, '#9df0a0'); SFX.buy(); }
-  catch (e) { msg('Could not save - this browser is blocking storage.', '#ff8a6b'); SFX.deny(); }
+  const d = snapshot(); let ok = false; slotCache[n] = d;
+  try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(d)); ok = true; } catch (e) { }
+  if (cloud.db) { cloudPut('save' + n, d); ok = true; }
+  if (ok) { msg(`Game saved to slot ${n}${cloud.db ? ' (and to your claude.ai account)' : ''}.`, '#9df0a0'); SFX.buy(); }
+  else { msg('Could not save - this browser is blocking storage.', '#ff8a6b'); SFX.deny(); }
 }
-function loadSlot(n) {
-  const d = readSlot(n); if (!d) { SFX.deny(); return false; }
-  if (d.v !== 3) { msg('That save is from an older version of the village and can\'t be loaded.', '#ff8a6b'); SFX.deny(); return true; }
+function loadSlot(n) { const d = readSlot(n); if (!d) { SFX.deny(); return false; } return loadSave(d, `slot ${n}`); }
+function loadSave(d, from) {
+  if (!d || d.v !== 3) { msg('That save is from an older version of the village and can\'t be loaded.', '#ff8a6b'); SFX.deny(); return true; }
   newGame();
   gameTime = d.gameTime; gold = d.gold; totalEarned = d.totalEarned; bounty = d.bounty; arrests = d.arrests; won = d.won; nightNotified = d.nightNotified; Object.assign(up, d.up);
   const p = player; p.map = d.player.map || 'town'; p.x = d.player.x; p.y = d.player.y; p.loot = d.player.loot; p.smoke = d.player.smoke; p.picks = d.player.picks;
@@ -2521,7 +2533,35 @@ function loadSlot(n) {
   curDay = dayInfo().day; syncForce();
   state = 'play'; saves = null; paused = false; if (multi()) syncWorldClock('load');
   updateCamera(null, p.map, p.x, p.y - 8);
-  msg(`Loaded slot ${n}: ${d.label}.`, '#9df0a0'); return true;
+  msg(`Loaded ${from}: ${d.label}.`, '#9df0a0'); return true;
+}
+// Save codes: the whole game as a block of text, to carry a game between computers or between
+// your local copy and the published link.
+const codeWrap = document.getElementById('codewrap'), codeBox = document.getElementById('codebox'), codeOk = document.getElementById('codeok');
+function encodeSave(d) { return 'LF1:' + btoa(unescape(encodeURIComponent(JSON.stringify(d)))); }
+function decodeSave(t) { try { t = String(t).replace(/\s+/g, ''); if (!t.startsWith('LF1:')) return null; return JSON.parse(decodeURIComponent(escape(atob(t.slice(4))))); } catch (e) { return null; } }
+function codeClose() { codeWrap.style.display = 'none'; codeBox.blur(); keys.clear(); }
+function showCode(title, value, okLabel, onOk) {
+  document.getElementById('codetitle').textContent = title; codeBox.value = value; codeBox.readOnly = !!value;
+  codeOk.textContent = okLabel; codeOk.onclick = onOk; codeWrap.style.display = 'flex'; keys.clear();
+  setTimeout(() => { codeBox.focus(); if (value) codeBox.select(); }, 0);
+}
+document.getElementById('codecancel').onclick = codeClose;
+codeWrap.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') codeClose(); });
+function exportCode() {
+  if (!canSave()) { msg('You can only take a save code where you could save: outdoors, in the sewers or your room, with no Watch after you.', '#ffb36b'); SFX.deny(); return; }
+  const code = encodeSave(snapshot());
+  showCode('Your save code. Copy it (Ctrl+C), then on any computer or copy of the game: Load game > Paste a save code.', code, 'Copy', () => {
+    codeBox.select(); let done = false; try { done = document.execCommand('copy'); } catch (e) { }
+    if (navigator.clipboard) navigator.clipboard.writeText(code).then(() => { codeOk.textContent = 'Copied!'; }).catch(() => { if (done) codeOk.textContent = 'Copied!'; }); else if (done) codeOk.textContent = 'Copied!';
+  });
+}
+function importCode() {
+  showCode('Paste a save code (it starts with LF1:) and press Load.', '', 'Load', () => {
+    const d = decodeSave(codeBox.value);
+    if (!d) { document.getElementById('codetitle').textContent = 'That isn\'t a Light Fingers save code. It should start with LF1: - paste the whole thing.'; return; }
+    codeClose(); if (state === 'saves') saves = null; loadSave(d, 'save code');
+  });
 }
 function openSaves(mode, from) { saves = { mode, from, items: [] }; state = 'saves'; }
 function closeSaves() { state = saves.from === 'title' ? 'title' : 'play'; saves = null; }
@@ -2530,7 +2570,7 @@ function pickSlot(n) {
   else if (!loadSlot(n)) msg('That slot is empty.', '#aaa');
 }
 function drawSaves() {
-  const pw = Math.min(280, VW - 12), ph = 96, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  const pw = Math.min(280, VW - 12), ph = 112, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
   saves.items = []; saves.px = px; saves.py = py; saves.pw = pw; saves.ph = ph;
   panel(0, 0, VW, VH, 0.5); panel(px, py, pw, ph, 0.94); F(ctx, px, py, pw, 14, 'rgba(60,70,110,0.9)');
   txt(saves.mode === 'save' ? 'SAVE GAME' : 'LOAD GAME', px + 6, py + 4, 6, '#f7d774');
@@ -2538,6 +2578,8 @@ function drawSaves() {
     const d = readSlot(n), y = py + 20 + (n - 1) * 22, it = { x: px + 4, y, w: pw - 8, h: 19, fn: () => pickSlot(n) }; saves.items.push(it);
     F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.07)');
     txt(touchMode ? `Slot ${n}` : `[${n}] Slot ${n}`, px + 8, y + 3, 5, '#f7d774');
+    if (n === 3) { const cy2 = y + 23, lab = saves.mode === 'save' ? (touchMode ? 'Get a save code' : '[X] Get a save code') : (touchMode ? 'Paste a save code' : '[X] Paste a save code'), it2 = { x: px + 4, y: cy2, w: pw - 8, h: 12, fn: saves.mode === 'save' ? exportCode : importCode };
+      saves.items.push(it2); F(ctx, it2.x, it2.y, it2.w, it2.h, 'rgba(120,200,140,0.12)'); txt(lab, px + pw / 2, cy2 + 3, 5, '#9df0a0', 'center', null); }
     if (d) { txt(d.label, px + 8, y + 11, 4, '#ddd'); txt(`${d.gold}g  bounty ${d.bounty}`, px + pw - 8, y + 11, 4, '#ccc', 'right'); }
     else txt('- empty -', px + 8, y + 11, 4, '#777');
   }
@@ -3054,13 +3096,13 @@ function release() {
 const keys = new Set(), pressed = new Set();
 const KEYMAP = { ' ': ' ', 'spacebar': ' ' };
 addEventListener('keydown', e => {
-  if (e.target && e.target.id === 'chatbox') return;
+  if (e.target && /^(INPUT|TEXTAREA|BUTTON)$/.test(e.target.tagName)) return;
   const k = KEYMAP[e.key.toLowerCase()] || e.key.toLowerCase();
   if (k === 'k' && state === 'play' && !paused && multi() && !online.typing && player.state !== 'picking' && !e.repeat) { e.preventDefault(); openChatBox(); return; } // open at once so fast typing lands in the box
   if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab'].includes(k)) e.preventDefault();
   if (!keys.has(k)) pressed.add(k); keys.add(k); audioInit();
 });
-addEventListener('keyup', e => { if (e.target && e.target.id === 'chatbox') return; const k = KEYMAP[e.key.toLowerCase()] || e.key.toLowerCase(); keys.delete(k); });
+addEventListener('keyup', e => { if (e.target && /^(INPUT|TEXTAREA|BUTTON)$/.test(e.target.tagName)) return; const k = KEYMAP[e.key.toLowerCase()] || e.key.toLowerCase(); keys.delete(k); });
 addEventListener('blur', () => keys.clear());
 const held = k => keys.has(k), hit = k => pressed.has(k);
 
@@ -4245,7 +4287,7 @@ function drawTitle() {
   txt('LIGHT FINGERS', cxm + 1, ty + 2, size, '#3a1e06', 'center', null);
   txt('LIGHT FINGERS', cxm, ty, size, '#f7d774', 'center', '#7a4a10');
   txt('Knock. Smile. Steal.', cxm, ty + size + 12, 7, '#e8dcc0', 'center', '#000');
-  const any = [1, 2, 3].some(n => readSlot(n)), by = Math.round(VH - 48);
+  const by = Math.round(VH - 48);
   const cta = touchMode ? 'Tap to begin' : 'Press Enter';
   titleUI = [{ x: cxm - 60, y: by - 4, w: 120, h: 16, fn: startGame }];
   txt(cta, cxm, by, 8, '#ffffff', 'center', '#000');
@@ -4257,10 +4299,10 @@ function drawTitle() {
       txt((touchMode ? '' : k + ' ') + l, x + bw / 2, my + 4, 6, on ? '#ffffff' : '#9a9080', 'center', null);
       titleUI.unshift({ x, y: my, w: bw, h: 14, fn: () => setMode(m) });
     });
-    const st = online.mode === 'solo' ? 'Just you. Nobody else in town.' : !online.ready ? 'Connecting to the server...' : !online.room ? 'Can\'t reach the server - sign in to claude.ai and open the shared link' : n ? `${n} other thie${n > 1 ? 'ves are' : 'f is'} in the world right now` : 'Server is up - nobody else on yet';
+    const st = online.mode === 'solo' ? 'Just you. Nobody else in town.' : !online.ready ? 'Connecting to the server...' : !online.room ? 'Can\'t reach the server - sign in to claude.ai and open the shared link' : online.local && !n ? 'Local test server - open another tab to play together' : n ? `${n} other thie${n > 1 ? 'ves are' : 'f is'} in the world right now` : 'Server is up - nobody else on yet';
     txt(st, cxm, my + 18, 5, online.mode === 'multi' && online.ready && !online.room ? '#ff9a8a' : online.mode === 'multi' ? '#7af0a0' : '#cbb98a', 'center', '#000'); }
   // small links: load, wardrobe, achievements
-  const links = [...(any ? [['L', 'Load game', () => openSaves('load', 'title')]] : []), ['C', 'Wardrobe', () => { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }],
+  const links = [...(readResume() ? [['R', 'Resume last game', () => resumeGame(readResume())]] : []), ['L', 'Load game', () => openSaves('load', 'title')], ['C', 'Wardrobe', () => { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }],
     ['A', `Achievements ${profile.unlocked.length}/${ACH.length}`, () => { state = 'achievements'; achScroll = 0; }]];
   ctx.font = '5px ' + FONT; const labels = links.map(([k, l]) => (touchMode ? '' : k + ' - ') + l), gap = 14;
   const widths = labels.map(l => ctx.measureText(l).width), total = widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1);
@@ -4298,7 +4340,7 @@ function onlinePeers(change) {
     let g = online.ghosts.get(pr.peer);
     const x = +pz.x || 0, y = +pz.y || 0;
     if (!g) {
-      g = { ghost: true, peer: pr.peer, by: pr.by || (typeof pz.id === 'string' ? pz.id : null), label: 'Thief', x, y, map: pz.m, dir: 'down', animT: 0, moving: false, bubble: null };
+      g = { ghost: true, peer: pr.peer, by: pr.by || (typeof pz.id === 'string' ? pz.id : null), label: typeof pz.nm === 'string' && pz.nm ? pz.nm.slice(0, 14) : 'Thief', x, y, map: pz.m, dir: 'down', animT: 0, moving: false, bubble: null };
       online.ghosts.set(pr.peer, g); online.nameT = 0;
       if (state === 'play' && multi()) msg('Another thief has slipped into town.', '#7af0a0');
     }
@@ -4352,7 +4394,7 @@ function updateOnline(dt) {
   online.sendT -= dt;
   if (online.sendT <= 0) {
     online.sendT = 0.1; const p = player, play = state !== 'title' && state !== 'wardrobe' && state !== 'achievements';
-    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, id: online.myId || null } : { g: null };
+    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, id: online.myId || null, nm: online.local ? 'Tab ' + (online.tabName = online.tabName || Math.random().toString(36).slice(2, 5).toUpperCase()) : null } : { g: null };
     const key = JSON.stringify(pz);
     if (key !== online.last) { online.last = key; room.presence(pz).catch(() => { }); }
   }
@@ -4411,7 +4453,7 @@ function drawOnlineHUD(y) {
   const n = onlineCount(); onlineUI = null;
   if (!multi()) return;
   if (!online.room) { const t = online.ready ? 'OFFLINE - can\'t reach the server' : 'Connecting to the server...'; ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 8; panel(VW - w - 4, y, w, 9, 0.75); F(ctx, VW - w - 1, y + 3, 3, 3, online.ready ? '#ff5a4a' : '#f7d774'); txt(t, VW - w + 4, y + 2, 4, '#ffd0c8', 'left', null); return; }
-  const t = n ? `Multiplayer - ${n + 1} thieves in town` : 'Multiplayer - nobody else here yet';
+  const t = (online.local ? 'Local test server - ' : 'Multiplayer - ') + (n ? `${n + 1} thieves in town` : 'nobody else here yet');
   ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 8 + (touchMode && online.canChat ? 22 : 0), x = VW - w - 4;
   panel(x, y, w, 9, 0.75); F(ctx, x + 3, y + 3, 3, 3, online.room.connected() ? '#5af07a' : '#888'); txt(t, x + 8, y + 2, 4, '#cfe8d8', 'left', null);
   if (touchMode && online.canChat) { F(ctx, x + w - 21, y + 1, 19, 7, '#2a5a3a'); txt('CHAT', x + w - 19, y + 2, 4, '#ffffff', 'left', null); onlineUI = { x: x + w - 21, y, w: 19, h: 9 }; }
@@ -4423,7 +4465,10 @@ function drawOnlineHUD(y) {
 }
 (async () => {
   try {
-    if (!window.claude || !window.claude.use) { online.ready = true; return; }
+    if (!window.claude || !window.claude.use) { // not on claude.ai: on your own computer, tabs share a local test town
+      if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) { const room = localRoom(); if (room) { online.room = room; online.local = true; room.onPeers(onlinePeers); room.on('chat', onlineChat); } }
+      online.ready = true; return;
+    }
     const [room, user] = await Promise.all([window.claude.use('room'), window.claude.use('user').catch(() => null)]);
     if (!room) { online.ready = true; return; }
     online.user = user; try { online.myId = user ? await user.id() : null; } catch (e) { }
@@ -4433,6 +4478,88 @@ function drawOnlineHUD(y) {
   } catch (e) { online.room = null; }
   online.ready = true;
 })();
+// =====================================================================
+//  CLOUD SAVES (on the published link): your save slots, achievements and last game live in your
+//  claude.ai account, so they follow you to any computer. Stored privately per player.
+// =====================================================================
+const cloud = { db: null, id: null, profT: 0, resT: 0 };
+const cloudDoc = name => cloud.db.doc(`data/users/${cloud.id}/${name}`);
+function cloudPut(name, data) { if (cloud.db) cloudDoc(name).set(JSON.parse(JSON.stringify(data))).catch(() => { }); }
+function mergeProfile(c) {
+  if (!c) return;
+  for (const k in c.stats || {}) profile.stats[k] = Math.max(profile.stats[k] || 0, +c.stats[k] || 0);
+  for (const k in c.sets || {}) if (Array.isArray(c.sets[k])) { const l = profile.sets[k] = Array.isArray(profile.sets[k]) ? profile.sets[k] : []; for (const v of c.sets[k]) if (!l.includes(v)) l.push(v); }
+  for (const u of c.unlocked || []) if (!profile.unlocked.includes(u)) profile.unlocked.push(u);
+  saveProfile();
+}
+// ---- the last game, kept every few seconds so a reload (or a new version of the game) drops you back in
+const RESUME_KEY = 'lightfingers_resume', RESUME_FRESH = 5 * 60 * 1000;
+let autoT = 5, lastResume = null;
+let resumeRaw = null, resumeParsed = null; // the title asks every frame: only re-parse when it changes
+function readResume() { try { const r = localStorage.getItem(RESUME_KEY); if (r) { if (r !== resumeRaw) { resumeRaw = r; resumeParsed = JSON.parse(r); } return resumeParsed; } } catch (e) { } return lastResume; }
+function autosave() {
+  if (state !== 'play' || !canSave()) return null;
+  const d = { snap: snapshot(), mode: online.mode, at: Date.now() }; lastResume = d;
+  try { localStorage.setItem(RESUME_KEY, JSON.stringify(d)); } catch (e) { }
+  return d;
+}
+function resumeGame(r, why) {
+  if (!r || !r.snap) return false;
+  setMode(r.mode === 'multi' ? 'multi' : 'solo'); audioInit();
+  if (!loadSave(r.snap, 'your last game')) return false;
+  if (why) msg(why, '#9df0a0'); return true;
+}
+function updateSaving(dt) {
+  if (state === 'play') { autoT -= dt; if (autoT <= 0) { autoT = 5; const d = autosave(); if (d && cloud.db && Date.now() - cloud.resT > 30000) { cloud.resT = Date.now(); cloudPut('resume', d); } } }
+  if (profDirty && cloud.db && Date.now() - cloud.profT > 10000) { cloud.profT = Date.now(); profDirty = false; cloudPut('profile', profile); }
+}
+addEventListener('pagehide', () => { const d = autosave() || readResume(); if (d && cloud.db) cloudPut('resume', d); if (cloud.db && profDirty) cloudPut('profile', profile); });
+(async () => {
+  try {
+    if (!window.claude || !window.claude.use) return;
+    const [db, user] = await Promise.all([window.claude.use('db'), window.claude.use('user')]);
+    if (!db || !user) return;
+    const id = await user.id(); if (!id) return;
+    cloud.db = db; cloud.id = id;
+    const got = await Promise.all(['save1', 'save2', 'save3', 'profile', 'resume'].map(n => cloudDoc(n).get().then(s => s.exists ? JSON.parse(JSON.stringify(s.data())) : null).catch(() => null)));
+    for (let n = 1; n <= 3; n++) { // newest copy of each slot wins, both ways
+      const c = got[n - 1], l = (() => { try { return JSON.parse(localStorage.getItem(SAVE_KEY(n))); } catch (e) { return null; } })();
+      if (c && (!l || (c.savedAt || 0) > (l.savedAt || 0))) { slotCache[n] = c; try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(c)); } catch (e) { } }
+      else if (l && (!c || (l.savedAt || 0) > (c.savedAt || 0))) cloudPut('save' + n, l);
+    }
+    mergeProfile(got[3]); profDirty = true;
+    const r = got[4], mine = readResume();
+    if (r && (!mine || r.at > mine.at)) { lastResume = r; try { localStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch (e) { } }
+    if (r && state === 'title' && Date.now() - r.at < RESUME_FRESH && (!mine || r.at >= mine.at)) resumeGame(r, 'Welcome back - you\'re right where you left off.');
+  } catch (e) { cloud.db = null; }
+})();
+// =====================================================================
+//  LOCAL TEST SERVER: running from your own computer (npm start), every tab on this PC that picks
+//  Multiplayer shares one town, so multiplayer can be tested without publishing.
+// =====================================================================
+function localRoom() {
+  if (typeof BroadcastChannel === 'undefined') return null;
+  const me = 'tab-' + Math.random().toString(36).slice(2, 8), bc = new BroadcastChannel('lightfingers-local-room'), peers = new Map(), fns = [], topics = {};
+  let mine = {};
+  const fire = () => { const now = Date.now(); for (const [k, p] of peers) if (k !== me && now - p.seen > 6000) peers.delete(k); const ps = Object.freeze([...peers.values()]); fns.forEach(f => f({ peers: ps, joined: [], left: [], updated: [] })); };
+  const send = () => bc.postMessage({ t: 'p', peer: me, pz: mine });
+  bc.onmessage = ({ data: d }) => {
+    if (!d || typeof d !== 'object') return;
+    if (d.t === 'p') { peers.set(d.peer, { peer: d.peer, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false, presence: Object.freeze(d.pz || {}), updatedAt: Date.now(), seen: Date.now() }); fire(); }
+    else if (d.t === 'bye') { peers.delete(d.peer); fire(); }
+    else if (d.t === 'hello') send();
+    else if (d.t === 'e') (topics[d.topic] || []).forEach(f => f({ topic: d.topic, data: d.data, peer: d.peer, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false }));
+  };
+  setInterval(() => { send(); fire(); }, 2000);
+  addEventListener('pagehide', () => bc.postMessage({ t: 'bye', peer: me }));
+  bc.postMessage({ t: 'hello' });
+  return Object.freeze({
+    connected: () => true, peers: () => [...peers.values()],
+    presence: async p => { for (const k in p) if (p[k] === null) delete mine[k]; else mine[k] = p[k]; send(); },
+    onPeers: f => { fns.push(f); return () => { }; }, on: (t, f) => { (topics[t] = topics[t] || []).push(f); return () => { }; },
+    emit: async (t, data) => { bc.postMessage({ t: 'e', topic: t, data, peer: me }); },
+  });
+}
 // =====================================================================
 //  MAIN LOOP
 // =====================================================================
@@ -4448,6 +4575,8 @@ function frame(now) {
     if (hit('1')) setMode('solo'); if (hit('2')) setMode('multi');
     if (hit('enter') || hit(' ') || hit('e')) startGame();
     else if (hit('l') && [1, 2, 3].some(n => readSlot(n))) openSaves('load', 'title');
+    else if (hit('r') && readResume()) resumeGame(readResume());
+    else if (hit('l')) openSaves('load', 'title');
     else if (hit('c')) { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }
     else if (hit('a')) { state = 'achievements'; achScroll = 0; }
   } else if (state === 'wardrobe') {
@@ -4463,6 +4592,7 @@ function frame(now) {
     if (state === 'chat' && (hit('escape') || hit('t'))) chatClose();
   } else if (state === 'saves') {
     for (let n = 1; n <= 3; n++) if (hit(String(n))) { pickSlot(n); break; }
+    if (state === 'saves' && hit('x')) (saves.mode === 'save' ? exportCode : importCode)();
     if (state === 'saves' && hit('escape')) closeSaves();
   } else if (state === 'shop') {
     for (let i = 1; i <= 9; i++) if (hit(String(i))) { shopBuy(i - 1); break; }
@@ -4485,18 +4615,19 @@ function frame(now) {
     if (!paused) updateWorld(dt);
     updateCamera(paused ? 0 : dt, player.map, player.state === 'hidden' ? player.hay.x * TS + 8 : player.x, player.y - 8);
   }
-  updateOnline(dt);
+  updateOnline(dt); updateSaving(dt);
   render(dt);
   pressed.clear();
   requestAnimationFrame(frame);
 }
 updateCamera(null, 'town', 60 * TS, 44 * TS);
+{ const r = readResume(); if (r && Date.now() - r.at < RESUME_FRESH) resumeGame(r, 'Welcome back - you\'re right where you left off.'); }
 requestAnimationFrame(frame);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
