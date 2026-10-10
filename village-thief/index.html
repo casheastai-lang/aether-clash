@@ -2923,8 +2923,31 @@ function buy(kind, cost) {
 
 // ---------- the catch ----------
 function grab(g) {
-  const p = player; p.lock = null; p.pickDone = null; p.state = 'grabbed'; p.grabG = g; p.struggle = 45; p.grabT = 0; g.state = 'grab'; g.path = null;
-  SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
+  const p = player; p.lock = null; p.pickDone = null; p.state = 'grabbed'; p.grabG = g; p.struggle = 0; p.grabT = 0; g.state = 'grab'; g.path = null; newWriggle(g);
+  SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Press the arrows in order to wriggle free!', '#ff6b6b');
+}
+// Wriggling free: a run of directions to press in order (WASD / arrows / a flick of the stick) before the grip closes.
+// Longer runs each time you slip them, less time against a hound; a wrong move costs you ground and time.
+const WDIRS = ['up', 'down', 'left', 'right'], WKEYS = { up: ['w', 'arrowup'], down: ['s', 'arrowdown'], left: ['a', 'arrowleft'], right: ['d', 'arrowright'] };
+function newWriggle(g) {
+  const p = player, n = Math.min(8, 4 + escapes + (g.unit === 'dog' ? 1 : 0)), seq = [];
+  for (let i = 0; i < n; i++) { let d; do d = pick(WDIRS); while (i && d === seq[i - 1] && Math.random() < 0.7); seq.push(d); }
+  const t = (1.1 + n * 0.42) * (g.unit === 'dog' ? 0.85 : 1) * (up.grip ? 1.35 : 1);
+  p.wrig = { seq, i: 0, t, max: t, bad: 0, stick: false };
+}
+function wriggleInput() {
+  for (const d of WDIRS) if (WKEYS[d].some(hit)) return d;
+  const v = Math.hypot(touch.vx, touch.vy), w = player.wrig; // touch: a fresh flick of the stick counts once
+  if (v < 0.35) { w.stick = false; return null; }
+  if (v > 0.75 && !w.stick) { w.stick = true; return Math.abs(touch.vx) > Math.abs(touch.vy) ? (touch.vx > 0 ? 'right' : 'left') : (touch.vy > 0 ? 'down' : 'up'); }
+  return null;
+}
+function drawArrow(x, y, d, col) {
+  const r = (a, b, w, h) => F(ctx, x + a, y + b, w, h, col);
+  if (d === 'up') { r(3, 0, 1, 1); r(2, 1, 3, 1); r(1, 2, 5, 1); r(0, 3, 7, 1); r(2, 4, 3, 3); }
+  else if (d === 'down') { r(2, 0, 3, 3); r(0, 3, 7, 1); r(1, 4, 5, 1); r(2, 5, 3, 1); r(3, 6, 1, 1); }
+  else if (d === 'left') { r(0, 3, 1, 1); r(1, 2, 1, 3); r(2, 1, 1, 5); r(3, 0, 1, 7); r(4, 2, 3, 3); }
+  else { r(0, 2, 3, 3); r(3, 0, 1, 7); r(4, 1, 1, 5); r(5, 2, 1, 3); r(6, 3, 1, 1); }
 }
 function breakFree() {
   const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, g.unit === 'dog' ? '*YELP*' : 'Oof!'); if (g.unit === 'dog') unlock('escape_dog'); }
@@ -3194,8 +3217,8 @@ function findInteraction() {
     for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { p.inter = { label: `Ride the carriage to ${c.name} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c) }; return; }
     for (const mh of manholes) if (Math.hypot(p.x - (mh.x * TS + 8), p.y - 4 - (mh.y * TS + 8)) < 14) { p.inter = exiled ? { label: 'Sewer grate (chained shut)', act: () => { say(p, 'Chained from below. The crew don\'t want me.', 2); SFX.deny(); } } : { label: 'Climb down into the sewers', act: () => enterSewer(mh) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
-    const mark = !wanted && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and hold E to pick their pocket.', '#cfe8ff'); }
-    if (mark && !p.inter) { p.inter = { label: `Pickpocket ${mark.name.split(' (')[0]} (hold E)`, act: () => { p.state = 'pickpocket'; p.pocket = mark; p.stealT = 0; } }; return; }
+    const mark = !wanted && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and press E to pick their pocket - then tap E each time the needle is in the green.', '#cfe8ff'); }
+    if (mark && !p.inter) { p.inter = { label: `Pickpocket ${mark.name.split(' (')[0]}`, act: () => startPocket(mark) }; return; }
   } else if (m.kind === 'jail' && p.state === 'free') {
     const lk = m.locker;
     if (Math.hypot(p.x - (lk.x * TS + 8), p.y - 4 - (lk.y * TS + 8)) < 22) {
@@ -3255,6 +3278,27 @@ function pocketTarget() {
   }
   return best;
 }
+// Three moves - feel for the purse, work it loose, lift it - each one a tap of E while the needle
+// is in the green. The green gets thinner each step (and on richer marks); a fumble makes them twitch.
+const POCKET_STEPS = ['Feel for the purse', 'Work it loose', 'Lift it!'];
+function pocketZone(pp, r) { const w = Math.max(0.07, 0.24 - pp.stage * 0.05 - (r.house.wealth - 1) * 0.025); pp.w = w; pp.c = rnd(w / 2 + 0.05, 1 - w / 2 - 0.05); }
+function startPocket(r) {
+  const p = player; p.state = 'pickpocket'; p.pocket = r; p.stealT = 0;
+  p.pp = { stage: 0, pos: Math.random(), dirn: 1, speed: 0.9 + r.house.wealth * 0.18, miss: 0, pause: 0, flash: 0 }; pocketZone(p.pp, r);
+}
+function pocketTap() {
+  const p = player, r = p.pocket, pp = p.pp;
+  if (pp.pause > 0) return;
+  if (Math.abs(pp.pos - pp.c) <= pp.w / 2) {
+    pp.stage++; pp.flash = 0.25; SFX.pick();
+    if (pp.stage >= POCKET_STEPS.length) { finishPocket(r); return; }
+    pocketZone(pp, r); pp.pause = 0.2;
+  } else {
+    pp.miss++; SFX.deny(); p.shake = 0.15;
+    if (pp.miss >= 2 || Math.random() < 0.35) { pocketCaught(r); return; }
+    say(r, pick(['Hm?', 'Eh? What was that?', '...?']), 1.2); pp.pause = 0.7; pp.stage = Math.max(0, pp.stage - 1); pocketZone(pp, r);
+  }
+}
 function pocketCaught(r) {
   const p = player; p.state = 'free'; p.pocket = null; r.sawYou = true; r.pickedDay = dayInfo().day; r.fa = Math.atan2(p.y - r.y, p.x - r.x); r.reportCD = 0;
   say(r, pick(['Hey! Get your hands off me!', 'THIEF! Pickpocket!', 'My purse! Watch! WATCH!']), 2.5); SFX.alarm();
@@ -3283,12 +3327,16 @@ function updatePlayer(dt) {
     }
     case 'pickpocket': {
       const r = p.pocket, mv = readMove();
-      if (!r || !held('e') || mv.l > 0) { p.state = 'free'; p.pocket = null; break; }
+      if (!r || !p.pp || hit('escape') || mv.l > 0) { p.state = 'free'; p.pocket = null; break; }
       if (r.map !== 'town' || Math.hypot(r.x - p.x, r.y - p.y) > 26) { p.state = 'free'; p.pocket = null; say(p, 'They walked off...', 1.2); break; }
       r.wait = Math.max(r.wait || 0, 0.3); p.stealT += dt; p.dir = dirFromAngle(Math.atan2(r.y - p.y, r.x - p.x));
       const dx = p.x - r.x, dy = p.y - r.y, facing = (dx * Math.cos(r.fa) + dy * Math.sin(r.fa)) / (Math.hypot(dx, dy) || 1) > 0.2; // up close only the way they face counts
       if (facing && Math.random() < dt * 3) { pocketCaught(r); break; }
-      if (p.stealT >= 1.2) finishPocket(r);
+      const pp = p.pp; pp.flash = Math.max(0, pp.flash - dt);
+      if (pp.pause > 0) pp.pause -= dt;
+      else { pp.pos += pp.dirn * pp.speed * (1 + pp.stage * 0.3) * dt; if (pp.pos > 1) { pp.pos = 2 - pp.pos; pp.dirn = -1; } if (pp.pos < 0) { pp.pos = -pp.pos; pp.dirn = 1; } }
+      if (p.stealT > 9) { pocketCaught(r); break; } // dawdle with your hand in a pocket and they'll notice
+      if (hit('e') || hit(' ')) pocketTap();
       return;
     }
     case 'stealing': {
@@ -3332,10 +3380,12 @@ function updatePlayer(dt) {
     }
     case 'hidden': if (hit('e') || readMove().l > 0.6) { p.state = 'free'; SFX.rustle(); } break;
     case 'grabbed': {
-      p.grabT += dt; p.struggle -= (p.grabG && p.grabG.unit !== 'guard' ? 31 : 24) * dt;
-      if (hit(' ') || hit('e')) { p.struggle += Math.max(5, 13 - escapes * 2.5) * (up.grip ? 1.5 : 1); SFX.struggle(); p.shake = 0.12; }
+      p.grabT += dt; if (!p.wrig) newWriggle(p.grabG || {}); const w = p.wrig; w.t -= dt; w.bad = Math.max(0, w.bad - dt);
       if (hit('q') && p.smoke > 0) { useSmoke(); breakFree(); break; }
-      if (p.struggle >= 100) breakFree(); else if (p.struggle <= 0 || p.grabT > 4) arrest();
+      const d = wriggleInput();
+      if (d) { if (d === w.seq[w.i]) { w.i++; SFX.struggle(); p.shake = 0.08; } else { w.i = Math.max(0, w.i - 1); w.t -= 0.35; w.bad = 0.3; SFX.deny(); p.shake = 0.2; } }
+      p.struggle = 100 * w.i / w.seq.length;
+      if (w.i >= w.seq.length) breakFree(); else if (w.t <= 0) arrest();
       break;
     }
     case 'jailed': {
@@ -3868,7 +3918,7 @@ function render(dt) {
   }
   for (const r of resHere) if (r.state === 'alarm' && !r.bubble) txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
   if (p.state === 'fishing' && p.fish) { const v = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[p.dir], bx = Math.round(p.x + v[0] * 22), by = Math.round(p.y - 4 + v[1] * 22), bob = p.fish.bite > 0 ? 2 : Math.round(Math.sin(gameTime * 4)); ctx.strokeStyle = 'rgba(230,230,230,0.6)'; ctx.beginPath(); ctx.moveTo(Math.round(p.x) + 4, Math.round(p.y) - 16); ctx.lineTo(bx, by + bob); ctx.stroke(); F(ctx, bx - 1, by - 1 + bob, 3, 3, '#e04040'); F(ctx, bx - 1, by - 1 + bob, 3, 1, '#ffffff'); if (p.fish.bite > 0) txt('!', bx, by - 12, 8, '#f7d774', 'center'); }
-  if (p.state === 'stealing' || p.state === 'pickpocket') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.stealT / (p.state === 'pickpocket' ? 1.2 : stealTime()))), 3, '#f7d774'); }
+  if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.stealT / stealTime())), 3, '#f7d774'); }
   { const z = Math.floor(gameTime * 1.5) % 3, done = {}; for (const r of resHere) if (r.state === 'sleep' && !done[r.bed.x]) { done[r.bed.x] = 1; txt('z'.repeat(z + 1), r.bed.x * TS + 10, r.bed.y * TS - 4 - z * 2, 5, '#cfd8ff'); } }
   for (const r of resHere) if (['woke', 'prowl'].includes(r.state) && !r.bubble) txt('?', r.x - 2, r.y - 34, 8, '#ffb040');
   if (!titleish) drawOnlineTags(camMap);
@@ -4089,9 +4139,21 @@ function drawHUD(di) {
     txt(seen ? 'They see you! RUN!' : `Stay hidden: ${Math.ceil(left)}s`, VW / 2, 17, 5, '#fff', 'center');
   }
   if (p.state === 'grabbed') {
-    panel(VW / 2 - 80, VH / 2 + 20, 160, 30, 0.85); txt(touchMode ? 'BREAK FREE! Tap E fast!' : 'BREAK FREE! Mash SPACE!', VW / 2, VH / 2 + 24, 6, '#ff6b6b', 'center');
-    F(ctx, VW / 2 - 60, VH / 2 + 36, 120, 6, '#222'); F(ctx, VW / 2 - 59, VH / 2 + 37, Math.round(118 * clamp(p.struggle, 0, 100) / 100), 4, '#f7d774');
-    if (p.smoke > 0) txt('or [Q] smoke bomb', VW / 2, VH / 2 + 45, 4, '#ccc', 'center', null);
+    const w = p.wrig || { seq: [], i: 0, t: 0, max: 1, bad: 0 }, n = w.seq.length, bw = Math.max(160, n * 13 + 20), bx = VW / 2 - bw / 2, by = VH / 2 + 16;
+    panel(bx, by, bw, 40, 0.88); txt(touchMode ? 'WRIGGLE FREE! Flick the stick:' : 'WRIGGLE FREE! Press in order:', VW / 2, by + 4, 5, '#ff6b6b', 'center', null);
+    w.seq.forEach((d, i) => { const ax = VW / 2 - n * 13 / 2 + i * 13 + 3, ay = by + 13;
+      F(ctx, ax - 2, ay - 2, 11, 11, i < w.i ? '#24502e' : i === w.i ? (w.bad > 0 ? '#6a1a1a' : '#4a4020') : '#222230');
+      drawArrow(ax, ay, d, i < w.i ? '#7af0a0' : i === w.i ? '#f7d774' : '#8a8a9a'); });
+    const tf = clamp(w.t / w.max, 0, 1); F(ctx, bx + 10, by + 28, bw - 20, 4, '#222'); F(ctx, bx + 10, by + 28, Math.round((bw - 20) * tf), 4, tf > 0.4 ? '#f7d774' : '#ff5040');
+    if (p.smoke > 0) txt('or [Q] smoke bomb', VW / 2, by + 34, 4, '#ccc', 'center', null);
+  }
+  if (p.state === 'pickpocket' && p.pp) {
+    const pp = p.pp, bw = 150, bx = VW / 2 - bw / 2, by = VH / 2 + 18, tx = bx + 10, tw = bw - 20;
+    panel(bx, by, bw, 36, 0.88);
+    txt(`${POCKET_STEPS[Math.min(pp.stage, 2)]} (${pp.stage + 1}/3)`, VW / 2, by + 4, 5, '#f7d774', 'center', null);
+    F(ctx, tx, by + 14, tw, 8, '#2a1c1c'); F(ctx, tx + Math.round(tw * (pp.c - pp.w / 2)), by + 14, Math.max(2, Math.round(tw * pp.w)), 8, pp.flash > 0 ? '#c8ffd0' : '#3aa84a');
+    const nx = tx + Math.round(tw * pp.pos); F(ctx, nx - 1, by + 12, 3, 12, pp.pause > 0 ? '#888' : '#ffffff');
+    txt(touchMode ? 'Tap E in the green. Move to back off.' : 'Tap E in the green. Move to back off.', VW / 2, by + 27, 4, '#cccccc', 'center', null);
   }
   if (p.state === 'held') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt(escort && escort.dog ? 'PINNED by a hound! Watchmen coming...' : 'CAUGHT! Waiting for a second watchman...', VW / 2, 35, 5, '#ffb36b', 'center'); }
   if (p.state === 'escorted') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('Being escorted to the jail cell...', VW / 2, 35, 5, '#ffb36b', 'center'); }
@@ -4120,7 +4182,7 @@ function drawHistory() {
   if (maxScroll) { const bh = Math.max(10, (ph - 24) * fit / rows.length), by = top + 18 + (ph - 24 - bh) * (1 - histScroll / maxScroll); F(ctx, px + pw - 4, by, 2, bh, 'rgba(255,255,255,0.35)'); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hide behind barrels'], ['E', 'knock / steal (hold) / pickpocket / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hide behind barrels'], ['E', 'knock / steal (hold) / pickpocket (tap in the green) / hide'], ['F', 'pick a lock (night / empty house)'], ['WASD (grabbed)', 'press the arrows in order to wriggle free'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   ['Residents watch you. Steal when they look away.', 'Alarm = the Watch comes. Caught = jail.', 'Night: pick locks, sneak past sleepers.', 'Seen stealing = bounty +1 (max 5).',
     'Rich estates lie east through the forest.', 'Fences and thieves hide in the sewers. The Docks lie east.', 'The Deepwood lies north of the east road.'].forEach((t, i) => txt(t, x, y + L.length * 10 + 4 + i * 8, 4, '#bbb'));
@@ -4366,7 +4428,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
