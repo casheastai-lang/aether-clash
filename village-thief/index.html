@@ -458,12 +458,28 @@ const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
 const HAIRS = ['#2b1d14', '#5a3b22', '#b8860b', '#d9d9d9', '#7a2e1c', '#111111'];
 const SHIRTS = ['#a83232', '#3a6ea8', '#3f8a3a', '#c97a2a', '#7a4ea8', '#2a8a8a', '#b84a7a', '#6a6a2a'];
 // The thief: teal hooded cloak, crimson scarf, leather tunic and a loot sack. `bound` ties the hands behind the back.
-function drawThief(dir, f, bound) {
+// Thief skins: each one recolours the same hand-drawn sprite.
+const THIEF_BASE = { H: '#2f4a5c', Hh: '#4a6a80', Hd: '#1d2e3a', C: '#27394a', Cd: '#18242f', TU: '#6b4a2b', BE: '#3a2416', GO: '#e0b840', SC: '#a82e2e', SCh: '#d24646', P: '#25252e', BT: '#4a2e17', BTh: '#7a5030', GL: '#22180f', SA: '#a07c4a', SAh: '#c39d63', SAd: '#7a5a34' };
+const THIEF_SKINS = [
+  { id: 'teal', name: 'Night Teal', pal: {} },
+  { id: 'crimson', name: 'Crimson Rogue', pal: { H: '#7a1f2a', Hh: '#a83240', Hd: '#4a1018', C: '#5a1820', Cd: '#3a0e14', SC: '#2a2a2e', SCh: '#46464e' } },
+  { id: 'gilded', name: 'Gilded Bandit', pal: { H: '#3a2a5a', Hh: '#5a4a8a', Hd: '#22183a', C: '#2e2148', Cd: '#1c142e', SC: '#e0b840', SCh: '#f7d774', GO: '#fff2a8' } },
+  { id: 'golden', name: 'Golden Phantom', pal: { H: '#c9a03a', Hh: '#f2d27a', Hd: '#8a6a1e', C: '#a8842a', Cd: '#7a5e1a', SC: '#f4f0e6', SCh: '#ffffff', TU: '#5a3a1a', P: '#4a3a1a' } },
+  { id: 'merchant', name: "Merchant's Bane", pal: { H: '#3a5a2a', Hh: '#5a8a40', Hd: '#22381a', C: '#2e4a22', Cd: '#1c2e14', SC: '#d68910', SCh: '#f2b03a' } },
+  { id: 'shadow', name: 'Shadow', pal: { H: '#1a1a1e', Hh: '#2e2e36', Hd: '#0c0c0e', C: '#141418', Cd: '#08080a', SC: '#3a3a44', SCh: '#55555f', TU: '#222226', P: '#141418', BT: '#1c1c20', BTh: '#2e2e34', SA: '#3a3a3e', SAh: '#4a4a50', SAd: '#2a2a2e' } },
+  { id: 'locksmith', name: 'Locksmith', pal: { H: '#6b4a2b', Hh: '#8a6a40', Hd: '#4a3018', C: '#5a3e22', Cd: '#3e2a16', SC: '#9ea4ae', SCh: '#e1e5ec', GO: '#c0c6d0' } },
+  { id: 'moonlit', name: 'Moonlit', pal: { H: '#1e2a5a', Hh: '#3a4a8a', Hd: '#121a3a', C: '#18224a', Cd: '#0e1430', SC: '#c8d4ff', SCh: '#ffffff', GO: '#c8d4ff' } },
+  { id: 'charmer', name: 'Charmer', pal: { H: '#6a2a7a', Hh: '#9a4aa8', Hd: '#421a4e', C: '#521f5e', Cd: '#36143e', SC: '#f07fa8', SCh: '#ffb0c8' } },
+  { id: 'ghost', name: 'Ghost', pal: { H: '#c8ccd4', Hh: '#f4f6fa', Hd: '#9a9ea8', C: '#b0b4bc', Cd: '#8a8e96', SC: '#5a5e66', SCh: '#7a7e86', P: '#7a7e86', TU: '#9a9ea6' } },
+  { id: 'outlaw', name: 'Outlaw', pal: { H: '#2a2a2a', Hh: '#444444', Hd: '#151515', C: '#222222', Cd: '#121212', SC: '#c0392b', SCh: '#e04a3a', TU: '#4a2a1a', GO: '#c0392b' } },
+];
+function drawThief(dir, f, bound, pal = {}) {
   const c = mk(16, 22), g = c.getContext('2d'), ox = 2, oy = 6;
   const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y, w, h); };
-  const H = '#2f4a5c', Hh = '#4a6a80', Hd = '#1d2e3a', C = '#27394a', Cd = '#18242f', TU = '#6b4a2b', BE = '#3a2416', GO = '#e0b840',
-    SK = '#f1c27d', SKd = '#c99a5e', SC = '#a82e2e', SCh = '#d24646', P = '#25252e', BT = '#4a2e17', BTh = '#7a5030', GL = '#22180f',
-    SA = '#a07c4a', SAh = '#c39d63', SAd = '#7a5a34', RO = '#d8b878', EYE = '#111111';
+  const K = Object.assign({}, THIEF_BASE, pal);
+  const H = K.H, Hh = K.Hh, Hd = K.Hd, C = K.C, Cd = K.Cd, TU = K.TU, BE = K.BE, GO = K.GO,
+    SK = '#f1c27d', SKd = '#c99a5e', SC = K.SC, SCh = K.SCh, P = K.P, BT = K.BT, BTh = K.BTh, GL = K.GL,
+    SA = K.SA, SAh = K.SAh, SAd = K.SAd, RO = '#d8b878', EYE = '#111111';
   const a = f === 1 ? 1 : 0, b = f === 2 ? 1 : 0;
   if (dir === 'down' || dir === 'up') {
     // boots and legs
@@ -502,8 +518,97 @@ function drawThief(dir, f, bound) {
   }
   return c;
 }
-function thiefSheet(bound) { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawThief(d, f, bound)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; }
-const PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true);
+function thiefSheet(bound, pal) { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawThief(d, f, bound, pal)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; }
+let PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true);
+
+// ---------- profile: lifetime stats, achievements and skins (kept across games, in this browser) ----------
+const PROFILE_KEY = 'lightfingers_profile';
+let profile = { stats: {}, sets: {}, unlocked: [], skin: 'teal' };
+try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = Object.assign(profile, JSON.parse(raw)); } catch (e) { }
+function saveProfile() { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { } }
+function applySkin(id) {
+  const sk = THIEF_SKINS.find(k => k.id === id) || THIEF_SKINS[0];
+  PLAYER_SHEET = thiefSheet(false, sk.pal); PLAYER_BOUND = thiefSheet(true, sk.pal);
+  try { if (player) player.sheet = PLAYER_SHEET; } catch (e) { /* player isn't created yet at startup */ }
+  profile.skin = sk.id; saveProfile();
+}
+applySkin(profile.skin);
+// 50 achievements. `stat`/`set` ones unlock at a count; the rest are unlocked by events in play.
+const ACH = [
+  ['first_steal', 'Light Fingers', 'Steal your first item', { stat: 'steal', n: 1 }],
+  ['steal_10', 'Pickpocket', 'Steal 10 items', { stat: 'steal', n: 10 }],
+  ['steal_50', 'Kleptomaniac', 'Steal 50 items', { stat: 'steal', n: 50 }],
+  ['steal_150', 'Grand Larcenist', 'Steal 150 items', { stat: 'steal', n: 150, skin: 'crimson' }],
+  ['sell_100', 'First Payday', 'Sell 100g of loot', { stat: 'sold', n: 100 }],
+  ['sell_500', "Fence's Favourite", 'Sell 500g of loot', { stat: 'sold', n: 500 }],
+  ['sell_1000', 'Legendary Thief', 'Sell 1,000g of loot', { stat: 'sold', n: 1000, skin: 'gilded' }],
+  ['sell_5000', 'Tycoon of Thieves', 'Sell 5,000g of loot', { stat: 'sold', n: 5000, skin: 'golden' }],
+  ['big_score', 'Big Score', 'Sell a sack worth 300g or more at once', {}],
+  ['ruby', 'Ruby Hunter', 'Steal a Ruby Brooch', {}],
+  ['emerald', 'Green With Envy', 'Steal an Emerald from the Jeweler', {}],
+  ['full_sack', 'Sack Full of Swag', 'Fill your sack to the brim', {}],
+  ['first_knock', 'Neighbourly', 'Knock on a door', { stat: 'knock', n: 1 }],
+  ['knock_25', 'Door to Door', 'Knock on 25 doors', { stat: 'knock', n: 25 }],
+  ['rob_mansion', 'Upstairs, Downstairs', 'Steal from the upper floor of a mansion', {}],
+  ['rob_3_mansions', 'Old Money', 'Steal from 3 different mansions', { set: 'mansions', n: 3 }],
+  ['rob_shop', 'Shoplifter', 'Steal from a shop', { set: 'shops', n: 1 }],
+  ['rob_all_shops', 'High Street Heist', 'Steal from all six shops', { set: 'shops', n: 6, skin: 'merchant' }],
+  ['rob_inn', 'No Vacancy', "Steal from the inn's guest rooms", {}],
+  ['rob_20_houses', 'Neighbourhood Menace', 'Steal from 20 different homes', { set: 'homes', n: 20, skin: 'shadow' }],
+  ['clean_house', 'Spring Cleaning', 'Empty every container in a house', {}],
+  ['tour_steal', 'Thanks for the Tour', 'Steal while being shown around', {}],
+  ['first_pick', 'Click', 'Pick a lock', { stat: 'picked', n: 1 }],
+  ['pick_20', 'Master Locksmith', 'Pick 20 locks', { stat: 'picked', n: 20, skin: 'locksmith' }],
+  ['snap_10', 'Butterfingers', 'Snap 10 lockpicks', { stat: 'snaps', n: 10 }],
+  ['perfect_lock', 'Steady Hands', 'Pick a 5-pin lock without snapping a pick', {}],
+  ['sleep_steal', 'Sweet Dreams', 'Steal from a house while its family sleeps', {}],
+  ['night_10', 'Night Owl', 'Steal 10 items at night', { stat: 'nightSteal', n: 10, skin: 'moonlit' }],
+  ['market_steal', 'Market Day Special', 'Steal something on a Saturday', {}],
+  ['empty_house', 'While You Were Out', 'Pick the lock of an empty house in daylight', {}],
+  ['first_chat', 'Small Talker', 'Strike up a conversation', { stat: 'chats', n: 1 }],
+  ['compliment_10', 'Silver-Tongued', 'Land 10 compliments', { stat: 'compliments', n: 10 }],
+  ['friend_1', 'Good Neighbour', 'Make a friend', { stat: 'friends', n: 1 }],
+  ['friend_10', 'Popular', 'Make 10 friends', { stat: 'friends', n: 10, skin: 'charmer' }],
+  ['insult_10', 'Rude', 'Insult 10 people', { stat: 'insults', n: 10 }],
+  ['thrown_out', 'Shown the Door', 'Get thrown out of a house', {}],
+  ['gift_10', 'Generous', 'Give 10 gifts', { stat: 'gifts', n: 10 }],
+  ['hush_money', 'Hush Money', 'Pay a witness to forget', {}],
+  ['dog_friend', 'Good Boy', "Win over someone's dog", {}],
+  ['inn_room', 'Lie Low', 'Rent a room at the inn', {}],
+  ['first_wanted', 'Wanted', 'Have the Watch come after you', {}],
+  ['lose_heat_10', 'Ghost', 'Lose the Watch 10 times', { stat: 'heatLost', n: 10, skin: 'ghost' }],
+  ['hay_hide', 'Needle in a Haystack', 'Lose the Watch while hiding in hay', {}],
+  ['break_free', 'Slippery', 'Break free from a grab', { stat: 'breakFree', n: 1 }],
+  ['break_free_10', 'Eel', 'Break free 10 times', { stat: 'breakFree', n: 10 }],
+  ['smoke', 'Now You See Me', 'Use a smoke bomb', {}],
+  ['bounty_5', 'Most Wanted', 'Reach bounty 5', {}],
+  ['escape_dog', 'Outfoxed', 'Break free from a hound', {}],
+  ['jailed', 'Jailbird', 'Get thrown in jail', { stat: 'jailed', n: 1, skin: 'outlaw' }],
+  ['jailed_10', 'Repeat Offender', 'Go to jail 10 times', { stat: 'jailed', n: 10 }],
+].map(([id, name, desc, o]) => Object.assign({ id, name, desc }, o));
+let toasts = [];
+function unlock(id) {
+  if (profile.unlocked.includes(id)) return;
+  const a = ACH.find(x => x.id === id); if (!a) return;
+  profile.unlocked.push(id); saveProfile();
+  toasts.push({ a, t: 4.5 }); SFX.win();
+  if (a.skin) msg(`New skin unlocked: ${THIEF_SKINS.find(k => k.id === a.skin).name}! Pick it in the Wardrobe on the title screen.`, '#f7d774');
+}
+function stat(key, n = 1) {
+  profile.stats[key] = (profile.stats[key] || 0) + n; saveProfile();
+  for (const a of ACH) if (a.stat === key && profile.stats[key] >= a.n) unlock(a.id);
+}
+function addToSet(key, val) {
+  const list = profile.sets[key] = profile.sets[key] || [];
+  if (!list.includes(val)) { list.push(val); saveProfile(); }
+  for (const a of ACH) if (a.set === key && list.length >= a.n) unlock(a.id);
+}
+const skinUnlocked = id => id === 'teal' || ACH.some(a => a.skin === id && profile.unlocked.includes(a.id));
+function achProgress(a) {
+  if (a.stat) return [Math.min(a.n, profile.stats[a.stat] || 0), a.n];
+  if (a.set) return [Math.min(a.n, (profile.sets[a.set] || []).length), a.n];
+  return null;
+}
 function guardSheet(i) { return makeSheet({ skin: SKINS[i % 5], hair: HAIRS[i % 6], hairStyle: 'short', hat: 'helmet', shirt: '#2f4f9e', pants: '#3a3a46', emblem: '#e0b43a', belt: '#e0b43a', spear: true, beard: i % 3 === 1 }); }
 const FENCE_SHEETS = [
   makeSheet({ skin: '#e0ac69', hair: '#7a2e1c', hairStyle: 'long', hat: 'hood', hatC: '#5b2d6e', shirt: '#4a2357', pants: '#2a1a30', dress: true }),
@@ -1041,7 +1146,7 @@ let fade = { a: 0, dir: 0, fn: null };
 function transition(fn) { if (fade.dir) return; fade.dir = 1; fade.fn = fn; }
 
 function setWanted(reason) {
-  if (!wanted) msg(reason, '#ff6b6b');
+  if (!wanted) { msg(reason, '#ff6b6b'); unlock('first_wanted'); }
   wanted = true; lastSeenT = gameTime;
 }
 const HUNT_STATES = ['respond', 'search', 'chase'];
@@ -1053,7 +1158,7 @@ const allResidents = () => houses.flatMap(h => h.residents);
 const heatTime = () => HEAT_TIME + bounty * 3;
 const BOUNTY_MSG = ['', 'Bounty 1! The Watch puts 5 men on the streets.', 'Bounty 2! 7 watchmen now patrol the town.', 'Bounty 3! 10 watchmen patrol - and folk you robbed will recognize you!', 'Bounty 4! The Watch has brought out the hounds!', 'Bounty 5! Sergeants have joined the Watch!'];
 function raiseBounty() {
-  if (bounty >= 5) return; bounty++; msg(BOUNTY_MSG[bounty], '#ff4040'); SFX.whistle(); syncForce();
+  if (bounty >= 5) return; bounty++; msg(BOUNTY_MSG[bounty], '#ff4040'); SFX.whistle(); syncForce(); if (bounty >= 5) unlock('bounty_5');
 }
 function randomNear(px, py, rad) {
   const cx = Math.floor(px / TS), cy = Math.floor(py / TS);
@@ -1154,6 +1259,7 @@ function theftDiscovered(h) {
 }
 
 function knock(h) {
+  stat('knock');
   const p = player; p.state = 'knocking'; p.knockT = 1.45; p.knockHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2; SFX.knock(); say(p, '*knock knock*', 1.4);
 }
 function resolveKnock(h) {
@@ -1235,10 +1341,15 @@ function lockSet() {
   if (pin.st === 'set') return;
   if (pin.st === 'hang') {
     pin.st = 'set'; pin.pos = 1; SFX.set();
-    if (L.pins.every(q => q.st === 'set')) { const h = p.pickHouse; lockCancel(); SFX.unlock(); burgle(h); }
+    if (L.pins.every(q => q.st === 'set')) {
+      const h = p.pickHouse; stat('picked');
+      if (L.pins.length >= 5 && !L.snapped) unlock('perfect_lock');
+      if (!isNight() && houseEmpty(h)) unlock('empty_house');
+      lockCancel(); SFX.unlock(); burgle(h);
+    }
     return;
   }
-  p.picks--; L.flash = 0.35; SFX.snap(); say(p, '*snap*', 0.8);
+  p.picks--; L.flash = 0.35; L.snapped = (L.snapped || 0) + 1; SFX.snap(); say(p, '*snap*', 0.8); stat('snaps');
   if (pin.st !== 'down') pin.st = 'falling';
   if (p.picks <= 0) { msg('Your last lockpick snapped!', '#ff8a6b'); lockCancel(); }
   else msg(`Lockpick snapped! ${p.picks} left.`, '#ffb36b');
@@ -1356,7 +1467,11 @@ function drawSaves() {
 
 // ---------- conversations ----------
 let chat = null;
-const addFriend = (t, n) => { t.friend = clamp((t.friend || 0) + n, -100, 100); };
+const addFriend = (t, n) => {
+  const before = t.friend || 0; t.friend = clamp(before + n, -100, 100);
+  if (t.kind === 'resident' && before < 60 && t.friend >= 60) stat('friends');
+  if (t.kind === 'pet' && before < 40 && t.friend >= 40) unlock('dog_friend');
+};
 const isFriend = t => (t.friend || 0) >= 60;
 const isEnemy = t => (t.friend || 0) <= -50;
 function relation(t) { const f = t.friend || 0; return f >= 60 ? ['Friend', '#9df0a0'] : f >= 25 ? ['Friendly', '#cfe8a0'] : f <= -50 ? ['Enemy', '#ff6b6b'] : f <= -20 ? ['Annoyed', '#ffb36b'] : ['Stranger', '#cccccc']; }
@@ -1379,7 +1494,7 @@ function chatOpen(t) {
   else if (t.kind === 'guard') hello = t.unit === 'dog' ? 'Grrrrr...' : wanted ? 'YOU! Stop right there!' : pick(bounty >= 2 ? TALK.guardSus : TALK.guard);
   else if (t.kind === 'pet') hello = (t.friend || 0) >= 40 ? '*wags tail happily*' : t.house.residents.some(r => r.state === 'host') ? pick(TALK.pet) : 'Grrr...';
   else hello = pick(TALK[t.kind] || TALK.decor);
-  state = 'chat'; chat = { t, reply: hello, items: [] };
+  state = 'chat'; chat = { t, reply: hello, items: [] }; stat('chats');
 }
 function chatClose() { state = 'play'; chat = null; }
 // Patience: every chat or compliment wears it down; it comes back on its own over ~30s.
@@ -1393,7 +1508,7 @@ function bother(t, n) {
   msg(`${t.name} got fed up with you.`, '#ffb36b'); SFX.deny();
   const h = t.house;
   if (t.state === 'host' && h.alarmT <= 0) {
-    if (isEnemy(t)) { say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); leaveHouse(h); }
+    if (isEnemy(t)) { say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); unlock('thrown_out'); leaveHouse(h); }
     else h.sus = Math.min(95, h.sus + 25);
   }
   return true;
@@ -1411,7 +1526,7 @@ function shopOffers(t, add) {
     add('Buy a hot meal (5g) - full stamina', () => { if (!pay(5)) return; player.stamina = 100; player.tired = false; chat.reply = 'Rabbit stew. Mind the bones.'; }, 5);
     add('Rent a room - sleep until morning (15g)', () => {
       if (wanted) { chat.reply = 'Not with the Watch on your heels!'; return; }
-      if (!pay(15)) return; chatClose();
+      if (!pay(15)) return; chatClose(); unlock('inn_room');
       transition(() => {
         const d = dayInfo(); gameTime = d.day * DAY_LEN - 60 + 1; player.stamina = 100; player.tired = false;
         if (bounty > 0) { bounty--; syncForce(); msg(`You lie low overnight. Bounty fades to ${bounty}.`, '#9df0a0'); }
@@ -1436,7 +1551,7 @@ function chatOptions() {
       const grumpy = irritated(t), n = t.compliments = (t.compliments || 0) + 1;
       if (bother(t, 30)) return;
       const odds = 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0) - (n - 1) * 0.2 - (grumpy ? 0.4 : 0);
-      if (Math.random() < odds) { addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
+      if (Math.random() < odds) { stat('compliments'); addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
       else { addFriend(t, -4); if (host) h.sus += 8; chat.reply = n > 2 ? pick(['Laying it on a bit thick, aren\'t you?', 'Alright, that\'s enough flattery.']) : pick(['Hmph. Flattery.', 'What are you after?', '...Right.']); }
     });
     if (host && h.lead === t && !h.toured) add(h.type === 'inn' ? 'Ask to see the rooms upstairs' : h.shop ? 'Ask to look around the back' : 'Ask for a tour of the house', () => {
@@ -1453,15 +1568,15 @@ function chatOptions() {
       chat.reply = `Oh, our ${best.e.item.name} is in the ${what}${best.f.upstairs ? ' upstairs' : ''}. ...Why do you ask?`;
     });
     if (t.child) add('Give them a copper coin (1g)', () => { if (!pay(1)) return; addFriend(t, 15); chat.reply = 'WOW! Thank you!!'; }, 1);
-    else add('Give them a gift (10g)', () => { if (!pay(10)) return; addFriend(t, 14); if (host) h.sus = Math.max(0, h.sus - 25); chat.reply = pick(['Oh! How generous of you!', 'For me? You shouldn\'t have!']); }, 10);
-    if (t.sawYou) add('Pay them to forget what they saw (40g)', () => { if (!pay(40)) return; t.sawYou = false; addFriend(t, 5); chat.reply = '...I didn\'t see anything. Ever.'; }, 40);
+    else add('Give them a gift (10g)', () => { if (!pay(10)) return; stat('gifts'); addFriend(t, 14); if (host) h.sus = Math.max(0, h.sus - 25); chat.reply = pick(['Oh! How generous of you!', 'For me? You shouldn\'t have!']); }, 10);
+    if (t.sawYou) add('Pay them to forget what they saw (40g)', () => { if (!pay(40)) return; unlock('hush_money'); t.sawYou = false; addFriend(t, 5); chat.reply = '...I didn\'t see anything. Ever.'; }, 40);
     if (host && t.role && t.role !== 'traveler' && t.role !== 'apprentice') shopOffers(t, add);
     add('Insult them', () => {
-      addFriend(t, -25);
+      stat('insults'); addFriend(t, -25);
       if (t.child) { chat.reply = 'WAAAAH! MUUUUM!'; if (host) h.sus += 20; return; }
       chat.reply = pick(['How DARE you!', 'Well, I never!', 'What a horrid thing to say!']);
       if (host) {
-        if (isEnemy(t) && h.alarmT <= 0) { chatClose(); say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); leaveHouse(h); }
+        if (isEnemy(t) && h.alarmT <= 0) { chatClose(); say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); unlock('thrown_out'); leaveHouse(h); }
         else h.sus = Math.min(90, h.sus + 20); // rude, but not a crime
       }
     });
@@ -1537,11 +1652,24 @@ function startSteal(e) {
 function finishSteal() {
   const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0; p.loot.push(e.item); h.visitStolen++;
   SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free';
+  stat('steal');
+  if (isNight()) stat('nightSteal');
+  if (e.item.name === 'Ruby Brooch') unlock('ruby');
+  if (e.item.name === 'Emerald') unlock('emerald');
+  if (p.loot.length >= sackCap()) unlock('full_sack');
+  if (h.type === 'mansion') { addToSet('mansions', h.key); if (maps[p.map].upstairs) unlock('rob_mansion'); }
+  else if (h.type === 'inn') { if (maps[p.map].upstairs) unlock('rob_inn'); }
+  else if (h.shop) addToSet('shops', h.shop);
+  if (!h.shop) addToSet('homes', h.key);
+  if (h.residents.some(r => r.state === 'sleep')) unlock('sleep_steal');
+  if (isMarketDay()) unlock('market_steal');
+  if (h.tourT > 0) unlock('tour_steal');
+  if (h.floors.every(f => [...f.loot.values()].every(x => x.taken))) unlock('clean_house');
   if (h.residents.some(r => r.state === 'sleep')) h.wake += rnd(10, 30) * (up.picks ? 0.75 : 1);
 }
 function useSmoke() {
   const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
-  p.smoke--; clouds.push({ map: p.map, x: p.x, y: p.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke();
+  p.smoke--; clouds.push({ map: p.map, x: p.x, y: p.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke(); unlock('smoke');
   for (const g of guards) if (g.map === p.map && Math.hypot(g.x - p.x, g.y - p.y) < 44 && !['hold', 'assist', 'escort_lead', 'escort_follow'].includes(g.state)) { g.state = 'stunned'; g.stunT = 2.6; say(g, g.unit === 'dog' ? '*sneeze* *sneeze*' : '*cough cough*', 2); }
   msg('Smoke bomb!', '#cfcfcf'); return true;
 }
@@ -1557,6 +1685,7 @@ function sellAll() {
   const v = lootValue();
   if (!v) { say(menu.fence, "You've got nothing to sell!"); SFX.deny(); return; }
   gold += v; totalEarned += v; player.loot = []; SFX.coins(); msg(`Sold your loot for ${v}g`, '#f7d774');
+  stat('sold', v); if (v >= 300) unlock('big_score');
   say(menu.fence, pick(['Pleasure doing business.', 'Ill-gotten gains... my favourite.', "I'll find a buyer. Eventually."]));
   if (!won && totalEarned >= GOAL) { won = true; wonT = 7; SFX.win(); msg('You earned 1000g — LEGENDARY THIEF! Keep going if you like.', '#9df0a0'); }
 }
@@ -1576,7 +1705,8 @@ function grab(g) {
   SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
 }
 function breakFree() {
-  const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, g.unit === 'dog' ? '*YELP*' : 'Oof!'); }
+  const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, g.unit === 'dog' ? '*YELP*' : 'Oof!'); if (g.unit === 'dog') unlock('escape_dog'); }
+  stat('breakFree');
   p.state = 'free'; p.invuln = 1.6; p.boostT = 1.6; escapes++; SFX.free(); msg('You wriggled free! RUN!', '#9df0a0'); say(p, 'Not today!', 1.5);
 }
 function arrest() {
@@ -1616,7 +1746,7 @@ function finishEscort() {
   const { A, B } = escort;
   transition(() => {
     const p = player, j = maps.jail; p.map = 'jail'; p.x = j.cellSpot.x * TS + 8; p.y = j.cellSpot.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
-    j.cellOpen = false; p.state = 'jailed'; arrests++;
+    j.cellOpen = false; p.state = 'jailed'; arrests++; stat('jailed');
     const lost = lootValue(), fine = Math.floor(gold * 0.2); gold -= fine; p.loot = [];
     p.jailT = Math.min(90, 15 + bounty * 12 + arrests * 3); p.sentence = p.jailT; msg(`Sentenced to ${Math.round(p.jailT)}s in the cells${bounty ? ` (bounty ${bounty})` : ''}.`, '#ffb36b');
     SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g) and fined ${fine}g.`, '#ff6b6b');
@@ -1686,6 +1816,8 @@ cv.addEventListener('mousedown', e => { audioInit(); tapUI(toV(e.clientX, e.clie
 function tapUI(v) {
   const inR = r => r && v.x >= r.x && v.x <= r.x + r.w && v.y >= r.y && v.y <= r.y + r.h;
   if (state === 'title') { const it = titleUI.find(inR); if (it) it.fn(); else startGame(); return true; }
+  if (state === 'wardrobe') { const it = wardUI.find(inR); if (it) it.fn(); return true; }
+  if (state === 'achievements') { const it = achUI.find(inR); if (it) it.fn(); return true; }
   if (state === 'saves') { const it = saves.items.find(inR); if (it) it.fn(); else if (!inR({ x: saves.px, y: saves.py, w: saves.pw, h: saves.ph })) closeSaves(); return true; }
   if (state === 'chat') { const it = chat.items.find(inR); if (it) it.fn(); else if (!inR({ x: chat.px, y: chat.py, w: chat.pw, h: chat.ph })) chatClose(); return true; }
   if (paused && state === 'play') { const it = pauseUI.find(inR); if (it) it.fn(); else paused = false; return true; }
@@ -2095,6 +2227,7 @@ function updateWorld(dt) {
     if (guards.some(g => g.state === 'respond' && g.alarm && g.target && maps[g.target.map].house && inHouse(maps[g.target.map].house, player.map))) lastSeenT = gameTime;
     if (gameTime - lastSeenT > heatTime() && ['free', 'hidden', 'stealing', 'knocking', 'picking'].includes(player.state)) {
       wanted = false; escapes = 0; msg('You lost the Watch. The heat is off.', '#9df0a0');
+      stat('heatLost'); if (player.state === 'hidden') unlock('hay_hide');
       for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
     }
       }
@@ -2161,13 +2294,14 @@ function bubbleAt(x, y, text, color = '#fff8e7') {
 }
 function render(dt) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-  const p = player, camMap = state === 'title' ? 'town' : p.map, m = maps[camMap];
+  const titleish = ['title', 'wardrobe', 'achievements'].includes(state) || (state === 'saves' && saves && saves.from === 'title');
+  const p = player, camMap = titleish ? 'town' : p.map, m = maps[camMap];
   const resHere = []; for (const h of houses) for (const r of h.residents) if (r.map === camMap) resHere.push(r);
   F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : '#0d0906');
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   ctx.drawImage(m.canvas, 0, 0);
-  const di = state === 'title' ? TITLE_NIGHT : dayInfo();
+  const di = titleish ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
   if (m.kind === 'town') {
     for (const h of houses) if (h.doorOpenT > 0) { F(ctx, h.door.x * TS + 4, h.door.y * TS + 4, 8, 12, '#1a120b'); F(ctx, h.door.x * TS + 5, h.door.y * TS + 12, 6, 4, '#f3c47a'); }
@@ -2184,7 +2318,7 @@ function render(dt) {
   }
   // vision cones
   const range = guardRange();
-  if (state !== 'title') for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
+  if (!titleish) for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
     if (['hold', 'assist', 'escort_lead', 'escort_follow', 'grab'].includes(g.state)) continue;
     const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
     drawCone(g, g.unit === 'dog' ? range * 0.95 : range, g.unit === 'dog' ? Math.PI * 0.999 : Math.acos(0.62), col);
@@ -2193,7 +2327,7 @@ function render(dt) {
   // characters
   const list = [];
   if (p.state !== 'hidden') list.push(p);
-  if (state !== 'title') for (const g of guards) if (g.map === camMap) list.push(g);
+  if (!titleish) for (const g of guards) if (g.map === camMap) list.push(g);
   if (camMap === 'town') list.push(...fences);
   if (camMap === 'jail') list.push(...jailNPCs);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
@@ -2248,11 +2382,14 @@ function render(dt) {
   // HUD
   ctx.setTransform(S, 0, 0, S, 0, 0);
   if (state === 'title') { drawTitle(); }
-  else drawHUD(di);
+  else if (!titleish) drawHUD(di);
   if (state !== 'title' && p.state === 'picking') drawLock();
   if (state === 'menu') drawMenu();
   if (state === 'chat' && chat) drawChat();
   if (state === 'saves' && saves) drawSaves();
+  if (state === 'wardrobe') drawWardrobe();
+  if (state === 'achievements') drawAchievements();
+  drawToasts(dt);
   if (paused && state === 'play') {
     panel(0, 0, VW, VH, 0.6); const cy = Math.max(10, VH / 2 - 76);
     txt('PAUSED', VW / 2, cy, 12, '#fff', 'center');
@@ -2288,7 +2425,63 @@ function drawLighting(dark, cx, cy, m) {
   if (m.kind === 'town') for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
   ctx.globalCompositeOperation = 'source-over';
 }
-let lockUI = null, pauseUI = [], titleUI = [];
+let lockUI = null, pauseUI = [], titleUI = [], wardrobe = null, wardUI = [], achScroll = 0, achUI = [];
+function wardrobePick() {
+  const sk = THIEF_SKINS[wardrobe.i];
+  if (!skinUnlocked(sk.id)) { SFX.deny(); return; }
+  applySkin(sk.id); SFX.buy(); state = 'title';
+}
+function drawWardrobe() {
+  panel(0, 0, VW, VH, 0.82);
+  const sk = THIEF_SKINS[wardrobe.i], open = skinUnlocked(sk.id), cxm = VW / 2, top = Math.max(8, Math.round(VH * 0.1));
+  txt('WARDROBE', cxm, top, 10, '#f7d774', 'center');
+  txt(`${THIEF_SKINS.filter(k => skinUnlocked(k.id)).length} of ${THIEF_SKINS.length} unlocked`, cxm, top + 15, 5, '#aaa', 'center', null);
+  const sc = 5, img = thiefSheet(false, sk.pal).down[0], px = Math.round(cxm - 8 * sc), py = top + 26;
+  ctx.save(); if (!open) ctx.filter = 'brightness(0)'; ctx.globalAlpha = open ? 1 : 0.55; ctx.drawImage(img, px, py, 16 * sc, 22 * sc); ctx.restore();
+  txt(open ? sk.name : '???', cxm, py + 22 * sc + 4, 7, open ? '#ffffff' : '#888', 'center');
+  const how = ACH.find(a => a.skin === sk.id);
+  const note = open ? (profile.skin === sk.id ? 'Wearing' : (touchMode ? 'Tap to wear' : 'Enter - wear')) : `Locked: ${how.name} - ${how.desc}`;
+  wrap(note, Math.floor((VW - 20) / 5)).forEach((l, i) => txt(l, cxm, py + 22 * sc + 16 + i * 8, 5, open ? '#9df0a0' : '#ffb36b', 'center', null));
+  const ay = py + 11 * sc;
+  txt('<', cxm - 70, ay, 12, '#f7d774', 'center'); txt('>', cxm + 70, ay, 12, '#f7d774', 'center');
+  wardUI = [
+    { x: cxm - 90, y: ay - 14, w: 40, h: 40, fn: () => { wardrobe.i = (wardrobe.i + THIEF_SKINS.length - 1) % THIEF_SKINS.length; } },
+    { x: cxm + 50, y: ay - 14, w: 40, h: 40, fn: () => { wardrobe.i = (wardrobe.i + 1) % THIEF_SKINS.length; } },
+    { x: px, y: py, w: 16 * sc, h: 22 * sc + 28, fn: wardrobePick },
+    { x: cxm - 40, y: VH - 18, w: 80, h: 14, fn: () => { state = 'title'; } },
+  ];
+  txt(touchMode ? 'Back' : '< > browse   Esc - back', cxm, VH - 14, 5, '#aaa', 'center', null);
+}
+function drawAchievements() {
+  panel(0, 0, VW, VH, 0.88);
+  const cxm = VW / 2, pw = Math.min(330, VW - 12), px = Math.round(cxm - pw / 2), top = 8, rowH = 16, listTop = top + 24, rows = Math.floor((VH - listTop - 20) / rowH);
+  txt('ACHIEVEMENTS', cxm, top, 9, '#f7d774', 'center');
+  txt(`${profile.unlocked.length} / ${ACH.length} unlocked`, cxm, top + 13, 5, '#aaa', 'center', null);
+  achScroll = clamp(achScroll, 0, Math.max(0, ACH.length - rows));
+  achUI = [];
+  ACH.slice(achScroll, achScroll + rows).forEach((a, i) => {
+    const y = listTop + i * rowH, got = profile.unlocked.includes(a.id), prog = achProgress(a);
+    F(ctx, px, y, pw, rowH - 2, got ? 'rgba(247,215,116,0.12)' : 'rgba(255,255,255,0.04)');
+    F(ctx, px + 4, y + 3, 8, 8, got ? '#f7d774' : '#333'); if (got) { F(ctx, px + 6, y + 7, 1, 2, '#2a1a00'); F(ctx, px + 7, y + 8, 1, 1, '#2a1a00'); F(ctx, px + 8, y + 5, 1, 3, '#2a1a00'); }
+    txt(a.name, px + 16, y + 2, 5, got ? '#ffffff' : '#bbb', 'left', null);
+    txt(a.desc + (prog && !got ? `  (${prog[0]}/${prog[1]})` : ''), px + 16, y + 9, 4, got ? '#cfc6b0' : '#888', 'left', null);
+    if (a.skin) txt('SKIN', px + pw - 6, y + 4, 4, got ? '#9df0a0' : '#c9a04a', 'right', null);
+  });
+  if (achScroll > 0) txt('^', px + pw - 6, listTop - 8, 6, '#aaa', 'right', null);
+  if (achScroll + rows < ACH.length) txt('v', px + pw - 6, VH - 18, 6, '#aaa', 'right', null);
+  achUI = [{ x: px, y: listTop, w: pw, h: rows * rowH / 2, fn: () => { achScroll -= 3; } }, { x: px, y: listTop + rows * rowH / 2, w: pw, h: rows * rowH / 2, fn: () => { achScroll += 3; } },
+    { x: cxm - 40, y: VH - 14, w: 80, h: 12, fn: () => { state = 'title'; } }];
+  txt(touchMode ? 'Tap top/bottom to scroll - Back' : 'W/S scroll   Esc - back', cxm, VH - 11, 5, '#aaa', 'center', null);
+}
+function drawToasts(dt) {
+  if (!toasts.length) return;
+  const t = toasts[0], a = Math.min(1, t.t, (4.5 - t.t) * 3), w = 170, x = Math.round(VW / 2 - w / 2), y = 30;
+  ctx.globalAlpha = Math.max(0, a); panel(x, y, w, 24, 0.92); F(ctx, x, y, 3, 24, '#f7d774');
+  txt('ACHIEVEMENT UNLOCKED', x + 8, y + 4, 4, '#f7d774', 'left', null); txt(t.a.name, x + 8, y + 12, 6, '#ffffff', 'left', null);
+  if (t.a.skin) txt('+skin', x + w - 6, y + 13, 4, '#9df0a0', 'right', null);
+  ctx.globalAlpha = 1; t.t -= dt; if (t.t <= 0) toasts.shift();
+}
+addEventListener('wheel', e => { if (state === 'achievements') achScroll += e.deltaY > 0 ? 2 : -2; });
 function drawLock() {
   const p = player, L = p.lock; if (!L) return;
   const n = L.pins.length, lw = 24 + n * 26, lh = 58, pw = Math.min(VW - 8, lw + 92), ph = 82;
@@ -2450,11 +2643,17 @@ function drawTitle() {
   txt('LIGHT FINGERS', cxm + 1, ty + 2, size, '#3a1e06', 'center', null);
   txt('LIGHT FINGERS', cxm, ty, size, '#f7d774', 'center', '#7a4a10');
   txt('Knock. Smile. Steal.', cxm, ty + size + 12, 7, '#e8dcc0', 'center', '#000');
-  const any = [1, 2, 3].some(n => readSlot(n)), by = Math.round(VH - (any ? 44 : 32));
+  const any = [1, 2, 3].some(n => readSlot(n)), by = Math.round(VH - 48);
   const cta = touchMode ? 'Tap to begin' : 'Press Enter';
-  titleUI = [{ x: cxm - 60, y: by - 4, w: 120, h: 16, fn: startGame }].concat(any ? [{ x: cxm - 50, y: by + 16, w: 100, h: 12, fn: () => openSaves('load', 'title') }] : []);
+  titleUI = [{ x: cxm - 60, y: by - 4, w: 120, h: 16, fn: startGame }];
   txt(cta, cxm, by, 8, '#ffffff', 'center', '#000');
-  if (any) txt(touchMode ? 'Load game' : 'L - Load game', cxm, by + 19, 5, '#cbb98a', 'center', '#000');
+  // small links: load, wardrobe, achievements
+  const links = [...(any ? [['L', 'Load game', () => openSaves('load', 'title')]] : []), ['C', 'Wardrobe', () => { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }],
+    ['A', `Achievements ${profile.unlocked.length}/${ACH.length}`, () => { state = 'achievements'; achScroll = 0; }]];
+  ctx.font = '5px ' + FONT; const labels = links.map(([k, l]) => (touchMode ? '' : k + ' - ') + l), gap = 14;
+  const widths = labels.map(l => ctx.measureText(l).width), total = widths.reduce((a, b) => a + b, 0) + gap * (labels.length - 1);
+  let lx = Math.round(cxm - total / 2);
+  labels.forEach((l, i) => { txt(l, lx, by + 19, 5, '#cbb98a', 'left', '#000'); titleUI.push({ x: lx - 3, y: by + 15, w: widths[i] + 6, h: 12, fn: links[i][2] }); lx += widths[i] + gap; });
 }
 // =====================================================================
 //  MAIN LOOP
@@ -2469,7 +2668,17 @@ function frame(now) {
     p.map = 'town'; p.x = sc.x; p.y = sc.y; p.dir = 'up'; p.moving = false; p.bubble = null;
     updateCamera(null, 'town', sc.x, sc.y - VH * 0.12);
     if (hit('enter') || hit(' ') || hit('e')) startGame();
-    else if (hit('l')) openSaves('load', 'title');
+    else if (hit('l') && [1, 2, 3].some(n => readSlot(n))) openSaves('load', 'title');
+    else if (hit('c')) { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }
+    else if (hit('a')) { state = 'achievements'; achScroll = 0; }
+  } else if (state === 'wardrobe') {
+    if (hit('arrowleft') || hit('a')) wardrobe.i = (wardrobe.i + THIEF_SKINS.length - 1) % THIEF_SKINS.length;
+    if (hit('arrowright') || hit('d')) wardrobe.i = (wardrobe.i + 1) % THIEF_SKINS.length;
+    if (hit('enter') || hit('e') || hit(' ')) wardrobePick();
+    if (hit('escape')) state = 'title';
+  } else if (state === 'achievements') {
+    if (hit('arrowdown') || hit('s')) achScroll += 3; if (hit('arrowup') || hit('w')) achScroll -= 3;
+    if (hit('escape')) state = 'title';
   } else if (state === 'chat') {
     for (let i = 1; i <= 9; i++) if (hit(String(i))) { const o = chatOptions()[i - 1]; if (o) o.fn(); break; }
     if (state === 'chat' && (hit('escape') || hit('t'))) chatClose();
@@ -2498,7 +2707,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
