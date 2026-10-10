@@ -1560,7 +1560,7 @@ function updateResident(r, dt) {
       } else wanderOn(r.map, 24);
       const sees = canSee(r, p, 120, 0.55);
       if (sees && p.state === 'stealing') {
-        h.sus += 80 * dt; h.caught = true; r.sawYou = true;
+        h.seenSteal = true; h.caught = true; r.sawYou = true;
         if (!r.caughtSay) { r.caughtSay = true; r.mode = 'watch'; r.modeT = 4; say(r, r.child ? 'MUM! DAD! They took something!' : 'Hey!! What are you doing?!', 2); }
       } else if (sees && p.running) h.sus += 5 * (up.tongue ? 0.6 : 1) * dt;
       break;
@@ -1632,11 +1632,13 @@ function updatePet(d, dt) {
 function houseTick(h, dt) {
   const p = player, here = inHouse(h, p.map);
   h.cooldown = Math.max(0, h.cooldown - dt); h.doorOpenT = Math.max(0, h.doorOpenT - dt); h.alarmT = Math.max(0, h.alarmT - dt);
+  const seen = h.seenSteal; h.seenSteal = false;
   if (here && h.alarmT <= 0) {
     const hosts = h.residents.filter(r => r.state === 'host');
     if (hosts.length) {
-      const tongue = up.tongue ? 0.6 : 1, greed = 0.8 + h.wealth * 0.2;
-      h.sus += 0.7 * tongue * greed * dt;
+      const tongue = up.tongue ? 0.6 : 1;
+      h.sus += (100 / 120) * tongue * dt; // a guest wears out their welcome in 2 minutes
+      if (seen) h.sus += 100 * dt;  // caught red-handed: full in 1 second, however many are watching
       if (h.lead && h.lead.map !== p.map) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
       if (h.sus >= 60 && !h.warned && h.lead) { h.warned = true; say(h.lead, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
       if (h.sus >= 100) raiseAlarm(h, h.caught);
