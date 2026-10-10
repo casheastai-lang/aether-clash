@@ -943,15 +943,15 @@ function genTown() {
     }
   }
   // South of the farms: the river, with bridges where the streets cross it, and a whole new quarter beyond.
-  for (let x = 2; x <= W - 3; x++) for (let y = 88; y <= 91; y++) {
+  for (let x = 2; x <= W - 3; x++) for (let y = 86; y <= 92; y++) {
     if (x <= 117 && VROADS.some(v => x === v || x === v + 1)) setG(x, y, T.BRIDGE);
     else { setG(x, y, T.GRASS); setO(x, y, T.RIVER); }
   }
-  for (let x = 2; x <= 117; x++) for (const y of [86, 87, 92, 93]) if (isGrass(x, y) && R() < 0.12) setG(x, y, T.FLOWER);
+  for (let x = 2; x <= 117; x++) for (const y of [85, 93]) if (isGrass(x, y) && R() < 0.12) setG(x, y, T.FLOWER);
   // the fisherman's hut, his dock and boats
   { const hut = placeHouse('cottage', 4, 94, 5); hut.family = 'Fisher';
-    for (const y of [90, 91]) for (const x of [10, 11]) { setG(x, y, T.BRIDGE); m.tiles[y * W + x] = T.BRIDGE; }
-    setO(13, 89, T.BOAT); setO(26, 90, T.BOAT); setO(10, 96, T.BARREL); setO(11, 96, T.CRATE); setO(13, 95, T.HAY); hays.push({ x: 13, y: 95 });
+    for (const y of [89, 90, 91, 92]) for (const x of [10, 11]) { setG(x, y, T.BRIDGE); m.tiles[y * W + x] = T.BRIDGE; }
+    setO(13, 89, T.BOAT); setO(14, 89, T.BOAT); setO(26, 88, T.BOAT); setO(50, 90, T.BOAT); setO(51, 90, T.BOAT); setO(92, 87, T.BOAT); setO(10, 96, T.BARREL); setO(11, 96, T.CRATE); setO(13, 95, T.HAY); hays.push({ x: 13, y: 95 });
     for (let x = 6; x <= 11; x++) setG(x, 93, T.PATH); setG(6, 99, T.PATH); }
   const southBand = (x0, x1, doorRow, types, yardTop) => {
     let x = x0 + 2;
@@ -979,7 +979,7 @@ function genTown() {
     sprinkle(x0 + 1, x1 - 1, 113, 114, null, 0.7);
   });
   // East of town: thick forest, one road through it, and two walled estates facing each other across it.
-  for (let y = 2; y <= H - 3; y++) for (let x = 118; x <= W - 3; x++) { if (y >= 88 && y <= 91) continue; setG(x, y, R() < 0.05 ? T.FLOWER : T.GRASS); if (R() < 0.8) setO(x, y, R() < 0.85 ? T.TREE : T.BUSH); }
+  for (let y = 2; y <= H - 3; y++) for (let x = 118; x <= W - 3; x++) { if (y >= 86 && y <= 92) continue; setG(x, y, R() < 0.05 ? T.FLOWER : T.GRASS); if (R() < 0.8) setO(x, y, R() < 0.85 ? T.TREE : T.BUSH); }
   for (let x = 118; x <= 166; x++) for (const y of [48, 49, 50, 51, 52]) setG(x, y, y === 50 || y === 51 || ((x === 145 || x === 146) && y !== 50 && y !== 51) ? T.PATH : T.GRASS);
   for (const [x, y] of [[119, 48], [120, 48], [121, 48], [119, 47], [120, 47]]) setG(x, y, T.GRASS); // where the steward waits
   const estate = (name, family, y0, y1, gateY, houseY, backSide) => {
@@ -1010,10 +1010,10 @@ function genTown() {
   for (const [x, y] of [[126, 55], [164, 55], [126, 82], [164, 70]]) setO(x, y, T.TREE);
   V.routes = [[[128, 56], [162, 56], [162, 81], [128, 81]], [[162, 81], [128, 81], [128, 56], [162, 56]], [[135, 60], [160, 60], [160, 79], [135, 80]], [[140, 79], [158, 74]]];
   // The Docks: east along the river, past the forest. Warehouses with night watchmen, piers, boats, and a smuggler after dark.
-  for (let y = 92; y <= H - 3; y++) for (let x = 118; x <= W - 3; x++) setG(x, y, R() < 0.04 ? T.FLOWER : T.GRASS);
+  for (let y = 93; y <= H - 3; y++) for (let x = 118; x <= W - 3; x++) setG(x, y, R() < 0.04 ? T.FLOWER : T.GRASS);
   for (let x = 118; x <= W - 4; x++) for (const y of [104, 105]) setG(x, y, T.COBBLE);
-  for (let x = 118; x <= W - 3; x++) for (const y of [92, 93]) setG(x, y, T.BRIDGE); // the quay
-  for (const px of [126, 142, 158]) for (let y = 88; y <= 91; y++) for (const x of [px, px + 1]) { setG(x, y, T.BRIDGE); m.tiles[y * W + x] = T.BRIDGE; }
+  for (let x = 118; x <= W - 3; x++) for (const y of [93]) setG(x, y, T.BRIDGE); // the quay
+  for (const px of [126, 142, 158]) for (let y = 87; y <= 92; y++) for (const x of [px, px + 1]) { setG(x, y, T.BRIDGE); m.tiles[y * W + x] = T.BRIDGE; }
   for (const [x0, y, n] of [[129, 89, 4], [145, 90, 3], [161, 89, 4], [121, 90, 2]]) for (let k = 0; k < n; k++) setO(x0 + k, y, T.BOAT);
   for (let y = 94; y <= 103; y++) for (let x = 118; x <= W - 3; x++) setG(x, y, T.COBBLE);
   const docks = m.docks = [];
@@ -1835,6 +1835,14 @@ function losClear(map, x0, y0, x1, y1) {
   }
   return true;
 }
+// Crouched behind a barrel, crate, sack, bush, table or stall, you can't be seen from the other side of it.
+const COVER = new Set([T.BARREL, T.IBARREL, T.CRATE, T.SACK, T.PLANTER, T.BUSH, T.TABLE, T.STALL, T.CHEST, T.DESK]);
+function behindCover(map, x0, y0, x1, y1) {
+  const m = maps[map], d = Math.hypot(x1 - x0, y1 - y0); if (d < 20) return false; // too close: they see you anyway
+  for (let k = 4; k <= 22; k += 3) { const f = k / d, x = x1 + (x0 - x1) * f, y = y1 + (y0 - y1) * f; if (COVER.has(tileAt(m, Math.floor(x / TS), Math.floor(y / TS)))) return true; }
+  return false;
+}
+const coverNear = () => { const t = tileOfE(player), m = maps[player.map]; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (COVER.has(tileAt(m, t.x + dx, t.y + dy))) return true; return false; };
 function canSee(e, t, range, cosHalf) {
   if (e.map !== t.map || t.state === 'hidden') return false;
   const ex = e.x, ey = e.y - 8, tx = t.x, ty = t.y - 6, dx = tx - ex, dy = ty - ey, d = Math.hypot(dx, dy);
@@ -1842,6 +1850,7 @@ function canSee(e, t, range, cosHalf) {
   if (d > range) return false;
   if (d > 14 && (dx * Math.cos(e.fa) + dy * Math.sin(e.fa)) / d < cosHalf) return false;
   if (inSmoke(e.map, ex, ey)) return false;
+  if (t === player && player.sneak && behindCover(e.map, ex, ey, tx, ty)) return false;
   return losClear(e.map, ex, ey, tx, ty);
 }
 const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110; };
@@ -2187,7 +2196,7 @@ function wakeUp(r) {
   say(r, r.child ? pick(['Mummy? Is that you?', '*sniff* ...monsters?']) : pick(["Who's there?!", 'Hello...? Is someone there?', 'Wha-? What was that?']), 2.2); SFX.deny();
 }
 const TALK = {
-  thief: ['Silas the smuggler works the docks after dark. Skeleton keys, pardons, the lot.', 'The warehouses down the docks are full of crates. Mind the night watchmen.', 'Need a lookout? I\'m cheap. 25g a night.', 'Pick a pocket from behind, never from the front. They\'ll feel it if they turn round.', 'Yard dogs? Toss \'em a meaty bone from the bakery. Quiet as lambs.', 'Chimney smoke means somebody\'s home.', 'Rainy nights are the best nights. The Watch can\'t see a thing.', 'The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
+  thief: ['Crouch behind a barrel or a crate [C] and the Watch looks right past you.', 'Silas the smuggler works the docks after dark. Skeleton keys, pardons, the lot.', 'The warehouses down the docks are full of crates. Mind the night watchmen.', 'Need a lookout? I\'m cheap. 25g a night.', 'Pick a pocket from behind, never from the front. They\'ll feel it if they turn round.', 'Yard dogs? Toss \'em a meaty bone from the bakery. Quiet as lambs.', 'Chimney smoke means somebody\'s home.', 'Rainy nights are the best nights. The Watch can\'t see a thing.', 'The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
   resident: ['Good day to you.', 'Lovely weather, isn\'t it?', 'Have you tried the baker\'s pies?', 'Mind the Watch, they\'re grumpy today.', 'Can\'t stop, I\'m late!', 'Do I know you?', 'Busy, busy, busy...'],
   kid: ['Wanna play tag?', 'I found a frog!', 'My dad is the strongest!', 'Are you a pirate?', 'I\'m not allowed to talk to strangers.'],
   market: ['The cabbages are huge this week!', 'Saturday is the best day.', 'Have you seen the honey stall?', 'Everyone\'s here today!'],
@@ -3693,7 +3702,7 @@ function drawHUD(di) {
   { const lk = thieves.find(t => t.state === 'lookout'); if (lk) { const lt = `LOOKOUT: ${lk.name}${lk.hired && lk.hired.divert ? ' - diversion ready' : ''}`; panel(4, 126, Math.min(VW - 8, 10 + lt.length * 4), 11, 0.8); txt(lt, 9, 129, 4, '#9df0a0'); } }
   if (heist) { const E = estates[heist.estate], ht = `HEIST: ${E.name} with ${thieves[heist.partner].name} ${Math.min(heist.got, HEIST_NEED)}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - back to the sewers!' : ' - before dawn'}`; panel(4, 102, Math.min(VW - 8, 10 + ht.length * 4), 11, 0.8); txt(ht, 9, 105, 4, '#f7d774'); }
   if (job) { const jt = `${job.redeem ? 'PROVE YOURSELF' : 'JOB'}: ${job.name} (${job.family}s)${job.got ? ' - deliver!' : ''}`; panel(4, 90, Math.min(VW - 8, 10 + jt.length * 4), 11, 0.8); txt(jt, 9, 93, 4, '#c9a0ff'); }
-  if (p.sneak) { panel(VW / 2 - 30, VH - 26 - (touchMode ? 76 : 0), 60, 12, 0.75); txt('SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, '#9ab0ff', 'center', null); }
+  if (p.sneak) { const cv = coverNear(), w = cv ? 92 : 60; panel(VW / 2 - w / 2, VH - 26 - (touchMode ? 76 : 0), w, 12, 0.75); txt(cv ? 'SNEAKING - IN COVER' : 'SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, cv ? '#9df0a0' : '#9ab0ff', 'center', null); }
   if (up.sack || up.boots || up.tongue || up.picks || p.keys) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : '', p.keys ? `KEYx${p.keys}` : ''].filter(Boolean).join(' '), 6, 81, 4, '#9df0a0');
   txt(`picks x${p.picks}`, 9, 56, 5, p.picks ? '#ccc' : '#ff8a6b'); txt(`watch ${guards.filter(g => !g.leaving && !g.post).length}`, 70, 56, 5, bounty ? '#ff9a9a' : '#aaa');
   txt('BOUNTY', 9, 47, 5, bounty || halfBounty ? '#ff6b6b' : '#888');
@@ -3752,7 +3761,7 @@ function drawHUD(di) {
   if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 76, 232, 152, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 66); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hard to spot'], ['E', 'knock / steal (hold) / pickpocket / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hide behind barrels'], ['E', 'knock / steal (hold) / pickpocket / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   ['Residents watch you. Steal when they look away.', 'Alarm = the Watch comes. Caught = jail.', 'Night: pick locks, sneak past sleepers.', 'Seen stealing = bounty +1 (max 5).',
     'Rich estates lie east through the forest.', 'Fences and thieves hide in the sewers. The Docks lie east.'].forEach((t, i) => txt(t, x, y + L.length * 10 + 4 + i * 8, 4, '#bbb'));
@@ -3878,7 +3887,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
