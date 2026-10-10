@@ -3937,6 +3937,7 @@ function render(dt) {
   }
   // HUD
   ctx.setTransform(S, 0, 0, S, 0, 0);
+  if (!titleish && !paused) drawWaypoints();
   if (state === 'title') { drawTitle(); }
   else if (!titleish) drawHUD(di);
   if (state !== 'title' && p.state === 'picking') drawLock();
@@ -4108,9 +4109,11 @@ function drawHUD(di) {
     panel(mx - 2, my + 13, mw + 4, mh + 4); ctx.drawImage(miniCv, wx0, 0, winW, town.h, mx, my + 15, mw, mh);
     const dot = (tx0, ty, col, big) => { const tx = tx0 - wx0; if (tx < 0 || tx >= winW) return; if (big) F(ctx, mx + mm(tx) - 1, my + 15 + mm(ty) - 1, 3, 3, '#000'); F(ctx, mx + mm(tx), my + 15 + mm(ty), 1, 1, col); };
     for (const mh of manholes) dot(mh.x, mh.y, '#f7d774', true); // the way down to the fences
-    if (job && !job.got && Math.floor(gameTime * 3) % 2) { const d = houses[job.h].door; dot(d.x, d.y, '#c9a0ff', true); }
-    if (heist && Math.floor(gameTime * 3) % 2) { const gt = estates[heist.estate].gate[0]; dot(gt.x, gt.y, '#f7d774', true); }
-    if (treasure && Math.floor(gameTime * 3) % 2) dot(treasure.x, treasure.y, '#ff4040', true);
+    for (const t of questTargets()) { // errands: a big blinking marker, or an arrow on the edge if it's off this stretch of map
+      const rx = t.x - wx0, on = rx >= 0 && rx < winW, ex = mx + clamp(mm(rx), 2, mw - 3), ey = my + 15 + mm(t.y), blink = Math.floor(gameTime * 3) % 3;
+      if (on) { F(ctx, ex - 2, ey - 2, 5, 5, '#000'); F(ctx, ex - 1, ey - 1, 3, 3, blink ? t.col : '#ffffff'); }
+      else { const dir = rx < 0 ? -1 : 1; for (let i = 0; i < 4; i++) F(ctx, ex + dir * i - (dir > 0 ? 3 : 0), ey - 3 + i, 1, 7 - i * 2, blink ? t.col : '#ffffff'); }
+    }
     { const cv = houses.find(h => h.type === 'cave'); dot(cv.door.x, cv.door.y, '#8a8a8a', true); }
     if (exiled && Math.floor(gameTime * 2) % 2) dot(manholes[1].x + 1, manholes[1].y, '#ff6b6b', true);
     for (const E of estates) dot(E.gate[0].x, E.gate[0].y, E.invited ? '#9df0a0' : '#c070ff', true);
@@ -4335,6 +4338,43 @@ function updateOnline(dt) {
     if (ids.length) online.user.profiles(ids).then(ps => { for (const g of online.ghosts.values()) if (g.by && ps[g.by] && ps[g.by].name) g.label = ps[g.by].name.split(' ')[0].slice(0, 14); }).catch(() => { });
   }
 }
+// Where your current errands are, in town tiles: the job's house (or back to the sewers once you have it),
+// the heist estate, the treasure X.
+function questTargets() {
+  const T0 = [], p = player, tp = townPos(p), ptx = tp.x / TS, pty = tp.y / TS;
+  const nearestHole = () => manholes.reduce((a, b) => Math.hypot(b.x - ptx, b.y - pty) < Math.hypot(a.x - ptx, a.y - pty) ? b : a);
+  if (job) {
+    if (!job.got) { const d = houses[job.h].door; T0.push({ x: d.x, y: d.y, col: '#c9a0ff', label: job.redeem ? 'PROVE' : 'JOB', inside: houses[job.h].floors.some(f => f.key === p.map) }); }
+    else if (p.map !== 'sewer') { const m = nearestHole(); T0.push({ x: m.x, y: m.y, col: '#c9a0ff', label: 'DELIVER' }); }
+  }
+  if (heist) {
+    if (heist.got < HEIST_NEED) { const g = estates[heist.estate].gate[0]; T0.push({ x: g.x, y: g.y, col: '#f7d774', label: 'HEIST' }); }
+    else if (p.map !== 'sewer') { const m = nearestHole(); T0.push({ x: m.x, y: m.y, col: '#f7d774', label: 'SEWERS' }); }
+  }
+  if (treasure) T0.push({ x: treasure.x, y: treasure.y, col: '#ff5a4a', label: 'X' });
+  return T0;
+}
+// on-screen pointers: a marker over the spot when it's in view, an arrow at the screen edge when it isn't
+function drawWaypoints() {
+  const p = player; if (p.map !== 'town' || state !== 'play') return;
+  const cx = Math.round(camX), cy = Math.round(camY), bob = Math.round(Math.sin(gameTime * 5) * 2);
+  for (const t of questTargets()) {
+    const wx = t.x * TS + 8, wy = t.y * TS + 4, sx = wx - cx, sy = wy - cy, dm = Math.round(Math.hypot(wx - p.x, wy - p.y) / TS);
+    ctx.font = '4px ' + FONT;
+    if (sx > 8 && sx < VW - 8 && sy > 20 && sy < VH - 8) {
+      const lw = Math.ceil(ctx.measureText(t.label).width) + 4; F(ctx, Math.round(sx - lw / 2), sy - 26 + bob, lw, 7, 'rgba(10,10,20,0.8)'); txt(t.label, Math.round(sx - lw / 2) + 2, sy - 24 + bob, 4, t.col, 'left', null);
+      ctx.fillStyle = t.col; ctx.beginPath(); ctx.moveTo(sx - 4, sy - 17 + bob); ctx.lineTo(sx + 4, sy - 17 + bob); ctx.lineTo(sx, sy - 11 + bob); ctx.closePath(); ctx.fill();
+      continue;
+    }
+    const px = p.x - cx, py = p.y - 10 - cy, a = Math.atan2(sy - py, sx - px), m = 14;
+    const k = Math.min(Math.abs((Math.cos(a) > 0 ? VW - m - px : px - m) / (Math.cos(a) || 1e-6)), Math.abs((Math.sin(a) > 0 ? VH - m - 20 - py : py - m - 22) / (Math.sin(a) || 1e-6)));
+    const ax = px + Math.cos(a) * k, ay = py + Math.sin(a) * k;
+    ctx.save(); ctx.translate(ax, ay); ctx.rotate(a); ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-5, -6); ctx.lineTo(-2, 0); ctx.lineTo(-5, 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = t.col; ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-1, 0); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill(); ctx.restore();
+    const lab = `${t.label} ${dm}m`, lw = Math.ceil(ctx.measureText(lab).width) + 4, lx = clamp(Math.round(ax - Math.cos(a) * 14 - lw / 2), 2, VW - lw - 2), ly = clamp(Math.round(ay - Math.sin(a) * 12 - 3), 22, VH - 10);
+    F(ctx, lx, ly, lw, 7, 'rgba(10,10,20,0.8)'); txt(lab, lx + 2, ly + 2, 4, t.col, 'left', null);
+  }
+}
 function drawOnlineTags(camMap) {
   for (const g of online.ghosts.values()) if (g.map === camMap && g.st !== 'hidden' && !g.bubble) {
     const t = g.wanted ? g.label + ' - WANTED' : g.label;
@@ -4428,7 +4468,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
