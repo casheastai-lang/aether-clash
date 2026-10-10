@@ -1,0 +1,12 @@
+{
+  "name": "light-fingers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Light Fingers - a 2D pixel-art village thief game (single-file HTML5 canvas).",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "build:artifact": "node scripts/build-artifact.mjs"
+  }
+}
