@@ -1411,15 +1411,17 @@ const RAT_SHEETS = [
 const rats = ['Weasel-Face Wilf', 'Mad Meg', 'Knuckles Pratt'].map((n, i) => ({ kind: 'rat', name: `${n} (Mudford Rat)`, i, map: 'limbo', x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet: RAT_SHEETS[i], animT: 0, bubble: null, state: 'home', path: null, repath: 0, wait: 0 }));
 const ratNest = () => houses.find(h => h.type === 'nest');
 const inMudford = () => player.map === 'town' ? player.x >= MUD.x0 * TS && player.x < (MUD.x1 + 1) * TS && player.y >= MUD.y0 * TS && player.y < (MUD.y1 + 1) * TS : !!(maps[player.map].house && maps[player.map].house.mudford);
-let mudRoads = null;
+let mudRoads = null, raidNight = -1;
 function resetRats() {
+  raidLog = []; raidNight = -1;
   const nest = ratNest(), nell = fences.find(f => f.name === 'Grubby Nell'); nell.map = nest.key; nell.spotCD = 0;
   rats.forEach((r, i) => Object.assign(r, { map: nest.key, x: (5 + i * 2) * TS + 8, y: 7 * TS + 12, state: 'home', path: null, wt: null, wait: rnd(1, 4), spotCD: 0, jeerCD: 0 }));
 }
 // They hate the big-town sewer crew: see you on their turf and they shout for the constables.
 function ratSpots(r) {
   const p = player;
-  if (r.map !== p.map || (r.spotCD || 0) > 0 || !['free', 'stealing', 'picking', 'pickpocket', 'knocking'].includes(p.state) || !canSee(r, p, 90, 0.35)) return;
+  const turf = inMudford(), states = turf ? ['free', 'stealing', 'picking', 'pickpocket', 'knocking'] : ['stealing', 'picking', 'pickpocket'];
+  if (r.map !== p.map || (r.spotCD || 0) > 0 || !states.includes(p.state) || !canSee(r, p, 90, 0.35)) return;
   r.spotCD = 25; r.fa = Math.atan2(p.y - r.y, p.x - r.x);
   if (exiled) { say(r, pick(['Heard your crew threw you out. Welcome to Mudford.', 'Oi, it\'s the outcast! You\'re all right.']), 2.5); return; }
   say(r, pick(['Oi! A sewer rat from the big town! CONSTABLE!', 'Get off our turf! WATCH! WATCH!', 'One of THEM! Constable!']), 3); SFX.alarm();
@@ -1428,10 +1430,60 @@ function ratSpots(r) {
   const pt = tileOfE(p), c = guards.filter(g => g.post && g.post.name === 'Mudford' && ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => roughDist(a, p) - roughDist(b, p))[0];
   if (c) { c.state = 'respond'; c.target = { map: p.map, x: pt.x, y: pt.y }; c.path = null; say(c, 'What\'s all this, then?', 2); }
 }
+// Some nights a Rat walks in along the east road, robs a house in the big town, and legs it home.
+const RAID_STATES = ['raid', 'raidrob', 'raidhome'];
+const raiding = r => RAID_STATES.includes(r.state);
+let raidLog = [];
+function startRaid(r) {
+  const opts = houses.filter(h => !h.mudford && !h.estate && !h.shop && h.x < 170 && h.type !== 'warehouse' && h.alarmT <= 0 && [...h.map.loot.values()].some(e => !e.taken && !e.claimed && !e.contract));
+  if (!opts.length) return;
+  r.mark = pick(opts); r.state = 'raid'; r.path = null; r.wt = null; r.loot = null; r.bag = []; r.grabs = Math.random() < 0.5 ? 2 : 1;
+  r.map = 'town'; r.x = 169 * TS + 8; r.y = 104 * TS + 12; // in off the east road
+}
+function runOutOfTown(r) {
+  const p = player; r.state = 'raidhome'; r.path = null; r.fast = true; if (r.loot) { r.loot.claimed = null; r.loot = null; }
+  say(r, pick(['Alright, ALRIGHT! I\'m going!', 'This ain\'t over, sewer rat!', 'Ow! Leggit!']), 2.5); SFX.grab();
+  const back = r.bag.splice(0), room = sackCap() - p.loot.length; p.loot.push(...back.slice(0, Math.max(0, room)));
+  rep += 1; stat('ratsRun');
+  msg(`You ran ${r.name.split(' (')[0]} out of town!${back.length ? ` You got back ${back.map(i => i.name).join(', ')}.` : ''} The crew will hear of this. (+1 rep)`, '#9df0a0');
+}
+function updateRaid(r, dt) {
+  const h = r.mark, night = isNight();
+  if (r.state === 'raid') {
+    if (!night || h.alarmT > 0) { r.state = 'raidhome'; r.path = null; return; }
+    if (navTo(r, h.key, h.map.entry.x, h.map.entry.y, 36, dt)) { r.state = 'raidrob'; r.path = null; }
+    else if (r.stuckT > 8) { r.state = 'raidhome'; r.path = null; }
+  } else if (r.state === 'raidrob') {
+    const m = maps[r.map];
+    if (!r.loot) {
+      const opts = [...m.loot.values()].filter(e => !e.taken && !e.claimed && !e.contract && freeBeside(m, e.x, e.y));
+      if (!opts.length || r.grabs <= 0 || !night) { r.state = 'raidhome'; r.path = null; return; }
+      r.loot = pick(opts); r.loot.claimed = r; r.spot = freeBeside(m, r.loot.x, r.loot.y); r.work = 0;
+    }
+    if (navTo(r, r.map, r.spot.x, r.spot.y, 30, dt)) {
+      r.fa = Math.atan2(r.loot.y * TS + 8 - r.y, r.loot.x * TS + 8 - r.x); r.work += dt;
+      if (r.work > 2.4) {
+        const e = r.loot; e.taken = true; e.t = 0; e.claimed = null; r.bag.push(e.item); r.loot = null; r.grabs--;
+        if (inHouse(h, player.map)) h.wake += rnd(8, 18);
+        if (!raidLog.includes(h.family)) raidLog.push(h.family);
+        if (h.residents.some(isHome) && Math.random() < 0.25) { // woke the house: run for it
+          const res = h.residents.find(isHome); if (res) say(res, 'THIEF! A Mudford Rat! WATCH!', 3);
+          if (inHouse(h, player.map)) h.wake = 100;
+          r.state = 'raidhome'; r.path = null; r.fast = true; say(r, 'Leggit!', 1.5);
+        }
+      }
+    } else if (r.stuckT > 4) { r.loot.claimed = null; r.loot = null; r.grabs--; }
+  } else if (r.state === 'raidhome') {
+    if (navTo(r, 'town', 169, 104, r.fast ? 70 : 40, dt) || r.stuckT > 10) { // gone down the east road, home to Mudford
+      const nest = ratNest(); r.map = nest.key; r.x = nest.map.entry.x * TS + 8; r.y = nest.map.entry.y * TS + 12; r.state = 'home'; r.fast = false; r.mark = null; r.bag = []; r.path = null;
+    }
+  }
+}
 function updateRat(r, dt) {
   r.moving = false; r.spotCD = Math.max(0, (r.spotCD || 0) - dt); r.jeerCD = Math.max(0, (r.jeerCD || 0) - dt);
   const nest = ratNest(), night = isNight(), bx = r.x, by = r.y, bm = r.map;
   if (!mudRoads) mudRoads = roadTiles.filter(t => t.x >= MUD.x0 && t.y >= MUD.y0);
+  if (raiding(r)) { updateRaid(r, dt); if (r.state !== 'home') { ratSpots(r); if (r.map === bm && (r.x !== bx || r.y !== by)) { r.moving = true; r.animT += dt; r.fa = Math.atan2(r.y - by, r.x - bx); } r.dir = dirFromAngle(r.fa); } return; }
   if (night && r.state === 'home' && Math.random() < dt * 0.05) { r.state = 'prowl'; r.wt = null; r.path = null; }
   if (!night && r.state === 'prowl') { r.state = 'return'; r.path = null; }
   if (r.wait > 0) r.wait -= dt;
@@ -1787,10 +1839,12 @@ function offerJob(t) {
   return `There's a ${job.name} in the ${job.family} house${job.upstairs ? ', upstairs' : ''}. Bring it to me and it's ${job.pay}g. Don't sell it to the fences!`;
 }
 // ---------- the crew heist ----------
-// A fence pairs you with one of the crew to rob an estate. Four items, back in the sewers by dawn.
+// A fence pairs you with one of the crew to rob an estate. Four items, back in the sewers within two nights.
 // Fail (jailed, or dawn comes) and the crew throws you out: no sewers, no fences, no help, until you prove yourself.
 const HEIST_NEED = 4;
 function nextDawn() { const t = dayInfo().t; return gameTime + ((t < 0.9 ? 0.9 : 1.9) - t) * DAY_LEN; }
+const HEIST_NIGHTS = 2; // big missions run over two nights
+const weekdayAt = gt => WEEK[(Math.floor((gt + 60) / DAY_LEN) + START_DAY) % 7];
 function startContest(t) {
   if (gold < 50) return 'Come back when you\'ve got 50g to lose.';
   gold -= 50; contest = { thief: t.i, mine: 0, theirs: 0, until: nextDawn() };
@@ -1813,11 +1867,11 @@ function offerHeist(f) {
   const free = thieves.filter(t => ['den', 'loiter'].includes(t.state)), E = pick(estates);
   if (!free.length) return 'Nobody free to go with you tonight. Try later.';
   const t = pick(free);
-  heist = { estate: estates.indexOf(E), partner: t.i, got: 0, until: nextDawn() };
+  heist = { estate: estates.indexOf(E), partner: t.i, got: 0, until: nextDawn() + (HEIST_NIGHTS - 1) * DAY_LEN };
   t.state = 'partner'; t.path = null; t.wtarget = null; t.loot = null;
   say(t, pick(['Right behind you, partner.', 'Let\'s make some money.', 'Quiet as mice, yeah?']), 2.5);
-  msg(`HEIST: rob ${E.name} with ${t.name}. Steal ${HEIST_NEED} things between you and get back to the sewers before dawn. Fail and you're out of the crew!`, '#f7d774');
-  return `${E.name}. You and ${t.name}. ${HEIST_NEED} pieces, back here by dawn. Don't let me down.`;
+  msg(`HEIST: rob ${E.name} with ${t.name}. Steal ${HEIST_NEED} things between you and get back to the sewers within two nights (by dawn on ${weekdayAt(heist.until)}). Fail and you're out of the crew!`, '#f7d774');
+  return `${E.name}. You and ${t.name}. ${HEIST_NEED} pieces. You've got two nights - back here by dawn on ${weekdayAt(heist.until)}. Don't let me down.`;
 }
 function heistHouse() { return heist ? estates[heist.estate].house : null; }
 function finishHeist() {
@@ -2311,7 +2365,7 @@ function wakeUp(r) {
 }
 const TALK = {
   rat: ['Big-town scum.', 'This is Mudford. Our town.', 'Your sewer crew are a bunch of drips.', 'What are you looking at?'],
-  thief: ['The Mudford Rats? Vermin. They\'d sell you to the constables for a crust.', 'Mudford\'s a long walk east. Or pay 40g for the carriage outside the Prancing Pig.', 'Crouch behind a barrel or a crate [C] and the Watch looks right past you.', 'Silas the smuggler works the docks after dark. Skeleton keys, pardons, the lot.', 'The warehouses down the docks are full of crates. Mind the night watchmen.', 'Need a lookout? I\'m cheap. 25g a night.', 'Pick a pocket from behind, never from the front. They\'ll feel it if they turn round.', 'Yard dogs? Toss \'em a meaty bone from the bakery. Quiet as lambs.', 'Chimney smoke means somebody\'s home.', 'Rainy nights are the best nights. The Watch can\'t see a thing.', 'The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
+  thief: ['The Rats come raiding some nights, in off the east road. Catch one and run \'em out!', 'The Mudford Rats? Vermin. They\'d sell you to the constables for a crust.', 'Mudford\'s a long walk east. Or pay 40g for the carriage outside the Prancing Pig.', 'Crouch behind a barrel or a crate [C] and the Watch looks right past you.', 'Silas the smuggler works the docks after dark. Skeleton keys, pardons, the lot.', 'The warehouses down the docks are full of crates. Mind the night watchmen.', 'Need a lookout? I\'m cheap. 25g a night.', 'Pick a pocket from behind, never from the front. They\'ll feel it if they turn round.', 'Yard dogs? Toss \'em a meaty bone from the bakery. Quiet as lambs.', 'Chimney smoke means somebody\'s home.', 'Rainy nights are the best nights. The Watch can\'t see a thing.', 'The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
   resident: ['Good day to you.', 'Lovely weather, isn\'t it?', 'Have you tried the baker\'s pies?', 'Mind the Watch, they\'re grumpy today.', 'Can\'t stop, I\'m late!', 'Do I know you?', 'Busy, busy, busy...'],
   kid: ['Wanna play tag?', 'I found a frog!', 'My dad is the strongest!', 'Are you a pirate?', 'I\'m not allowed to talk to strangers.'],
   market: ['The cabbages are huge this week!', 'Saturday is the best day.', 'Have you seen the honey stall?', 'Everyone\'s here today!'],
@@ -3002,6 +3056,7 @@ function findInteraction() {
     }
     if (doorNear(town.jail.door)) { p.inter = { label: 'Enter the Watch House', act: enterWatchHouse }; return; }
     for (const f of fences) if (f.map === 'town' && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => f.kind === 'steward' ? openSteward(f) : f.kind === 'fisher' ? buyFish(f) : f.kind === 'smuggler' ? openShop({ shop: 'smuggler', shopName: 'the Smuggler\'s Wares', lead: f, residents: [] }) : openFence(f) }; return; }
+    for (const r of rats) if (raiding(r) && r.map === p.map && dist(r, p) < 26) { p.inter = exiled ? { label: `${r.name.split(' (')[0]} (raiding)`, act: () => say(r, 'Shh! Don\'t blow it for me, outcast.', 2) } : { label: `Run ${r.name.split(' (')[0]} out of town!`, act: () => runOutOfTown(r) }; return; }
     for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { p.inter = { label: `Ride the carriage to ${c.name} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c) }; return; }
     for (const mh of manholes) if (Math.hypot(p.x - (mh.x * TS + 8), p.y - 4 - (mh.y * TS + 8)) < 14) { p.inter = exiled ? { label: 'Sewer grate (chained shut)', act: () => { say(p, 'Chained from below. The crew don\'t want me.', 2); SFX.deny(); } } : { label: 'Climb down into the sewers', act: () => enterSewer(mh) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
@@ -3047,6 +3102,7 @@ function findInteraction() {
   if (!p.inter && m.kind === 'house') {
     const pet = m.house.pet; if (pet && pet.map === p.map && p.bones > 0 && (pet.friend || 0) < 40 && dist(pet, p) < 30) { p.inter = { label: `Give ${pet.name.split(' (')[0]} a bone`, act: () => { p.bones--; pet.friend = 100; say(pet, '*crunch* *wags tail*', 2.5); SFX.buy(); stat('bones'); } }; return; }
     for (const f of fences) if (f.map === p.map && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => openFence(f) }; return; }
+    for (const r of rats) if (raiding(r) && r.map === p.map && dist(r, p) < 26 && !exiled) { p.inter = { label: `Run ${r.name.split(' (')[0]} out of town!`, act: () => runOutOfTown(r) }; return; }
     if (m.guestsOnly && !p.room && Math.hypot(p.x - (m.stairs.x * TS + 8), p.y - 4 - (m.stairs.y * TS + 12)) < 30) { p.inter = { label: 'Upstairs (locked)', act: () => say(p, 'Guests only. I\'d need to rent a room.', 2) }; return; }
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
@@ -3463,9 +3519,12 @@ function updateWorld(dt) {
   if (contest && gameTime > contest.until) endContest();
   for (const f of fences) if (f.kind === 'smuggler') f.map = isNight() ? 'town' : 'limbo'; // Silas only comes out after dark
   if (heist && heist.got >= HEIST_NEED && player.map === 'sewer' && player.state === 'free') finishHeist();
-  else if (heist && gameTime > heist.until) failHeist('Dawn came and the job wasn\'t done.');
+  else if (heist && gameTime > heist.until) failHeist('Two nights went by and the job wasn\'t done.');
   if (exiled && !thieves.some(t => t.state === 'topside')) { const g = thieves.find(t => !['jailed', 'caught', 'partner'].includes(t.state)); if (g) { dropClaim(g); g.state = 'topside'; g.path = null; } }
   for (const t of thieves) updateThief(t, dt);
+  { const di = dayInfo();
+    if (isNight() && raidNight !== di.day) { raidNight = di.day; if (Math.random() < 0.6) { const r = pick(rats.filter(r => r.state === 'home' || r.state === 'prowl')); if (r) startRaid(r); } }
+    if (!isNight() && raidLog.length && di.name === 'Day') { msg(`The Mudford Rats raided the ${raidLog.join(' and ')} house${raidLog.length > 1 ? 's' : ''} last night! The crew is furious.`, '#ff9a6b'); raidLog = []; } }
   for (const r of rats) updateRat(r, dt); updateNell(dt);
   updateYards(dt);
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
@@ -3829,7 +3888,7 @@ function drawHUD(di) {
   txt(exiled ? 'REP Exiled from crew' : `REP ${rankName()}`, 9, 66, 5, exiled ? '#ff6b6b' : rep ? '#c9a0ff' : '#888');
   if (contest) { const t = thieves[contest.thief], ct = `CONTEST vs ${t.name}: you ${contest.mine}g - them ${contest.theirs}g (ends at dawn)`; panel(4, 114, Math.min(VW - 8, 10 + ct.length * 4), 11, 0.8); txt(ct, 9, 117, 4, '#9df0a0'); }
   { const lk = thieves.find(t => t.state === 'lookout'); if (lk) { const lt = `LOOKOUT: ${lk.name}${lk.hired && lk.hired.divert ? ' - diversion ready' : ''}`; panel(4, 126, Math.min(VW - 8, 10 + lt.length * 4), 11, 0.8); txt(lt, 9, 129, 4, '#9df0a0'); } }
-  if (heist) { const E = estates[heist.estate], ht = `HEIST: ${E.name} with ${thieves[heist.partner].name} ${Math.min(heist.got, HEIST_NEED)}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - back to the sewers!' : ' - before dawn'}`; panel(4, 102, Math.min(VW - 8, 10 + ht.length * 4), 11, 0.8); txt(ht, 9, 105, 4, '#f7d774'); }
+  if (heist) { const E = estates[heist.estate], ht = `HEIST: ${E.name} with ${thieves[heist.partner].name} ${Math.min(heist.got, HEIST_NEED)}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - back to the sewers!' : ` - by dawn ${weekdayAt(heist.until)}`}`; panel(4, 102, Math.min(VW - 8, 10 + ht.length * 4), 11, 0.8); txt(ht, 9, 105, 4, '#f7d774'); }
   if (job) { const jt = `${job.redeem ? 'PROVE YOURSELF' : 'JOB'}: ${job.name} (${job.family}s)${job.got ? ' - deliver!' : ''}`; panel(4, 90, Math.min(VW - 8, 10 + jt.length * 4), 11, 0.8); txt(jt, 9, 93, 4, '#c9a0ff'); }
   if (p.sneak) { const cv = coverNear(), w = cv ? 92 : 60; panel(VW / 2 - w / 2, VH - 26 - (touchMode ? 76 : 0), w, 12, 0.75); txt(cv ? 'SNEAKING - IN COVER' : 'SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, cv ? '#9df0a0' : '#9ab0ff', 'center', null); }
   if (up.sack || up.boots || up.tongue || up.picks || p.keys) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : '', p.keys ? `KEYx${p.keys}` : ''].filter(Boolean).join(' '), 6, 81, 4, '#9df0a0');
@@ -4017,7 +4076,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, rats,  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, rats, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
