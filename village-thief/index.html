@@ -1560,9 +1560,9 @@ function updateResident(r, dt) {
       } else wanderOn(r.map, 24);
       const sees = canSee(r, p, 120, 0.55);
       if (sees && p.state === 'stealing') {
-        h.sus += 160 * dt; h.caught = true; r.sawYou = true;
+        h.sus += 80 * dt; h.caught = true; r.sawYou = true;
         if (!r.caughtSay) { r.caughtSay = true; r.mode = 'watch'; r.modeT = 4; say(r, r.child ? 'MUM! DAD! They took something!' : 'Hey!! What are you doing?!', 2); }
-      } else if (sees && p.running) h.sus += 10 * (up.tongue ? 0.6 : 1) * dt;
+      } else if (sees && p.running) h.sus += 5 * (up.tongue ? 0.6 : 1) * dt;
       break;
     }
     case 'sleep': if (!isNight() && !here) { const t = bedSide(r.bed); r.map = r.bed.map; r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.state = 'idle'; } break;
@@ -1603,7 +1603,7 @@ function updatePet(d, dt) {
     if (stealing) {
       d.barkT += dt;
       if (d.barkCD <= 0) { d.barkCD = 1.1; say(d, pick(['WOOF! WOOF!', 'ARF ARF ARF!', 'BARK! BARK!']), 1); SFX.bark(); }
-      if (hosting) { h.sus += 70 * dt; h.caught = true; }
+      if (hosting) { h.sus += 35 * dt; h.caught = true; }
       else if (sleeping) h.wake += 55 * dt;
     } else {
       if (d.barkCD <= 0) { d.barkCD = 2.2; say(d, pick(['Grrrr...', '*growls*', 'Woof?']), 1.2); if (Math.random() < 0.5) SFX.bark(); }
@@ -1636,8 +1636,8 @@ function houseTick(h, dt) {
     const hosts = h.residents.filter(r => r.state === 'host');
     if (hosts.length) {
       const tongue = up.tongue ? 0.6 : 1, greed = 0.8 + h.wealth * 0.2;
-      h.sus += 1.4 * tongue * greed * dt;
-      if (h.lead && h.lead.map !== p.map) h.sus += 4 * tongue * dt; // wandering off to other floors is rude
+      h.sus += 0.7 * tongue * greed * dt;
+      if (h.lead && h.lead.map !== p.map) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
       if (h.sus >= 60 && !h.warned && h.lead) { h.warned = true; say(h.lead, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
       if (h.sus >= 100) raiseAlarm(h, h.caught);
     }
