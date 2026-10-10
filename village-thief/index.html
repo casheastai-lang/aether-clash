@@ -2264,6 +2264,8 @@ function chatOptions() {
   } else if (t.name === 'Jailer Grubb') {
     if (bounty > 0 && !wanted) add(`Pay off your bounty (${bounty * 60}g)`, () => { if (!pay(bounty * 60)) return; bounty = 0; syncForce(); chat.reply = 'Paid in full. Your slate is clean... for now.'; msg('Bounty cleared!', '#9df0a0'); }, bounty * 60);
     add('Who\'s locked up?', () => { const j = thieves.filter(o => o.state === 'jailed' && o.cell).map(o => o.name); chat.reply = j.length ? `Got ${j.join(' and ')} in the cells. Thieves, the lot of 'em.` : 'Just the usual drunks and layabouts.'; });
+  } else if (t.kind === 'thief' && t.state === 'jailed') {
+    add('Small talk', () => { chat.reply = pick(['Get me out of here! Pick the lock, quick!', 'Watch the turnkeys - they walk the corridor at night.', "They'll let me out tomorrow. Probably."]); });
   } else if (t.kind === 'thief' && exiled) {
     if (job && job.giver === t.i && job.got) add(`Hand over the ${job.name}`, () => { chat.reply = finishJob(t); });
     else if (t.state === 'topside') add('Let me back in the crew', () => { chat.reply = offerRedemption(t); });
@@ -2388,7 +2390,7 @@ function buy(kind, cost) {
 
 // ---------- the catch ----------
 function grab(g) {
-  const p = player; p.state = 'grabbed'; p.grabG = g; p.struggle = 45; p.grabT = 0; g.state = 'grab'; g.path = null;
+  const p = player; p.lock = null; p.pickDone = null; p.state = 'grabbed'; p.grabG = g; p.struggle = 45; p.grabT = 0; g.state = 'grab'; g.path = null;
   SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
 }
 function breakFree() {
@@ -2406,11 +2408,11 @@ function arrest() {
     others.slice(0, 2).forEach(g => { g.state = 'assist'; g.path = null; say(g, 'Good boy! Hold them!'); });
     return;
   }
-  const A = G0, B = others[0];
+  const A = G0, inJail = p.map === 'jail', B = inJail ? guards.find(g => g !== G0 && g.unit !== 'dog' && g.map === 'jail' && !['stunned', 'nab', 'haul'].includes(g.state)) : others[0];
   escort = { A, B: B || null, waitT: 0, t: 0 };
   say(A, pick(["You're nicked!", 'By order of the Watch, you are under arrest!', "That's enough running."]), 3);
   msg('CAUGHT! A second watchman is coming to escort you to jail.', '#ff6b6b');
-  if (B) { B.state = 'assist'; B.path = null; say(B, 'Coming, Sarge!'); } else startEscort();
+  if (B && !inJail) { B.state = 'assist'; B.path = null; say(B, 'Coming, Sarge!'); } else startEscort(); // already in the Watch House: straight to a cell
 }
 function startEscort() {
   pickCell();
@@ -2424,9 +2426,11 @@ function startEscort() {
 }
 // Each arrest lands you in a random empty cell.
 function pickCell() {
-  const j = maps.jail, taken = jailNPCs.filter(n => n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) }));
+  const j = maps.jail, taken = jailNPCs.filter(n => n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) }))
+    .concat(thieves.filter(t => t.cell).map(t => ({ x: t.cell.x, y: t.cell.y === 5 ? 3 : 11 })));
   const free = j.cellDoors.filter(d => !taken.some(t => t.x === d.x && (d.y === 5 ? t.y < 5 : t.y > 9)));
-  const d = pick(free.length ? free : j.cellDoors);
+  const pt = tileOfE(player), inCell = player.map === 'jail' && j.cellDoors.find(c => Math.abs(pt.x - c.x) <= 1 && (c.y === 5 ? pt.y >= 2 && pt.y <= 4 : pt.y >= 10 && pt.y <= 12));
+  const d = inCell || pick(free.length ? free : j.cellDoors); // caught inside a cell? that's your cell now
   j.cell = { x: d.x, y: d.y }; j.cellSpot = { x: d.x, y: d.y === 5 ? 3 : 11 }; j.escortSpot = { x: d.x, y: 7 }; j.cellOpen = true;
 }
 function finishEscort() {
@@ -2468,7 +2472,7 @@ function jailCellFor(t) {
 function release() {
   transition(() => {
     const p = player, j = maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
-    p.state = 'free'; p.stamina = 100; j.cellOpen = true; wanted = false;
+    p.state = 'free'; p.stamina = 100; j.cellOpen = false; wanted = false; // your cell locks behind you
     msg("You've served your time. Behave yourself... or don't.", '#9df0a0'); say(p, 'Free at last.', 2);
   });
 }
@@ -2762,7 +2766,7 @@ function updateGuard(g, dt) {
     case 'assist': {
       escort.waitT += dt; const t = tileOfE(player);
       navTo(g, player.map, t.x, t.y, spd, dt, true);
-      if ((sameMap && dP < 26) || escort.waitT > 25) {
+      if ((sameMap && dP < 26) || escort.waitT > 12) {
         if (!sameMap) { g.map = player.map; g.x = player.x - 12; g.y = player.y; }
         if (!escort.A) { escort.A = g; g.state = 'hold'; escort.waitT = 0; say(g, 'Good dog. I have them now.'); }
         else { escort.B = g; startEscort(); }
@@ -2803,7 +2807,8 @@ function startChase(g) {
 function updateEscort(dt) {
   const e = escort, n = e.nav, p = player, j = maps.jail, before = n.map;
   e.t += dt; n.moving = false;
-  if ((navTo(n, 'jail', j.escortSpot.x, j.escortSpot.y, 34, dt) || e.t > 150) && !e.done) { e.done = true; finishEscort(); }
+  e.stuckT = n.noPath ? (e.stuckT || 0) + dt : 0;
+  if ((navTo(n, 'jail', j.escortSpot.x, j.escortSpot.y, 34, dt) || e.t > 150 || e.stuckT > 3) && !e.done) { e.done = true; finishEscort(); } // no way through? straight to the cell
   if (n.map !== before) { fade.a = 1; fade.dir = -1; }
   // walking up or down: a watchman on each side. Walking sideways: one just ahead and one just behind, staggered so the prisoner stays visible.
   const fa = n.fa, d = dirFromAngle(fa), sideways = d === 'left' || d === 'right', hx = d === 'left' ? -1 : 1, m = maps[n.map];
@@ -3012,6 +3017,15 @@ function updateWorld(dt) {
   for (const g of guards) updateGuard(g, dt);
   if (guards.some(g => g.dead)) guards = guards.filter(g => !g.dead);
   if (player.state === 'escorted' && escort && escort.nav) updateEscort(dt);
+  if (player.state === 'held' && escort) { // safety net: if nobody can come for you, the watchman holding you walks you in alone
+    escort.heldT = (escort.heldT || 0) + dt;
+    if (escort.heldT > 15) {
+      if (!escort.A) { const g = escort.dog || guards.find(g => g.unit !== 'dog'); escort.A = guards.filter(g => g.unit !== 'dog' && !['nab', 'haul'].includes(g.state)).sort((a, b) => roughDist(a, player) - roughDist(b, player))[0] || g; escort.A.map = player.map; escort.A.x = player.x - 12; escort.A.y = player.y; }
+      for (const g of guards) if (g.state === 'assist' && g !== escort.B) { g.state = 'return'; g.path = null; }
+      if (escort.B && escort.B.state === 'assist') { escort.B.map = player.map; escort.B.x = player.x + 12; escort.B.y = player.y; }
+      startEscort();
+    }
+  }
   for (const h of houses) { for (const r of h.residents) updateResident(r, dt); houseTick(h, dt); }
   for (const d of pets) updatePet(d, dt);
   if (heist && heist.got >= HEIST_NEED && player.map === 'sewer' && player.state === 'free') finishHeist();
