@@ -46,7 +46,7 @@ resize();
 
 // ---------- tuning ----------
 const P_WALK = 50, P_RUN = 84, G_PATROL = 30, G_RUN = 56, G_CHASE = 64;
-const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_TIME = 1.1, HEAT_TIME = 12, GOAL = 1000;
+const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_BASE = 1.1, HEAT_TIME = 12, GOAL = 1000;
 const DAY_LEN = 300;
 
 // ---------- helpers ----------
@@ -681,7 +681,7 @@ const HOUSE_TYPES = {
   large: { w: [8, 9], h: 5, roofRows: 3, wealth: [2, 3], people: [3, 4] },
   mansion: { w: [10, 12], h: 7, roofRows: 4, wealth: [3, 3], people: [5, 6] },
   shop: { w: [6, 6], h: 5, roofRows: 3, wealth: [2, 2], people: [1, 2] },
-  inn: { w: [13, 13], h: 7, roofRows: 4, wealth: [2, 2], people: [6, 6] },
+  inn: { w: [16, 16], h: 8, roofRows: 4, wealth: [2, 2], people: [10, 10] },
 };
 const SHOPS = {
   bakery: { name: 'the Bakery', family: 'Baker', roof: 0, sign: '#d9a45a', goods: [['Fine Pastries', 12], ['Sugar Loaf', 15], ['Silver Cake Knife', 30], ['Honey Jar', 10]] },
@@ -789,13 +789,13 @@ function genTown() {
       // deep block: a row of houses up top, a lane, gardens, then a second row facing the road
       for (let x = x0; x <= x1; x++) setG(x, y0 + 6, T.PATH);
       band(y0 + 5, 5);
-      sprinkle(x0 + 1, x1 - 1, y0 + 7, y0 + 8, null, 0.8);
+      if (!innBlock) sprinkle(x0 + 1, x1 - 1, y0 + 7, y0 + 8, null, 0.8);
       if (shopRow) {
         // the high street: three shops facing the market
         const kinds = bi === 2 ? ['bakery', 'general', 'tailor'] : ['smith', 'apothecary', 'jeweler'];
         kinds.forEach((k, i) => placeHouse('shop', x0 + i * 7, y1 - 5, 6, k));
       } else if (innBlock) {
-        placeHouse('inn', x0 + 3, y1 - 7, 13, 'inn');
+        placeHouse('inn', x0 + 2, y1 - 8, 16, 'inn');
         for (const [x, y, t] of [[x0 + 1, y1 - 1, T.BARREL], [x0 + 1, y1 - 2, T.BARREL], [x1 - 1, y1 - 1, T.CRATE]]) setO(x, y, t);
       } else band(y1 - 1, 5);
     }
@@ -841,7 +841,7 @@ function buildFloor(h, key, w, hh, o, r) {
   return m;
 }
 function shopFloor(h, r) {
-  const w = 12, hh = 9, m = newMap(h.key, w, hh, 'house'), S = SHOPS[h.shop]; m.house = h; m.approach = h.approach; m.beds = [];
+  const w = 14, hh = 10, m = newMap(h.key, w, hh, 'house'), S = SHOPS[h.shop]; m.house = h; m.approach = h.approach; m.beds = [];
   m.blanket = BLANKETS[Math.floor(r() * 5)];
   for (let i = 0; i < w * hh; i++) { m.ground[i] = T.FLOOR; m.tiles[i] = T.FLOOR; }
   const set = (x, y, t) => { m.tiles[y * w + x] = t; };
@@ -853,58 +853,105 @@ function shopFloor(h, r) {
   for (let x = 1; x <= w - 3; x++) set(x, 4, T.TABLE); // the counter; the gap at the right end leads behind it
   const loot = [[3, 2, T.SHELF], [5, 2, T.DRESSER], [8, 2, T.SHELF], [9, 2, T.CHEST], [1, 6, T.CHEST], [w - 2, 6, T.POT]];
   for (const [x, y, t] of loot) { set(x, y, t); const g = S.goods[Math.floor(r() * S.goods.length)]; m.loot.set(y * w + x, { x, y, item: { name: g[0], value: g[1] }, taken: false, t: 0 }); }
-  set(1, hh - 2, T.PLANT); set(w - 2, hh - 2, T.IBARREL); set(w - 2, 5, T.IBARREL);
+  set(1, hh - 2, T.PLANT); set(w - 2, hh - 2, T.IBARREL);
   m.rug = { x: 3, y: 5, w: 6, h: 3, c: '#7a2d6a', c2: '#d4a24c' };
   return m;
 }
+// The Prancing Pig: a big tavern hall downstairs, eight private guest rooms upstairs.
 function innFloors(h, r) {
-  const w = 20, hh = 12, g = newMap(h.key, w, hh, 'house'), S = SHOPS.inn; g.house = h; g.approach = h.approach; g.beds = []; g.blanket = '#a83232';
-  for (let i = 0; i < w * hh; i++) { g.ground[i] = T.FLOOR; g.tiles[i] = T.FLOOR; }
-  const set = (x, y, t) => { g.tiles[y * w + x] = t; };
-  for (let x = 0; x < w; x++) { set(x, 0, T.IEDGE); set(x, 1, T.IWALL); set(x, hh - 1, T.IEDGE); }
-  for (let y = 0; y < hh; y++) { set(0, y, T.IEDGE); set(w - 1, y, T.IEDGE); }
-  g.exit = { x: Math.floor(w / 2), y: hh - 1 }; set(g.exit.x, g.exit.y, T.EXIT); g.entry = { x: g.exit.x, y: hh - 2 };
-  set(w - 2, 2, T.STAIRS_UP); g.stairs = { x: w - 2, y: 2 }; g.arrive = { x: w - 2, y: 3 };
-  set(14, 1, T.FIRE);
-  for (let x = 1; x <= 7; x++) set(x, 4, T.TABLE); // the bar
-  for (const x of [1, 2, 6, 7]) set(x, 2, T.IBARREL);
-  for (const [x, t] of [[3, T.SHELF], [5, T.CHEST]]) { set(x, 2, t); const it = S.goods[Math.floor(r() * S.goods.length)]; g.loot.set(2 * w + x, { x, y: 2, item: { name: it[0], value: it[1] }, taken: false, t: 0 }); }
-  for (const [tx, ty] of [[11, 4], [15, 4], [4, 8], [11, 8], [15, 8]]) { set(tx, ty, T.TABLE); set(tx + 1, ty, T.TABLE); set(tx - 1, ty, T.CHAIR); set(tx + 2, ty, T.CHAIR); }
-  set(1, hh - 2, T.PLANT); set(w - 2, hh - 2, T.PLANT);
-  g.rug = { x: 9, y: 6, w: 9, h: 1, c: '#7a2d30', c2: '#d4a24c' };
-  const u = buildFloor(h, h.key + '_1', w, 11, { stairs: 'down', beds: 6, loot: 6 }, r); u.upstairs = true;
-  for (const e of u.loot.values()) { const it = S.goods[Math.floor(r() * S.goods.length)]; e.item = { name: it[0], value: it[1] }; }
+  const S = SHOPS.inn, goods = () => { const it = S.goods[Math.floor(r() * S.goods.length)]; return { name: it[0], value: it[1] }; };
+  const room = (m, w, hh) => {
+    m.house = h; m.approach = h.approach; m.beds = []; m.blanket = '#a83232';
+    for (let i = 0; i < w * hh; i++) { m.ground[i] = T.FLOOR; m.tiles[i] = T.FLOOR; }
+    const set = (x, y, t) => { m.tiles[y * w + x] = t; };
+    for (let x = 0; x < w; x++) { set(x, 0, T.IEDGE); set(x, 1, T.IWALL); set(x, hh - 1, T.IEDGE); }
+    for (let y = 0; y < hh; y++) { set(0, y, T.IEDGE); set(w - 1, y, T.IEDGE); }
+    return set;
+  };
+  // ground floor: the tavern
+  const w = 25, g = newMap(h.key, w, 14, 'house'), gs = room(g, w, 14);
+  g.exit = { x: 12, y: 13 }; gs(12, 13, T.EXIT); g.entry = { x: 12, y: 12 };
+  gs(23, 2, T.STAIRS_UP); g.stairs = { x: 23, y: 2 }; g.arrive = { x: 23, y: 3 };
+  gs(6, 1, T.FIRE); gs(18, 1, T.FIRE);
+  for (let x = 1; x <= 9; x++) gs(x, 4, T.TABLE); // the long bar
+  for (const x of [1, 2, 8, 9]) gs(x, 2, T.IBARREL);
+  for (const [x, t] of [[4, T.SHELF], [6, T.CHEST]]) { gs(x, 2, t); g.loot.set(2 * w + x, { x, y: 2, item: goods(), taken: false, t: 0 }); }
+  for (const ty of [7, 10]) for (const tx of [3, 9, 15, 20]) { gs(tx, ty, T.TABLE); gs(tx + 1, ty, T.TABLE); gs(tx - 1, ty, T.CHAIR); gs(tx + 2, ty, T.CHAIR); }
+  gs(1, 12, T.PLANT); gs(23, 12, T.PLANT); gs(23, 5, T.IBARREL);
+  g.rug = { x: 10, y: 11, w: 5, h: 2, c: '#7a2d30', c2: '#d4a24c' };
+  // upstairs: a corridor between two rows of four rooms
+  const u = newMap(h.key + '_1', w, 13, 'house'), us = room(u, w, 13); u.upstairs = true; u.rooms = [];
+  us(12, 1, T.FIRE);
+  for (const [wallRow, rows, front] of [[5, [2, 3, 4], 'top'], [8, [9, 10, 11], 'bottom']]) {
+    for (let x = 1; x < w - 1; x++) us(x, wallRow, T.IEDGE);
+    for (let k = 0; k < 4; k++) {
+      const x0 = 1 + 6 * k;
+      us(x0 + 2, wallRow, T.FLOOR); // doorway
+      if (k < 3) for (const y of rows) us(x0 + 5, y, T.IEDGE);
+      const by = front === 'top' ? 2 : 10;
+      us(x0, by, T.BED); us(x0, by + 1, T.BED2); u.beds.push({ map: u.key, x: x0, y: by });
+      const lx = x0 + 4, ly = front === 'top' ? 2 : 11;
+      if (front === 'top' && k === 0) us(lx, ly, T.PLANT); // room 1, the one you can rent, has no luggage
+      else { us(lx, ly, T.CHEST); u.loot.set(ly * w + lx, { x: lx, y: ly, item: goods(), taken: false, t: 0 }); }
+      u.rooms.push({ n: u.rooms.length + 1, x0, x1: x0 + 4, y0: rows[0], y1: rows[2] });
+    }
+  }
+  us(23, 7, T.STAIRS_DN); u.stairs = { x: 23, y: 7 }; u.arrive = { x: 22, y: 7 }; u.entry = u.arrive;
+  us(1, 6, T.PLANT);
   g.links.push({ x: g.stairs.x, y: g.stairs.y, to: u.key, ax: u.arrive.x, ay: u.arrive.y, walk: true });
   u.links.push({ x: u.stairs.x, y: u.stairs.y, to: g.key, ax: g.arrive.x, ay: g.arrive.y, walk: true });
   return [g, u];
+}
+// Safety pass: if furniture cuts off part of a room (or a bed, a chest, the stairs), shift the
+// nearest table, chair, plant or barrel out of the way until everything connects to the door.
+const MOVABLE = new Set([T.TABLE, T.CHAIR, T.PLANT, T.IBARREL]);
+function clearWay(m) {
+  const start = m.entry || m.arrive, N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], inb = (x, y) => x > 0 && y > 0 && x < m.w - 1 && y < m.h - 1;
+  for (let guard = 0; guard < 60; guard++) {
+    const seen = new Set([start.y * m.w + start.x]), q = [start];
+    while (q.length) { const c = q.shift(); for (const [dx, dy] of N4) { const x = c.x + dx, y = c.y + dy, k = y * m.w + x; if (!inb(x, y) && tileAt(m, x, y) !== T.EXIT || seen.has(k) || isSolid(m, x, y)) continue; seen.add(k); q.push({ x, y }); } }
+    const near = (x, y) => N4.some(([dx, dy]) => seen.has((y + dy) * m.w + x + dx)), targets = [];
+    for (let y = 1; y < m.h - 1; y++) for (let x = 1; x < m.w - 1; x++) if (!isSolid(m, x, y) && !seen.has(y * m.w + x)) targets.push({ x, y });
+    for (const l of m.loot.values()) if (!near(l.x, l.y)) targets.push(l);
+    for (const b of m.beds) if (!near(b.x, b.y) && !near(b.x, b.y + 1)) targets.push(b);
+    if (!targets.length) return;
+    let best = null, bd = 1e9;
+    for (let y = 1; y < m.h - 1; y++) for (let x = 1; x < m.w - 1; x++) {
+      if (!MOVABLE.has(m.tiles[y * m.w + x]) || !near(x, y)) continue;
+      for (const t of targets) { const d = Math.abs(t.x - x) + Math.abs(t.y - y); if (d < bd) { bd = d; best = { x, y }; } }
+    }
+    if (!best) return;
+    m.tiles[best.y * m.w + best.x] = T.FLOOR;
+  }
 }
 function genInterior(h) {
   const r = mulberry32(1000 + h.idx * 77), ri = (a, b) => a + Math.floor(r() * (b - a + 1));
   let floors;
   if (h.type === 'shop') floors = [shopFloor(h, r)];
   else if (h.type === 'inn') floors = innFloors(h, r);
-  else if (h.type === 'cottage') floors = [buildFloor(h, h.key, ri(8, 9), 8, { exit: true, beds: 1, loot: 3 }, r)];
-  else if (h.type === 'house') floors = [buildFloor(h, h.key, ri(11, 13), ri(9, 10), { exit: true, beds: ri(1, 2), loot: 4 }, r)];
-  else if (h.type === 'large') floors = [buildFloor(h, h.key, ri(14, 16), ri(10, 11), { exit: true, beds: ri(2, 3), loot: 6 }, r)];
+  else if (h.type === 'cottage') floors = [buildFloor(h, h.key, ri(10, 11), 9, { exit: true, beds: 1, loot: 3 }, r)];
+  else if (h.type === 'house') floors = [buildFloor(h, h.key, ri(12, 14), 10, { exit: true, beds: ri(1, 2), loot: 4 }, r)];
+  else if (h.type === 'large') floors = [buildFloor(h, h.key, ri(15, 17), 11, { exit: true, beds: ri(2, 3), loot: 6 }, r)];
   else {
-    const w = ri(17, 19), g = buildFloor(h, h.key, w, 12, { exit: true, stairs: 'up', beds: 1, loot: 6 }, r), u = buildFloor(h, h.key + '_1', w, 11, { stairs: 'down', beds: 4, loot: 7 }, r);
+    const w = ri(18, 20), g = buildFloor(h, h.key, w, 12, { exit: true, stairs: 'up', beds: 1, loot: 6 }, r), u = buildFloor(h, h.key + '_1', w, 11, { stairs: 'down', beds: 4, loot: 7 }, r);
     u.upstairs = true;
     g.links.push({ x: g.stairs.x, y: g.stairs.y, to: u.key, ax: u.arrive.x, ay: u.arrive.y, walk: true });
     u.links.push({ x: u.stairs.x, y: u.stairs.y, to: g.key, ax: g.arrive.x, ay: g.arrive.y, walk: true });
     floors = [g, u];
   }
+  for (const f of floors) clearWay(f);
   const g = floors[0]; h.map = g; h.floors = floors;
   g.links.push({ x: g.exit.x, y: g.exit.y, to: 'town', ax: h.approach.x, ay: h.approach.y, walk: true });
   town.links.push({ x: h.approach.x, y: h.approach.y, to: h.key, ax: g.entry.x, ay: g.entry.y });
   if (h.shop) {
     // shopkeepers live above the shop; the inn has its keeper, a barmaid and guests
-    const beds = floors.flatMap(f => f.beds), roles = h.type === 'inn' ? ['innkeeper', 'barmaid', 'traveler', 'traveler', 'traveler', 'traveler'] : ['keeper', r() < 0.5 ? 'apprentice' : null].filter(Boolean);
+    const beds = floors.flatMap(f => f.beds), roles = h.type === 'inn' ? ['innkeeper', 'barmaid', 'cook', 'traveler', 'traveler', 'traveler', 'traveler', 'traveler', 'traveler', 'traveler'] : ['keeper', r() < 0.5 ? 'apprentice' : null].filter(Boolean);
     roles.forEach((role, i) => {
       const sheet = residentSheet(r, {}), first = (sheet.dress ? WOMEN : MEN)[ri(0, 17)];
-      const name = role === 'traveler' ? `${first} the traveler` : role === 'barmaid' ? `${first} (${sheet.dress ? 'barmaid' : 'barman'})` : role === 'apprentice' ? `${first} (apprentice)` : `${first} ${h.family}`;
+      const name = role === 'traveler' ? `${first} the traveler` : role === 'cook' ? `${first} (cook)` : role === 'barmaid' ? `${first} (${sheet.dress ? 'barmaid' : 'barman'})` : role === 'apprentice' ? `${first} (apprentice)` : `${first} ${h.family}`;
       const floor = role === 'traveler' && r() < 0.3 ? floors[floors.length - 1].key : floors[0].key;
       h.residents.push({ kind: 'resident', house: h, name, role, worker: true, child: false, servant: false, map: floor, floor, x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet, animT: 0,
-        state: 'idle', mode: 'chore', modeT: 0, path: null, repath: 0, wait: 0, bubble: null, alarmT: 0, outCD: 0, reportCD: 0, sawYou: false, bed: beds[(i + (h.type === 'inn' ? 0 : 0)) % beds.length] });
+        state: 'idle', mode: 'chore', modeT: 0, path: null, repath: 0, wait: 0, bubble: null, alarmT: 0, outCD: 0, reportCD: 0, sawYou: false, bed: beds[h.type === 'inn' ? 1 + (i % (beds.length - 1)) : i % beds.length] });
     });
     return;
   }
@@ -1017,7 +1064,7 @@ let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, cu
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
-  player = { kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
+  player = { cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
   up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
@@ -1129,13 +1176,15 @@ function losClear(map, x0, y0, x1, y1) {
 function canSee(e, t, range, cosHalf) {
   if (e.map !== t.map || t.state === 'hidden') return false;
   const ex = e.x, ey = e.y - 8, tx = t.x, ty = t.y - 6, dx = tx - ex, dy = ty - ey, d = Math.hypot(dx, dy);
+  if (t === player && player.sneak && d > 20) range *= e.unit === 'dog' || e.kind === 'pet' ? 0.85 : 0.6; // crouched low, you're much harder to spot
   if (d > range) return false;
   if (d > 14 && (dx * Math.cos(e.fa) + dy * Math.sin(e.fa)) / d < cosHalf) return false;
   if (inSmoke(e.map, ex, ey)) return false;
   return losClear(e.map, ex, ey, tx, ty);
 }
 const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? 100 - dayInfo().dark * 55 : 110; };
-const guardSees = g => g.unit === 'dog' ? canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
+const peppered = () => player.pepperDay === dayInfo().day;
+const guardSees = g => g.unit === 'dog' ? !peppered() && canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
 function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
 function roughDist(a, b) { const pa = townPos(a), pb = townPos(b); return Math.hypot(pa.x - pb.x, pa.y - pb.y) + (a.map === b.map ? 0 : 60); }
 
@@ -1331,7 +1380,7 @@ function startPick(h) {
   if (p.picks <= 0) { msg('No lockpicks! Buy some from a fence.', '#ffb36b'); SFX.deny(); return; }
   const n = 2 + h.wealth, kit = up.picks ? 1.6 : 1;
   p.state = 'picking'; p.pickHouse = h; p.dir = 'up'; p.fa = -Math.PI / 2;
-  p.lock = { sel: 0, flash: 0, pins: Array.from({ length: n }, () => ({ pos: 0, st: 'down', t: 0, hang: rnd(0.14, 0.42) * kit, fall: rnd(0.22, 0.55), rise: rnd(0.1, 0.2) })) };
+  p.lock = { sel: 0, flash: 0, pins: Array.from({ length: n }, () => ({ pos: 0, st: 'down', t: 0, hang: rnd(0.14, 0.42) * kit * (up.charm ? 1.3 : 1), fall: rnd(0.22, 0.55), rise: rnd(0.1, 0.2) })) };
 }
 function lockSel(d) { const L = player.lock; L.sel = clamp(L.sel + d, 0, L.pins.length - 1); }
 function lockPush() { const pin = player.lock.pins[player.lock.sel]; if (pin.st === 'down') { pin.st = 'rising'; SFX.pick(); } }
@@ -1415,23 +1464,25 @@ let saves = null; // { mode: 'save' | 'load', from: 'play' | 'title', items }
 function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
 function snapshot() {
   const p = player, d = dayInfo();
-  return { v: 2, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
-    player: { x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks },
+  return { v: 3, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
+    player: { map: p.map, x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks, cakes: p.cakes, rings: p.rings, room: p.room },
     houses: houses.map(h => ({ c: h.cooldown, r: h.residents.map(r => [r.friend || 0, r.sawYou ? 1 : 0]), pet: h.pet ? (h.pet.friend || 0) : null,
       loot: h.floors.map(f => [...f.loot.values()].map(e => e.taken ? [1, Math.round(e.t)] : [0, e.item.name, e.item.value])) })) };
 }
-function canSave() { return player.map === 'town' && player.state === 'free' && !wanted; }
+// you can save outdoors, or in your rented room at the inn
+function canSave() { return (player.map === 'town' || (player.room && player.map === player.room.map)) && player.state === 'free' && !wanted; }
 function writeSlot(n) {
-  if (!canSave()) { msg('You can only save outdoors, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
+  if (!canSave()) { msg('You can only save outdoors or in your room at the inn, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
   try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(snapshot())); msg(`Game saved to slot ${n}.`, '#9df0a0'); SFX.buy(); }
   catch (e) { msg('Could not save - this browser is blocking storage.', '#ff8a6b'); SFX.deny(); }
 }
 function loadSlot(n) {
   const d = readSlot(n); if (!d) { SFX.deny(); return false; }
-  if (d.v !== 2) { msg('That save is from an older version of the village and can\'t be loaded.', '#ff8a6b'); SFX.deny(); return true; }
+  if (d.v !== 3) { msg('That save is from an older version of the village and can\'t be loaded.', '#ff8a6b'); SFX.deny(); return true; }
   newGame();
   gameTime = d.gameTime; gold = d.gold; totalEarned = d.totalEarned; bounty = d.bounty; arrests = d.arrests; won = d.won; nightNotified = d.nightNotified; Object.assign(up, d.up);
-  const p = player; p.x = d.player.x; p.y = d.player.y; p.loot = d.player.loot; p.smoke = d.player.smoke; p.picks = d.player.picks;
+  const p = player; p.map = d.player.map || 'town'; p.x = d.player.x; p.y = d.player.y; p.loot = d.player.loot; p.smoke = d.player.smoke; p.picks = d.player.picks;
+  p.cakes = d.player.cakes || 0; p.rings = d.player.rings || 0; p.room = d.player.room || null;
   d.houses.forEach((hs, i) => {
     const h = houses[i]; if (!h) return; h.cooldown = hs.c;
     hs.r.forEach(([f, saw], j) => { const r = h.residents[j]; if (r) { r.friend = f; r.sawYou = !!saw; } });
@@ -1440,7 +1491,7 @@ function loadSlot(n) {
   });
   curDay = dayInfo().day; syncForce();
   state = 'play'; saves = null; paused = false;
-  updateCamera(null, 'town', p.x, p.y - 8);
+  updateCamera(null, p.map, p.x, p.y - 8);
   msg(`Loaded slot ${n}: ${d.label}.`, '#9df0a0'); return true;
 }
 function openSaves(mode, from) { saves = { mode, from, items: [] }; state = 'saves'; }
@@ -1513,27 +1564,87 @@ function bother(t, n) {
   }
   return true;
 }
-function shopOffers(t, add) {
-  const kind = t.house.shop;
-  if (kind === 'bakery') add('Buy a loaf of bread (3g) - full stamina', () => { if (!pay(3)) return; player.stamina = 100; player.tired = false; chat.reply = 'Fresh from the oven!'; }, 3);
-  if (kind === 'general') add('Buy 5 lockpicks (25g)', () => { if (player.picks >= 20) { chat.reply = 'You\'ve got plenty already.'; return; } if (!pay(25)) return; player.picks += 5; chat.reply = 'For, ah... locked chests of your own, I\'m sure.'; }, 25);
-  if (kind === 'apothecary') add('Buy a smoke powder pouch (60g)', () => { if (player.smoke >= 3) { chat.reply = 'You can\'t carry more.'; return; } if (!pay(60)) return; player.smoke++; chat.reply = 'Don\'t breathe it in.'; }, 60);
-  if (kind === 'smith' && !up.picks) add('Buy a fine lockpick kit (120g)', () => { if (!pay(120)) return; up.picks = true; chat.reply = 'Best steel in the valley.'; }, 120);
-  if (kind === 'tailor' && !up.sack) add('Buy a deep-pocketed sack (110g)', () => { if (!pay(110)) return; up.sack = true; chat.reply = 'Holds ten things, easy.'; }, 110);
-  if (kind === 'jeweler') add('Have your loot appraised', () => { const v = lootValue(); chat.reply = v ? `Hmm... I'd say your bag is worth about ${v}g.` : 'You\'ve nothing worth appraising.'; });
-  if (kind === 'inn') {
-    add('Buy an ale (2g)', () => { if (!pay(2)) return; addFriend(t, 3); chat.reply = 'Cheers!'; }, 2);
-    add('Buy a hot meal (5g) - full stamina', () => { if (!pay(5)) return; player.stamina = 100; player.tired = false; chat.reply = 'Rabbit stew. Mind the bones.'; }, 5);
-    add('Rent a room - sleep until morning (15g)', () => {
-      if (wanted) { chat.reply = 'Not with the Watch on your heels!'; return; }
-      if (!pay(15)) return; chatClose(); unlock('inn_room');
-      transition(() => {
-        const d = dayInfo(); gameTime = d.day * DAY_LEN - 60 + 1; player.stamina = 100; player.tired = false;
-        if (bounty > 0) { bounty--; syncForce(); msg(`You lie low overnight. Bounty fades to ${bounty}.`, '#9df0a0'); }
-        msg('You sleep soundly at the Prancing Pig and wake at dawn.', '#9ab0ff');
-      });
-    }, 15);
-  }
+// What each shop sells. `can` greys an item out (owned, or you're carrying the most you can).
+const CATALOG = {
+  bakery: [
+    ['Loaf of bread', 'Restores all your stamina', 3, () => true, () => { player.stamina = 100; player.tired = false; }],
+    ['Meat pie', 'Well fed: stamina drains at half speed for 2 minutes', 8, () => true, () => { player.stamina = 100; player.fedT = 120; }],
+    ['Honey cake', 'A gift. Hand it over in a chat for a big friendship boost', 6, () => player.cakes < 5, () => { player.cakes++; }],
+  ],
+  general: [
+    ['Lockpicks x5', 'Five spare picks', 25, () => player.picks <= 25, () => { player.picks += 5; }],
+    ['Lockpicks x10', 'Ten spare picks, a bit cheaper', 45, () => player.picks <= 20, () => { player.picks += 10; }],
+    ['Oil can', 'Oiled hinges: thefts make half the noise near sleepers', 60, () => !up.oil, () => { up.oil = true; }],
+  ],
+  tailor: [
+    ['Deep-pocketed sack', 'Carry 10 items instead of 6', 110, () => !up.sack, () => { up.sack = true; }],
+    ['Fine clothes', 'Look respectable: compliments land more, hosts suspect you 20% slower', 90, () => !up.clothes, () => { up.clothes = true; }],
+    ['Velvet gloves', 'Steal 30% faster', 70, () => !up.gloves, () => { up.gloves = true; }],
+  ],
+  smith: [
+    ['Lockpick kit', 'Fine steel picks: pins hang longer, thefts are quieter', 120, () => !up.picks, () => { up.picks = true; }],
+    ['Iron-grip bracers', 'Break free from grabs much more easily', 100, () => !up.grip, () => { up.grip = true; }],
+  ],
+  apothecary: [
+    ['Smoke bomb', 'Blinds and stuns anyone nearby', 60, () => player.smoke < 3, () => { player.smoke++; }],
+    ['Stamina tonic', "Full stamina, and you won't tire for 90 seconds", 15, () => true, () => { player.stamina = 100; player.tired = false; player.tonicT = 90; }],
+    ['Hound pepper', "Dogs can't smell you for the rest of the day", 45, () => player.pepperDay !== dayInfo().day, () => { player.pepperDay = dayInfo().day; }],
+  ],
+  jeweler: [
+    ['Gold ring', 'A gift that wins anyone over', 50, () => player.rings < 3, () => { player.rings++; }],
+    ['Lucky charm', 'Lock pins hang 30% longer', 150, () => !up.charm, () => { up.charm = true; }],
+    ['Appraise your loot', 'Find out what your sack is worth', 0, () => true, () => { const v = lootValue(); msg(v ? `The jeweler squints: "About ${v}g, I'd say."` : '"Nothing worth appraising."', '#cfe8ff'); }],
+  ],
+  inn: [
+    ['Ale', 'Cheers! The innkeeper warms to you', 2, () => true, () => { const k = shopMenu.h.lead; if (k) addFriend(k, 3); }],
+    ['Hot meal', 'Rabbit stew: full stamina and well fed for a minute', 5, () => true, () => { player.stamina = 100; player.tired = false; player.fedT = 60; }],
+    ['Rent a room for the night', 'Room 1 upstairs. Sleep in your bed to rest until morning', 15, () => !player.room && !wanted, () => { rentRoom(shopMenu.h); }],
+  ],
+};
+let shopMenu = null;
+function openShop(h) { state = 'shop'; shopMenu = { h, items: [] }; if (h.lead) say(h.lead, h.type === 'inn' ? 'What can I get you?' : 'Have a look!', 2); }
+function closeShop() { state = 'play'; shopMenu = null; }
+function shopBuy(i) {
+  const it = CATALOG[shopMenu.h.shop][i]; if (!it) return;
+  const [name, , cost, can, fx] = it;
+  if (!can()) { SFX.deny(); return; }
+  if (gold < cost) { SFX.deny(); if (shopMenu.h.lead) say(shopMenu.h.lead, 'Come back with more coin.', 2); return; }
+  gold -= cost; SFX.buy(); fx(); if (cost) msg(`Bought: ${name}.`, '#9df0a0');
+}
+function drawShop() {
+  const h = shopMenu.h, list = CATALOG[h.shop], pw = Math.min(300, VW - 12), ph = 40 + list.length * 22, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  shopMenu.items = []; shopMenu.px = px; shopMenu.py = py; shopMenu.pw = pw; shopMenu.ph = ph;
+  panel(px, py, pw, ph, 0.94); F(ctx, px, py, pw, 14, 'rgba(110,70,30,0.95)');
+  const title = h.shopName.replace(/^the /, ''); txt(title.charAt(0).toUpperCase() + title.slice(1), px + 6, py + 4, 6, '#f7d774');
+  coinIcon(px + pw - 46, py + 4); txt(`${gold}g`, px + pw - 38, py + 4, 6, '#f7d774');
+  list.forEach(([name, desc, cost, can], i) => {
+    const y = py + 19 + i * 22, ok = can() && gold >= cost, it = { x: px + 4, y: y - 2, w: pw - 8, h: 20, fn: () => shopBuy(i) }; shopMenu.items.push(it);
+    F(ctx, it.x, it.y, it.w, it.h, ok ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.02)');
+    txt((touchMode ? '' : `[${i + 1}] `) + name, px + 8, y + 1, 5, ok ? '#ffffff' : '#888', 'left', null);
+    txt(desc, px + 8, y + 9, 4, ok ? '#cfc6b0' : '#777', 'left', null);
+    txt(!can() ? (cost ? 'SOLD OUT' : '') : cost ? `${cost}g` : 'free', px + pw - 8, y + 2, 5, !can() ? '#777' : gold >= cost ? '#f7d774' : '#a06a4a', 'right', null);
+  });
+  const close = { x: px + 4, y: py + ph - 14, w: pw - 8, h: 12, fn: closeShop }; shopMenu.items.push(close);
+  txt(touchMode ? 'Tap here to leave' : '[Esc] Leave', px + pw / 2, py + ph - 11, 5, '#aaa', 'center', null);
+}
+// ---------- renting a room at the inn ----------
+function rentRoom(h) {
+  const u = h.floors[1];
+  player.room = { map: u.key, bed: u.beds[0], day: dayInfo().day };
+  unlock('inn_room'); closeShop();
+  if (h.lead) say(h.lead, 'Room 1, top of the stairs. Sleep well!', 3);
+  msg('Room 1 upstairs is yours for the night. Sleep in your bed to rest until morning. You can save the game there.', '#9ab0ff');
+}
+function sleepInRoom() {
+  if (wanted) { msg("You can't sleep with the Watch after you.", '#ffb36b'); SFX.deny(); return; }
+  transition(() => {
+    const p = player, d = dayInfo(), b = p.room.bed;
+    gameTime = d.day * DAY_LEN - 60 + 1; p.stamina = 100; p.tired = false;
+    p.x = (b.x + 1) * TS + 8; p.y = (b.y + 1) * TS + 12; p.dir = 'down';
+    if (bounty > 0) { bounty--; syncForce(); msg(`You lie low overnight. Bounty fades to ${bounty}.`, '#9df0a0'); }
+    msg(`You wake rested on ${dayInfo().weekday} morning and check out of the inn.`, '#9ab0ff');
+    p.room = null;
+  });
 }
 function chatOptions() {
   const t = chat.t, p = player, o = [];
@@ -1550,7 +1661,7 @@ function chatOptions() {
     if (!t.child) add('Compliment them', () => {
       const grumpy = irritated(t), n = t.compliments = (t.compliments || 0) + 1;
       if (bother(t, 30)) return;
-      const odds = 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0) - (n - 1) * 0.2 - (grumpy ? 0.4 : 0);
+      const odds = 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0) + (up.clothes ? 0.15 : 0) - (n - 1) * 0.2 - (grumpy ? 0.4 : 0);
       if (Math.random() < odds) { stat('compliments'); addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
       else { addFriend(t, -4); if (host) h.sus += 8; chat.reply = n > 2 ? pick(['Laying it on a bit thick, aren\'t you?', 'Alright, that\'s enough flattery.']) : pick(['Hmph. Flattery.', 'What are you after?', '...Right.']); }
     });
@@ -1569,8 +1680,10 @@ function chatOptions() {
     });
     if (t.child) add('Give them a copper coin (1g)', () => { if (!pay(1)) return; addFriend(t, 15); chat.reply = 'WOW! Thank you!!'; }, 1);
     else add('Give them a gift (10g)', () => { if (!pay(10)) return; stat('gifts'); addFriend(t, 14); if (host) h.sus = Math.max(0, h.sus - 25); chat.reply = pick(['Oh! How generous of you!', 'For me? You shouldn\'t have!']); }, 10);
+    if (player.cakes > 0) add(`Give them a honey cake (${player.cakes} left)`, () => { player.cakes--; stat('gifts'); addFriend(t, 25); if (host) h.sus = Math.max(0, h.sus - 35); chat.reply = 'Ooh, honey cake! My favourite!'; });
+    if (player.rings > 0 && !t.child) add(`Give them a gold ring (${player.rings} left)`, () => { player.rings--; stat('gifts'); addFriend(t, 55); t.sawYou = false; if (host) h.sus = 0; chat.reply = 'For ME? Oh, you dear thing!'; });
     if (t.sawYou) add('Pay them to forget what they saw (40g)', () => { if (!pay(40)) return; unlock('hush_money'); t.sawYou = false; addFriend(t, 5); chat.reply = '...I didn\'t see anything. Ever.'; }, 40);
-    if (host && t.role && t.role !== 'traveler' && t.role !== 'apprentice') shopOffers(t, add);
+    if (host && (t.role === 'keeper' || t.role === 'innkeeper' || t.role === 'barmaid')) add(h.type === 'inn' ? 'See the menu and rooms' : 'Browse wares', () => { chatClose(); openShop(h); });
     add('Insult them', () => {
       stat('insults'); addFriend(t, -25);
       if (t.child) { chat.reply = 'WAAAAH! MUUUUM!'; if (host) h.sus += 20; return; }
@@ -1665,7 +1778,7 @@ function finishSteal() {
   if (isMarketDay()) unlock('market_steal');
   if (h.tourT > 0) unlock('tour_steal');
   if (h.floors.every(f => [...f.loot.values()].every(x => x.taken))) unlock('clean_house');
-  if (h.residents.some(r => r.state === 'sleep')) h.wake += rnd(10, 30) * (up.picks ? 0.75 : 1);
+  if (h.residents.some(r => r.state === 'sleep')) h.wake += rnd(10, 30) * (up.picks ? 0.75 : 1) * (up.oil ? 0.5 : 1) * (p.sneak ? 0.6 : 1);
 }
 function useSmoke() {
   const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
@@ -1784,6 +1897,7 @@ const BTN = () => [
   { id: 'run', k: 'shift', x: VW - 68, y: VH - 24, r: 13, label: 'RUN' },
   { id: 'smk', k: 'q', x: VW - 64, y: VH - 62, r: 11, label: 'Q' },
   { id: 'esc', k: 'escape', x: VW - 14, y: 92, r: 9, label: 'II' },
+  { id: 'sneak', k: 'c', x: VW - 102, y: VH - 58, r: 11, label: 'C' },
   ...(player && player.talk && player.state === 'free' ? [{ id: 'talk', k: 't', x: VW - 100, y: VH - 30, r: 11, label: 'T' }] : []),
   ...(player && player.inter2 && player.state === 'free' ? [{ id: 'pick', k: 'f', x: VW - 26, y: VH - 74, r: 12, label: 'F' }] : []),
 ];
@@ -1819,6 +1933,7 @@ function tapUI(v) {
   if (state === 'wardrobe') { const it = wardUI.find(inR); if (it) it.fn(); return true; }
   if (state === 'achievements') { const it = achUI.find(inR); if (it) it.fn(); return true; }
   if (state === 'saves') { const it = saves.items.find(inR); if (it) it.fn(); else if (!inR({ x: saves.px, y: saves.py, w: saves.pw, h: saves.ph })) closeSaves(); return true; }
+  if (state === 'shop') { const it = shopMenu.items.find(inR); if (it) it.fn(); else if (!inR({ x: shopMenu.px, y: shopMenu.py, w: shopMenu.pw, h: shopMenu.ph })) closeShop(); return true; }
   if (state === 'chat') { const it = chat.items.find(inR); if (it) it.fn(); else if (!inR({ x: chat.px, y: chat.py, w: chat.pw, h: chat.ph })) chatClose(); return true; }
   if (paused && state === 'play') { const it = pauseUI.find(inR); if (it) it.fn(); else paused = false; return true; }
   if (state === 'menu') {
@@ -1851,12 +1966,17 @@ function readMove() {
   if (l < 0.2) return { ix: 0, iy: 0, l: 0 };
   if (l > 1) { ix /= l; iy /= l; } return { ix, iy, l: Math.min(1, l) };
 }
+const stealTime = () => STEAL_BASE * (up.gloves ? 0.7 : 1);
 function doMove(dt, canRun) {
   const p = player, { ix, iy } = readMove();
   let spd = P_WALK * (up.boots ? 1.15 : 1);
   if (p.stamina <= 0) p.tired = true; if (p.tired && p.stamina > 30) p.tired = false;
-  if (canRun && held('shift') && (ix || iy) && !p.tired) { spd = P_RUN * (up.boots ? 1.12 : 1); p.stamina = Math.max(0, p.stamina - STAM_DRAIN * dt); p.running = true; }
+  if (canRun && held('shift') && (ix || iy) && !p.tired) {
+    spd = P_RUN * (up.boots ? 1.12 : 1); p.running = true; p.sneak = false;
+    p.stamina = Math.max(0, p.stamina - STAM_DRAIN * (p.tonicT > 0 ? 0 : p.fedT > 0 ? 0.5 : 1) * dt);
+  }
   else { p.running = false; p.stamina = Math.min(100, p.stamina + STAM_REGEN * (up.boots ? 1.5 : 1) * dt); }
+  if (p.sneak && !p.running) spd *= 0.55;
   if (p.boostT > 0) spd *= 1.3;
   p.moving = !!(ix || iy);
   if (p.moving) { moveEntity(p, ix * spd * dt, iy * spd * dt); p.fa = Math.atan2(iy, ix); p.dir = dirFromAngle(p.fa); p.animT += dt * (p.running ? 1.6 : 1); }
@@ -1883,11 +2003,14 @@ function findInteraction() {
   } else if (m.kind === 'house') {
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
+    if (p.room && p.map === p.room.map && Math.hypot(p.x - (p.room.bed.x * TS + 8), p.y - 4 - (p.room.bed.y * TS + 16)) < 24) { p.inter = { label: 'Sleep until morning', act: sleepInRoom }; return; }
     if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: 'Steal (hold E)', act: () => startSteal(best) };
+    const h = m.house, k = h.lead;
+    if (!p.inter && h.shop && k && k.state === 'host' && k.map === p.map && dist(k, p) < 48) p.inter = { label: h.type === 'inn' ? 'Order or rent a room' : 'Browse wares', act: () => openShop(h) };
   }
 }
 function updatePlayer(dt) {
-  const p = player; p.invuln = Math.max(0, p.invuln - dt); p.boostT = Math.max(0, p.boostT - dt); p.shake = Math.max(0, p.shake - dt);
+  const p = player; p.invuln = Math.max(0, p.invuln - dt); p.boostT = Math.max(0, p.boostT - dt); p.fedT = Math.max(0, (p.fedT || 0) - dt); p.tonicT = Math.max(0, (p.tonicT || 0) - dt); p.shake = Math.max(0, p.shake - dt);
   p.moving = false; p.inter = null; p.inter2 = null; p.talk = null;
   if (fade.dir) return;
   const m = maps[p.map];
@@ -1896,7 +2019,7 @@ function updatePlayer(dt) {
       const mv = readMove();
       if (!held('e') || mv.l > 0) { p.state = 'free'; break; }
       p.stealT += dt; p.dir = dirFromAngle(Math.atan2(p.stealTarget.y * TS + 8 - p.y, p.stealTarget.x * TS + 8 - p.x));
-      if (p.stealT >= STEAL_TIME) finishSteal();
+      if (p.stealT >= stealTime()) finishSteal();
       p.stamina = Math.min(100, p.stamina + STAM_REGEN * dt);
       return;
     }
@@ -1906,6 +2029,7 @@ function updatePlayer(dt) {
       findInteraction();
       p.talk = talkTarget();
       if (p.talk && hit('t')) chatOpen(p.talk);
+      if (hit('c')) { p.sneak = !p.sneak; say(p, p.sneak ? '*sneaks*' : '', 0.6); }
       if (p.inter && hit('e')) p.inter.act();
       else if (p.inter2 && hit('f')) p.inter2.act();
       if (hit('q')) useSmoke();
@@ -1931,7 +2055,7 @@ function updatePlayer(dt) {
     case 'hidden': if (hit('e') || readMove().l > 0.6) { p.state = 'free'; SFX.rustle(); } break;
     case 'grabbed': {
       p.grabT += dt; p.struggle -= (p.grabG && p.grabG.unit !== 'guard' ? 31 : 24) * dt;
-      if (hit(' ') || hit('e')) { p.struggle += Math.max(5, 13 - escapes * 2.5); SFX.struggle(); p.shake = 0.12; }
+      if (hit(' ') || hit('e')) { p.struggle += Math.max(5, 13 - escapes * 2.5) * (up.grip ? 1.5 : 1); SFX.struggle(); p.shake = 0.12; }
       if (hit('q') && p.smoke > 0) { useSmoke(); breakFree(); break; }
       if (p.struggle >= 100) breakFree(); else if (p.struggle <= 0 || p.grabT > 4) arrest();
       break;
@@ -2149,7 +2273,7 @@ function updatePet(d, dt) {
   const h = d.house, p = player, here = inHouse(h, p.map);
   d.moving = false; d.barkCD -= dt; if (d.annoy) d.annoy = Math.max(0, d.annoy - 3.3 * dt);
   const hosting = h.residents.some(r => r.state === 'host'), sleeping = h.residents.some(r => r.state === 'sleep');
-  const sees = here && d.map === p.map && (d.friend || 0) < 40 && canSee(d, p, 80, -2);
+  const sees = here && d.map === p.map && (d.friend || 0) < 40 && !peppered() && canSee(d, p, 80, -2);
   const stealing = sees && p.state === 'stealing', intruder = sees && !hosting && h.alarmT <= 0;
   if (stealing || intruder) {
     d.fa = Math.atan2(p.y - d.y, p.x - d.x); d.wait = 0.5;
@@ -2190,18 +2314,18 @@ function houseTick(h, dt) {
     const hosts = h.residents.filter(r => r.state === 'host');
     if (hosts.length) {
       const tongue = up.tongue ? 0.6 : 1;
-      const pal = (h.lead && isFriend(h.lead) ? 0.5 : 1) * (h.type === 'inn' ? 0.3 : h.shop ? 0.6 : 1);
+      const pal = (h.type === 'inn' && p.room ? 0 : 1) * (h.lead && isFriend(h.lead) ? 0.5 : 1) * (h.type === 'inn' ? 0.3 : h.shop ? 0.6 : 1) * (up.clothes ? 0.8 : 1);
       if (h.tourT > 0) h.tourT -= dt; // nobody minds a guest who's being shown around
       else h.sus += (100 / 120) * tongue * pal * dt; // a guest wears out their welcome in 2 minutes
       if (seen) h.sus += 100 * dt;  // caught red-handed: full in 1 second, however many are watching
-      if (h.lead && h.lead.map !== p.map && h.tourT <= 0) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
+      if (h.lead && h.lead.map !== p.map && h.tourT <= 0 && !(h.type === 'inn' && p.room)) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
       if (h.sus >= 60 && !h.warned && h.lead) { h.warned = true; say(h.lead, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
       if (h.sus >= 100) raiseAlarm(h, h.caught);
     }
     const sl = h.residents.filter(r => r.state === 'sleep');
     if (sl.length) {
       const f = sl.some(r => r.map === p.map) ? 1 : 0.25, quiet = up.boots ? 0.7 : 1;
-      if (p.running) h.wake += 34 * f * quiet * dt; else if (p.moving) h.wake += 1.5 * f * quiet * dt; else h.wake -= 4 * dt;
+      if (p.running) h.wake += 34 * f * quiet * dt; else if (p.moving && !p.sneak) h.wake += 1.5 * f * quiet * dt; else h.wake -= 4 * dt;
       h.wake = Math.max(0, h.wake);
       if (h.wake >= 100) { const near = sl.filter(r => r.map === p.map); (near.length ? near : sl).slice(0, 2).forEach(wakeUp); h.wake = 35; }
     }
@@ -2267,6 +2391,7 @@ function drawEntity(e) {
   if (e.shake > 0 || (e.kind === 'resident' && e.state === 'alarm')) sx += Math.random() < 0.5 ? -1 : 1;
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
   const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e.sheet;
+  if (e === player && player.sneak && player.state === 'free') { ctx.drawImage(sheet[e.dir][fr], 0, 0, 16, 18, sx - 8, sy - 18, 16, 18); return; }
   ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22);
 }
 function drawCone(e, range, half, color) {
@@ -2363,7 +2488,7 @@ function render(dt) {
     else if (g.state === 'search' || g.state === 'respond') txt('?', g.x - 2, g.y - 34, 8, '#ffb040');
   }
   for (const r of resHere) if (r.state === 'alarm' && !r.bubble) txt('!!', r.x - 6, r.y - 34, 8, '#ff4040');
-  if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * p.stealT / STEAL_TIME), 3, '#f7d774'); }
+  if (p.state === 'stealing') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * p.stealT / stealTime()), 3, '#f7d774'); }
   { const z = Math.floor(gameTime * 1.5) % 3, done = {}; for (const r of resHere) if (r.state === 'sleep' && !done[r.bed.x]) { done[r.bed.x] = 1; txt('z'.repeat(z + 1), r.bed.x * TS + 10, r.bed.y * TS - 4 - z * 2, 5, '#cfd8ff'); } }
   for (const r of resHere) if (['woke', 'prowl'].includes(r.state) && !r.bubble) txt('?', r.x - 2, r.y - 34, 8, '#ffb040');
   // name tags for anyone close by
@@ -2385,6 +2510,7 @@ function render(dt) {
   else if (!titleish) drawHUD(di);
   if (state !== 'title' && p.state === 'picking') drawLock();
   if (state === 'menu') drawMenu();
+  if (state === 'shop' && shopMenu) drawShop();
   if (state === 'chat' && chat) drawChat();
   if (state === 'saves' && saves) drawSaves();
   if (state === 'wardrobe') drawWardrobe();
@@ -2526,7 +2652,8 @@ function drawHUD(di) {
   sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
-  txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
+  txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc');
+  if (p.sneak) { panel(VW / 2 - 30, VH - 26 - (touchMode ? 76 : 0), 60, 12, 0.75); txt('SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, '#9ab0ff', 'center', null); } txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
   if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 71, 4, '#9df0a0');
   txt(`picks x${p.picks}`, 9, 56, 5, p.picks ? '#ccc' : '#ff8a6b'); txt(`watch ${guards.filter(g => !g.leaving).length}`, 70, 56, 5, bounty ? '#ff9a9a' : '#aaa');
   txt('BOUNTY', 9, 47, 5, bounty ? '#ff6b6b' : '#888');
@@ -2581,7 +2708,7 @@ function drawHUD(di) {
   if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 140, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hard to spot'], ['E', 'knock / steal (hold) / talk / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   txt('Residents watch you. Steal when they look away.', x, y + 76, 4, '#bbb');
   txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
@@ -2685,6 +2812,9 @@ function frame(now) {
   } else if (state === 'saves') {
     for (let n = 1; n <= 3; n++) if (hit(String(n))) { pickSlot(n); break; }
     if (state === 'saves' && hit('escape')) closeSaves();
+  } else if (state === 'shop') {
+    for (let i = 1; i <= 9; i++) if (hit(String(i))) { shopBuy(i - 1); break; }
+    if (state === 'shop' && (hit('escape') || hit('e'))) closeShop();
   } else if (state === 'menu') {
     if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('lockpicks', 20); if (hit('7')) buy('picks', 100);
     if (hit('escape') || hit('e')) closeMenu();
@@ -2707,7 +2837,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, isSolid, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
