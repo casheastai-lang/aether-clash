@@ -1050,7 +1050,7 @@ function enterHouse(h) {
   p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
   h.visitStolen = 0; h.sus = 0; h.warned = false; h.caught = false; h.toured = false; h.askedLoot = false; h.tourT = 0;
   const home = h.residents.filter(isHome);
-  for (const r of home) r.talks = 0;
+  for (const r of home) { r.talks = 0; r.compliments = 0; }
   h.lead = home.filter(r => !r.child).sort((a, b) => (a.map === h.key ? 0 : 1) - (b.map === h.key ? 0 : 1))[0] || home[0];
   for (const r of home) { r.state = 'host'; r.mode = r === h.lead ? 'watch' : 'chore'; r.modeT = rnd(2, 5); r.path = null; r.wtarget = null; r.caughtSay = false; }
   const lead = h.lead, spot = { x: m.entry.x, y: Math.max(2, m.entry.y - 2) };
@@ -1238,6 +1238,22 @@ function chatOpen(t) {
   state = 'chat'; chat = { t, reply: hello, items: [] };
 }
 function chatClose() { state = 'play'; chat = null; }
+// Patience: every chat or compliment wears it down; it comes back on its own over ~30s.
+const irritated = t => (t.annoy || 0) >= 60;
+function bother(t, n) {
+  t.annoy = (t.annoy || 0) + n;
+  if (t.annoy < 100) return false;
+  t.annoy = 70; addFriend(t, -20); chatClose();
+  if (t.kind === 'pet') { say(t, '*SNAPS at you* GRRR!', 2.5); SFX.bark(); msg(`${t.name} has had enough of you.`, '#ffb36b'); return true; }
+  say(t, t.child ? pick(['LEAVE ME ALONE!', 'You\'re so ANNOYING!']) : pick(['ENOUGH! Leave me alone!', 'Will you STOP talking?!', 'Ugh! Go away!']), 2.8);
+  msg(`${t.name} got fed up with you.`, '#ffb36b'); SFX.deny();
+  const h = t.house;
+  if (t.state === 'host' && h.alarmT <= 0) {
+    if (isEnemy(t)) { say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); leaveHouse(h); }
+    else h.sus = Math.min(95, h.sus + 25);
+  }
+  return true;
+}
 function chatOptions() {
   const t = chat.t, p = player, o = [];
   const add = (label, fn, cost) => o.push({ label, fn, cost });
@@ -1245,13 +1261,17 @@ function chatOptions() {
     const host = t.state === 'host', h = t.house;
     if (wanted && !isFriend(t)) return o;
     add('Small talk', () => {
-      const n = t.talks = (t.talks || 0) + 1;
-      if (n <= 4) { addFriend(t, 4); if (host) h.sus = Math.max(0, h.sus - 8); }
-      chat.reply = n > 4 ? 'Yes, yes. You said that already.' : pick(host ? TALK.host : t.child ? TALK.kid : t.state === 'market' ? TALK.market : TALK.resident);
+      const grumpy = irritated(t);
+      if (bother(t, 22)) return;
+      if (grumpy) { addFriend(t, -3); chat.reply = pick(t.child ? ['Boooring.', 'Go away, I\'m playing.'] : ['Yes, yes. You said that already.', 'Mm-hm. Are we done?', '*sighs*', 'Do you EVER stop talking?']); }
+      else { addFriend(t, 4); if (host) h.sus = Math.max(0, h.sus - 8); chat.reply = pick(host ? TALK.host : t.child ? TALK.kid : t.state === 'market' ? TALK.market : TALK.resident); }
     });
     if (!t.child) add('Compliment them', () => {
-      if (Math.random() < 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0)) { addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
-      else { addFriend(t, -3); if (host) h.sus += 8; chat.reply = pick(['Hmph. Flattery.', 'What are you after?', '...Right.']); }
+      const grumpy = irritated(t), n = t.compliments = (t.compliments || 0) + 1;
+      if (bother(t, 30)) return;
+      const odds = 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0) - (n - 1) * 0.2 - (grumpy ? 0.4 : 0);
+      if (Math.random() < odds) { addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
+      else { addFriend(t, -4); if (host) h.sus += 8; chat.reply = n > 2 ? pick(['Laying it on a bit thick, aren\'t you?', 'Alright, that\'s enough flattery.']) : pick(['Hmph. Flattery.', 'What are you after?', '...Right.']); }
     });
     if (host && h.lead === t && !h.toured) add('Ask for a tour of the house', () => {
       h.toured = true;
@@ -1279,7 +1299,7 @@ function chatOptions() {
       }
     });
   } else if (t.kind === 'pet') {
-    add('Pet the dog', () => { addFriend(t, 15); chat.reply = (t.friend || 0) >= 40 ? '*rolls over for belly rubs*' : '*sniffs your hand cautiously*'; });
+    add('Pet the dog', () => { if (bother(t, 25)) return; addFriend(t, 15); chat.reply = (t.friend || 0) >= 40 ? '*rolls over for belly rubs*' : '*sniffs your hand cautiously*'; });
     add('Give it a treat (5g)', () => { if (!pay(5)) return; addFriend(t, 35); chat.reply = '*munch munch* *wags tail*'; }, 5);
   } else if (t.kind === 'guard' && t.unit === 'dog') {
     add('Talk to it', () => { chat.reply = pick(TALK.dog); });
@@ -1316,7 +1336,9 @@ function drawChat() {
     const [label, col] = relation(t), f = t.friend || 0;
     txt(label, px + pw - 6, py + 4, 5, col, 'right');
     F(ctx, px + 6, y, 80, 4, '#222'); F(ctx, px + 46, y, Math.round(40 * clamp(f, -100, 100) / 100), 4, f >= 0 ? '#9df0a0' : '#ff6b6b'); F(ctx, px + 46, y - 1, 1, 6, '#fff');
-    txt(t.sawYou ? 'saw you steal!' : '', px + 92, y, 4, '#ff8a6b'); y += 8;
+    const pat = 100 - Math.min(100, t.annoy || 0);
+    txt('patience', px + 92, y, 4, '#aaa'); F(ctx, px + 128, y, 40, 4, '#222'); F(ctx, px + 128, y, Math.round(40 * pat / 100), 4, pat > 40 ? '#6ad0e0' : pat > 15 ? '#f0c040' : '#f05040');
+    txt(t.sawYou ? 'saw you steal!' : irritated(t) ? 'irritated' : '', px + 174, y, 4, '#ff8a6b'); y += 8;
   }
   lines.forEach((l, i) => txt(l, px + 6, y + i * 8, 5, '#ffffff'));
   y += lines.length * 8 + 6;
@@ -1708,7 +1730,7 @@ const residentsOut = () => allResidents().filter(r => !isHome(r)).length;
 function goHome(r) { r.state = 'homeward'; r.home = randFloor(maps[r.floor]); r.path = null; r.wtarget = null; }
 function updateResident(r, dt) {
   const h = r.house, p = player, here = inHouse(h, p.map);
-  r.moving = false; r.reportCD -= dt;
+  r.moving = false; r.reportCD -= dt; if (r.annoy) r.annoy = Math.max(0, r.annoy - 3.3 * dt);
   const wanderOn = (mk, spd) => {
     if (r.wait > 0) { r.wait -= dt; return; }
     if (!r.wtarget || r.wtarget.map !== mk) { const f = randFloor(maps[mk]); r.wtarget = { map: mk, x: f.x, y: f.y }; }
@@ -1803,7 +1825,7 @@ function updateResident(r, dt) {
 // Pet dogs: friendly to guests, but they bark at anyone they see stealing (or sneaking around at night).
 function updatePet(d, dt) {
   const h = d.house, p = player, here = inHouse(h, p.map);
-  d.moving = false; d.barkCD -= dt;
+  d.moving = false; d.barkCD -= dt; if (d.annoy) d.annoy = Math.max(0, d.annoy - 3.3 * dt);
   const hosting = h.residents.some(r => r.state === 'host'), sleeping = h.residents.some(r => r.state === 'sleep');
   const sees = here && d.map === p.map && (d.friend || 0) < 40 && canSee(d, p, 80, -2);
   const stealing = sees && p.state === 'stealing', intruder = sees && !hosting && h.alarmT <= 0;
