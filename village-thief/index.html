@@ -800,7 +800,11 @@ newGame();
 state = 'title';
 
 function msg(text, color = '#ffffff') { msgs.push({ text, color, t: 5 }); if (msgs.length > 5) msgs.shift(); }
-function say(e, text, dur = 2.6) { e.bubble = { text, t: dur }; }
+const DOG_NOISE = /^(\*|woof|grr|arf|bark)/i;
+function say(e, text, dur = 2.6) {
+  if ((e.kind === 'pet' || (e.kind === 'guard' && e.unit === 'dog')) && !DOG_NOISE.test(text)) text = pick(['*sniff sniff*', 'Grrr...', 'WOOF!']);
+  e.bubble = { text, t: dur };
+}
 const sackCap = () => up.sack ? 10 : 6;
 const lootValue = () => player.loot.reduce((a, b) => a + b.value, 0);
 function dayInfo() {
@@ -1375,7 +1379,7 @@ function finishSteal() {
 function useSmoke() {
   const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
   p.smoke--; clouds.push({ map: p.map, x: p.x, y: p.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke();
-  for (const g of guards) if (g.map === p.map && Math.hypot(g.x - p.x, g.y - p.y) < 44 && !['hold', 'assist', 'escort_lead', 'escort_follow'].includes(g.state)) { g.state = 'stunned'; g.stunT = 2.6; say(g, '*cough cough*', 2); }
+  for (const g of guards) if (g.map === p.map && Math.hypot(g.x - p.x, g.y - p.y) < 44 && !['hold', 'assist', 'escort_lead', 'escort_follow'].includes(g.state)) { g.state = 'stunned'; g.stunT = 2.6; say(g, g.unit === 'dog' ? '*sneeze* *sneeze*' : '*cough cough*', 2); }
   msg('Smoke bomb!', '#cfcfcf'); return true;
 }
 function hide(hay) {
@@ -1409,7 +1413,7 @@ function grab(g) {
   SFX.grab(); say(g, g.unit === 'dog' ? 'GRRRRR! *chomp*' : pick(['Gotcha!', 'Got you now!', 'Hold still, rat!'])); msg('GRABBED! Mash SPACE to break free!', '#ff6b6b');
 }
 function breakFree() {
-  const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, 'Oof!'); }
+  const p = player, g = p.grabG; if (g) { g.state = 'stunned'; g.stunT = 2.2; say(g, g.unit === 'dog' ? '*YELP*' : 'Oof!'); }
   p.state = 'free'; p.invuln = 1.6; p.boostT = 1.6; escapes++; SFX.free(); msg('You wriggled free! RUN!', '#9df0a0'); say(p, 'Not today!', 1.5);
 }
 function arrest() {
@@ -1644,7 +1648,7 @@ function updateGuard(g, dt) {
   switch (g.state) {
     case 'patrol': { const wp = g.route[g.wi]; if (navTo(g, 'town', wp.x, wp.y, spd, dt)) { g.wi = (g.wi + 1) % g.route.length; g.state = 'pause'; g.pause = rnd(0.8, 2.2); } break; }
     case 'pause': g.pause -= dt; g.fa += Math.sin(gameTime * 1.7 + g.wi) * dt * 1.5; if (g.pause <= 0) g.state = 'patrol'; break;
-    case 'respond': if (navTo(g, g.target.map, g.target.x, g.target.y, spd, dt) || g.stuckT > 3) { g.state = 'search'; g.searchT = 4; say(g, pick(['Where are they?', 'Hmm...', 'Show yourself!'])); } break;
+    case 'respond': if (navTo(g, g.target.map, g.target.x, g.target.y, spd, dt) || g.stuckT > 3) { g.state = 'search'; g.searchT = 4; say(g, g.unit === 'dog' ? pick(['*sniff sniff*', '*sniffs the air*']) : pick(['Where are they?', 'Hmm...', 'Show yourself!'])); } break;
     case 'chase': {
       const sees = guardSees(g);
       if (sees) { g.lastKnown = { map: player.map, x: player.x, y: player.y }; g.lostT = 0; lastSeenT = gameTime; lastSeenPos = townPos(player); } else g.lostT += dt;
@@ -1653,7 +1657,7 @@ function updateGuard(g, dt) {
         moveEntity(g, dx / d * spd * dt, dy / d * spd * dt); g.fa = Math.atan2(dy, dx); g.moving = true; g.path = null;
       } else {
         const lk = g.lastKnown, t = { x: Math.floor(lk.x / TS), y: Math.floor((lk.y - 3) / TS) };
-        if (navTo(g, lk.map, t.x, t.y, spd, dt, true) && !sees) { g.state = 'search'; g.searchT = 3.5; say(g, pick(["Where'd they go?", 'Blast!', 'I know you\'re here...'])); }
+        if (navTo(g, lk.map, t.x, t.y, spd, dt, true) && !sees) { g.state = 'search'; g.searchT = 3.5; say(g, g.unit === 'dog' ? pick(['*sniff sniff*', 'Grrr...']) : pick(["Where'd they go?", 'Blast!', 'I know you\'re here...'])); }
       }
       if (g.lostT > 6) { g.state = 'search'; g.searchT = 3; }
       if (sameMap && dP < 10 && ['free', 'stealing', 'knocking', 'picking'].includes(player.state) && player.invuln <= 0 && !fade.dir) grab(g);
