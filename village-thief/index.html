@@ -1105,7 +1105,7 @@ const RIVAL_SHEETS = [
 ];
 const thieves = THIEF_NAMES.map((name, i) => ({ kind: 'thief', name, i, map: 'sewer', x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet: RIVAL_SHEETS[i], animT: 0, bubble: null, state: 'den', path: null, repath: 0, wait: 0 }));
 function resetThieves() {
-  thieves.forEach((t, i) => { const [x, y] = DEN_SPOTS[i]; Object.assign(t, { map: 'sewer', x: x * TS + 8, y: y * TS + 12, state: 'den', path: null, wtarget: null, wait: rnd(1, 5), mark: null, loot: null, outDay: -1, captor: null, metT: 0 }); });
+  thieves.forEach((t, i) => { const [x, y] = DEN_SPOTS[i]; Object.assign(t, { smoke: 1, smokeDay: 1, map: 'sewer', x: x * TS + 8, y: y * TS + 12, state: 'den', path: null, wtarget: null, wait: rnd(1, 5), mark: null, loot: null, outDay: -1, captor: null, metT: 0 }); });
 }
 const nearPlayer = (e, r) => player.map === e.map ? dist(e, player) < r : player.map === 'town' && Math.hypot(townPos(e).x - player.x, townPos(e).y - player.y) < r;
 function pickMark(t) {
@@ -1136,9 +1136,26 @@ function wanderDen(t, dt) {
   if (!t.wtarget) { const [x, y] = pick(DEN_SPOTS); t.wtarget = { x: x + Math.floor(rnd(-2, 3)), y: y + Math.floor(rnd(-1, 2)) }; if (isSolid(maps.sewer, t.wtarget.x, t.wtarget.y)) t.wtarget = { x, y }; }
   if (navTo(t, 'sewer', t.wtarget.x, t.wtarget.y, 22, dt) || t.stuckT > 3) { t.wtarget = null; t.wait = rnd(2, 7); if (player.map === 'sewer' && Math.random() < 0.3 && dist(t, player) < 120) say(t, pick(TALK.thief), 2.4); }
 }
+// A rival thief who sees you in the Watch's hands will come running and smoke-bomb them, if they still have a bomb.
+const captured = () => ['grabbed', 'held', 'escorted'].includes(player.state);
+function rescuePlayer(t) {
+  const p = player; t.smoke--;
+  clouds.push({ map: p.map, x: p.x, y: p.y - 6, r: 34, t: 5, max: 5 }); SFX.smoke();
+  const held = escort ? [escort.A, escort.B, escort.dog] : [];
+  for (const g of guards) if ((g.map === p.map && Math.hypot(g.x - p.x, g.y - p.y) < 60) || held.includes(g) || g === p.grabG) { g.state = 'stunned'; g.stunT = 3; g.prey = null; say(g, g.unit === 'dog' ? '*sneeze* *sneeze*' : '*cough cough*', 2); }
+  for (const g of guards) if (g.state === 'assist') { g.state = 'return'; g.path = null; }
+  escort = null; trail = []; p.state = 'free'; p.grabG = null; p.invuln = 2; p.boostT = 2;
+  wanted = true; lastSeenT = gameTime; lastSeenPos = townPos(p);
+  msg(`${t.name} smoke-bombed the Watch to save you! RUN!`, '#9df0a0'); say(t, pick(['Go go GO!', 'You owe me one!', 'Run, you fool!']), 2.5); say(p, 'Thanks!', 1.2);
+  t.state = 'flee'; t.fleeSpd = 72; t.path = null; t.mark = null;
+}
 function updateThief(t, dt) {
   t.moving = false; t.metT = Math.max(0, (t.metT || 0) - dt);
   const night = isNight(), day = dayInfo().day, before = { x: t.x, y: t.y, map: t.map };
+  if (t.smokeDay !== day) { t.smokeDay = day; t.smoke = 1; } // a fresh smoke bomb every day
+  if (t.state !== 'rescue' && t.smoke > 0 && ['out', 'rob', 'home'].includes(t.state) && captured() && t.map === player.map && dist(t, player) < 170) {
+    dropClaim(t); t.state = 'rescue'; t.path = null; say(t, pick(['Hang on, mate!', 'I got you!', 'Hold still!']), 2);
+  }
   switch (t.state) {
     case 'den':
       if (night && t.outDay !== day && Math.random() < dt * 0.025) { const h = pickMark(t); t.outDay = day; if (h) { t.mark = h; t.state = 'out'; t.path = null; t.wtarget = null; break; } }
@@ -1171,6 +1188,12 @@ function updateThief(t, dt) {
         if (t.state === 'flee') { for (const g of guards) if (g.prey === t) { g.state = 'return'; g.prey = null; g.path = null; } if (nearPlayer(t, 320) || player.map === 'sewer') msg(`${t.name} slipped away into the sewers!`, '#cfe8ff'); }
         t.state = 'den'; t.mark = null; t.wait = rnd(1, 4); t.path = null;
       } else if (t.stuckT > 8) { t.map = 'sewer'; t.x = x * TS + 8; t.y = y * TS + 12; t.state = 'den'; }
+      break;
+    }
+    case 'rescue': {
+      if (!captured() || t.map !== player.map) { t.state = 'home'; t.path = null; break; }
+      if (dist(t, player) < 36) { rescuePlayer(t); break; }
+      const pt = tileOfE(player); navTo(t, player.map, pt.x, pt.y, 72, dt, true);
       break;
     }
     case 'caught': // walked along by the watchman holding them; if he's knocked out (smoke!) they wriggle free
@@ -3191,7 +3214,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
