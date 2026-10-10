@@ -2498,6 +2498,7 @@ function changeFloor(L) {
 // Lockpicking: push a pin up, then set it while it hangs at the top (it glows).
 // Mistime it and the pick snaps.
 function startPick(h, done, pins, label) {
+  if (honestOnly()) return;
   const p = player; p.pickDone = done || null; p.pickLabel = label ? label : null;
   if (p.picks <= 0) { msg('No lockpicks! Buy some from a fence.', '#ffb36b'); SFX.deny(); return; }
   const n = pins || 3 + h.wealth;
@@ -2863,7 +2864,13 @@ function joinWatch(town, shift) {
   player.sheet = WATCH_SHEET; SFX.buy(); stat('watchJoin');
   msg(`You're sworn in to the Watch of ${TOWN_NAMES[town]}: ${shift} shift, ${WATCH_PAY[town]}g a shift. Stand your POST, and arrest any robbers you catch (+20g each).`, '#9ab0ff');
 }
-function quitCareer(why) { career = { type: 'thief' }; player.sheet = PLAYER_SHEET; msg(why, '#ffb36b'); }
+function quitCareer(why) { career = { type: 'thief' }; player.sheet = PLAYER_SHEET; msg(why, '#ffb36b'); msg('You\'re free to live as a thief again - steal, pick locks, pick pockets.', '#c9a0ff'); }
+// Honest folk don't steal: a watchman or a worker has to quit first.
+function honestOnly() {
+  if (career.type === 'thief') return false;
+  msg(isWatch() ? 'You\'re a watchman! Hand in your badge (talk to a guard) before you turn to crime.' : `You're an honest ${career.job.title}. Quit your job (talk to your employer${career.job.kind === 'lamp' ? ' - any guard' : ''}) before you turn to crime.`, '#ffb36b');
+  say(player, isWatch() ? 'Not in this uniform.' : 'I\'ve got an honest job now...', 1.6); SFX.deny(); return true;
+}
 function careerFired(reason) { if (career.type === 'thief') return; quitCareer(`${reason} You're FIRED.`); SFX.deny(); }
 function watchPosts(town) { const out = []; for (const l of lamps) if (townIdxAt(l.x) === town && town === townIdxAt(l.x)) out.push(l); return out.length ? out : [{ x: 50, y: 33 }]; }
 function updateCareer(dt) {
@@ -3070,6 +3077,7 @@ function nearbyChars() {
   return out;
 }
 function startSteal(e) {
+  if (honestOnly()) return;
   if (player.loot.length >= sackCap()) { msg('Your sack is full! Sell to a fence.', '#ffb36b'); SFX.deny(); return; }
   player.state = 'stealing'; player.stealT = 0; player.stealTarget = e;
 }
@@ -3511,7 +3519,7 @@ function findInteraction() {
     for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { const [d1, d2] = town.coaches.filter(o => o !== c); p.inter = { label: `Carriage to ${d1.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d1) }; p.inter2 = { label: `Carriage to ${d2.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d2) }; return; }
     for (const mh of manholes) if (Math.hypot(p.x - (mh.x * TS + 8), p.y - 4 - (mh.y * TS + 8)) < 14) { p.inter = exiled ? { label: 'Sewer grate (chained shut)', act: () => { say(p, 'Chained from below. The crew don\'t want me.', 2); SFX.deny(); } } : { label: 'Climb down into the sewers', act: () => enterSewer(mh) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
-    const mark = !wanted && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and press E to pick their pocket - then tap E each time the needle is in the green.', '#cfe8ff'); }
+    const mark = !wanted && career.type === 'thief' && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and press E to pick their pocket - then tap E each time the needle is in the green.', '#cfe8ff'); }
     if (mark && !p.inter) { p.inter = { label: `Pickpocket ${mark.name.split(' (')[0]}`, act: () => startPocket(mark) }; return; }
   } else if (m.kind === 'jail' && p.state === 'free') {
     const lk = m.locker;
@@ -3556,7 +3564,7 @@ function findInteraction() {
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
     if (p.room && p.map === p.room.map && Math.hypot(p.x - (p.room.bed.x * TS + 8), p.y - 4 - (p.room.bed.y * TS + 16)) < 24) { p.inter = { label: 'Sleep until morning', act: sleepInRoom }; return; }
-    if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: 'Steal (hold E)', act: () => startSteal(best) };
+    if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: career.type === 'thief' ? 'Steal (hold E)' : 'Steal (quit your job first)', act: () => startSteal(best) };
     for (const c of m.closets || []) { const d = Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 12)); if (d < 22 && (!best || d < bd)) p.inter = { label: 'Hide in the wardrobe', act: () => hide({ x: c.x, y: c.y, closet: true }) }; }
     const h = m.house, k = h.lead;
     if (!p.inter && h.shop && k && k.state === 'host' && k.map === p.map && dist(k, p) < 48) p.inter = { label: h.type === 'inn' ? 'Order or rent a room' : h.type === 'bank' ? 'Banking' : 'Browse wares', act: () => openShop(h) };
@@ -3576,6 +3584,7 @@ function pocketTarget() {
 const POCKET_STEPS = ['Feel for the purse', 'Work it loose', 'Lift it!'];
 function pocketZone(pp, r) { const w = Math.max(0.07, 0.24 - pp.stage * 0.05 - (r.house.wealth - 1) * 0.025); pp.w = w; pp.c = rnd(w / 2 + 0.05, 1 - w / 2 - 0.05); }
 function startPocket(r) {
+  if (honestOnly()) return;
   const p = player; p.state = 'pickpocket'; p.pocket = r; p.stealT = 0;
   p.pp = { stage: 0, pos: Math.random(), dirn: 1, speed: 0.9 + r.house.wealth * 0.18, miss: 0, pause: 0, flash: 0 }; pocketZone(p.pp, r);
 }
