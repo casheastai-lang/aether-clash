@@ -1854,7 +1854,7 @@ function newGame() {
   player = { disguiseDay: -1, keys: 0, bones: 0, cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
-  up = { sack: false, boots: false, tongue: false, picks: false }; rep = 0; halfBounty = false; contest = null; stash = []; treasure = null; for (const sh of shrooms) sh.picked = -1; job = null; bankBal = 0; evidence = []; heist = null; exiled = false; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
+  up = { sack: false, boots: false, tongue: false, picks: false }; rep = 0; halfBounty = false; contest = null; stash = []; treasure = null; for (const sh of shrooms) sh.picked = -1; job = null; bankBal = 0; evidence = []; heist = null; exiled = false; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; msgLog = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
   guards = []; for (let i = 0; i < BOUNTY_FORCE[0]; i++) makeUnit('guard', i, true);
   setupYardDogs(); for (const Y of yards) { Y.shut = true; Y.alert = 0; Y.wokeT = 0; if (Y.dog) { const d = Y.dog; d.calmDay = -1; d.friend = 0; d.x = Y.kennel.x * TS + 8; d.y = (Y.kennel.y + 1) * TS + 12; } }
   makePosts(); makeExtraPosts(); for (const E of estates) { E.shut = true; E.invited = false; E.banned = false; }
@@ -1870,7 +1870,12 @@ function newGame() {
 newGame();
 state = 'title';
 
-function msg(text, color = '#ffffff') { msgs.push({ text, color, t: 5 }); if (msgs.length > 5) msgs.shift(); }
+const MSG_TIME = 10; // seconds an announcement stays on screen
+var msgLog = [], pauseView = null, histScroll = 0; // var: msg() can run before this line during start-up
+function msg(text, color = '#ffffff') {
+  msgs.push({ text, color, t: MSG_TIME }); if (msgs.length > 5) msgs.shift();
+  try { const d = dayInfo(); msgLog.push({ text, color, when: `${d.weekday.slice(0, 3)} ${d.name}` }); if (msgLog.length > 150) msgLog.shift(); } catch (e) { /* too early in start-up to log */ }
+}
 const DOG_NOISE = /^(\*|woof|grr|arf|bark)/i;
 function say(e, text, dur = 2.6) {
   if ((e.kind === 'pet' || (e.kind === 'guard' && e.unit === 'dog')) && !DOG_NOISE.test(text)) text = pick(['*sniff sniff*', 'Grrr...', 'WOOF!']);
@@ -3075,6 +3080,7 @@ function tapUI(v) {
   if (state === 'saves') { const it = saves.items.find(inR); if (it) it.fn(); else if (!inR({ x: saves.px, y: saves.py, w: saves.pw, h: saves.ph })) closeSaves(); return true; }
   if (state === 'shop') { const it = shopMenu.items.find(inR); if (it) it.fn(); else if (!inR({ x: shopMenu.px, y: shopMenu.py, w: shopMenu.pw, h: shopMenu.ph })) closeShop(); return true; }
   if (state === 'chat') { const it = chat.items.find(inR); if (it) it.fn(); else if (!inR({ x: chat.px, y: chat.py, w: chat.pw, h: chat.ph })) chatClose(); return true; }
+  if (paused && state === 'play' && pauseView === 'history') { pauseView = null; return true; }
   if (paused && state === 'play') { const it = pauseUI.find(inR); if (it) it.fn(); else paused = false; return true; }
   if (state === 'menu') {
     const it = menu.items.find(i => v.x >= i.x && v.x <= i.x + i.w && v.y >= i.y && v.y <= i.y + i.h);
@@ -3884,12 +3890,13 @@ function render(dt) {
   if (paused && state === 'play') {
     panel(0, 0, VW, VH, 0.6); const cy = Math.max(10, VH / 2 - 76);
     txt('PAUSED', VW / 2, cy, 12, '#fff', 'center');
-    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')]].map(([label, k, fn], i) => {
+    if (pauseView === 'history') { drawHistory(); if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`); return; }
+    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')], ['Message history', 'N', () => { pauseView = 'history'; histScroll = 0; }]].map(([label, k, fn], i) => {
       const it = { x: VW / 2 - 60, y: cy + 18 + i * 15, w: 120, h: 12, fn }; F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.1)');
       txt((touchMode ? '' : `[${k}] `) + label, VW / 2, it.y + 3, 5, i === 1 && !canSave() ? '#888' : '#fff', 'center', null); return it;
     });
-    if (!canSave()) txt('(save outdoors, when not wanted)', VW / 2, cy + 64, 4, '#999', 'center', null);
-    drawHelp(VW / 2 - 110, cy + 74);
+    if (!canSave()) txt('(save outdoors, when not wanted)', VW / 2, cy + 79, 4, '#999', 'center', null);
+    drawHelp(VW / 2 - 110, cy + 89);
   }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
 }
@@ -4080,13 +4087,25 @@ function drawHUD(di) {
   if (p.state === 'hidden') { panel(VW / 2 - 60, VH - 70, 120, 14, 0.8); txt('Hiding in the hay... [E] leave', VW / 2, VH - 66, 4, '#e3c25a', 'center'); }
   // messages
   let y = VH - 10 - (touchMode ? 76 : 0);
-  for (let i = msgs.length - 1; i >= 0; i--) {
+  if (!paused) for (let i = msgs.length - 1; i >= 0; i--) { // hidden while paused - they're all in the message history
     const mm = msgs[i], lines = wrap(mm.text, Math.floor((VW - 16) / 5)); const a = Math.min(1, mm.t);
     for (let j = lines.length - 1; j >= 0; j--) { ctx.globalAlpha = a; txt(lines[j], 6, y, 5, mm.color); ctx.globalAlpha = 1; y -= 8; }
   }
   if (touchMode) drawTouch();
   else txt('H: help', VW - 6, VH - 9, 4, 'rgba(255,255,255,0.5)', 'right', null);
   if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 76, 232, 152, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 66); }
+}
+// Every announcement this game, newest at the bottom. Up/Down (or W/S) scrolls.
+function drawHistory() {
+  const pw = Math.min(VW - 12, 380), px = Math.round(VW / 2 - pw / 2), top = 8, ph = VH - 16, cols = Math.floor((pw - 16) / 5), lineH = 8;
+  panel(px, top, pw, ph, 0.95); F(ctx, px, top, pw, 14, 'rgba(60,50,90,0.95)'); txt('MESSAGE HISTORY', px + 6, top + 4, 6, '#f7d774');
+  txt(touchMode ? 'tap to close' : '[N/Esc] back  [Up/Down] scroll', px + pw - 6, top + 5, 4, '#bbb', 'right', null);
+  const rows = []; for (const mm of msgLog) { const ls = wrap(mm.text, cols - 9); ls.forEach((l, k) => rows.push({ when: k ? '' : mm.when, text: l, color: mm.color })); }
+  const fit = Math.floor((ph - 24) / lineH), maxScroll = Math.max(0, rows.length - fit); histScroll = clamp(histScroll, 0, maxScroll);
+  const view = rows.slice(Math.max(0, rows.length - fit - histScroll), rows.length - histScroll);
+  if (!rows.length) txt('Nothing yet.', px + 8, top + 20, 5, '#999');
+  view.forEach((r, i) => { const y = top + 19 + i * lineH; if (r.when) txt(r.when, px + 6, y + 1, 4, '#8a86a0', 'left', null); txt(r.text, px + 48, y, 5, r.color); });
+  if (maxScroll) { const bh = Math.max(10, (ph - 24) * fit / rows.length), by = top + 18 + (ph - 24 - bh) * (1 - histScroll / maxScroll); F(ctx, px + pw - 4, by, 2, bh, 'rgba(255,255,255,0.35)'); }
 }
 function drawHelp(x, y) {
   const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['C', 'sneak: slow, quiet, hide behind barrels'], ['E', 'knock / steal (hold) / pickpocket / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, gift, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
@@ -4199,7 +4218,9 @@ function frame(now) {
     for (const f of fences) if (f.bubble) { f.bubble.t -= dt; if (f.bubble.t <= 0) f.bubble = null; }
     for (const mm of msgs) mm.t -= dt * 0.3;
   } else {
-    if (hit('p') || (hit('escape') && player.state !== 'picking')) paused = !paused;
+    if (paused && pauseView === 'history') { if (hit('n') || hit('escape') || hit('p')) pauseView = null; if (hit('arrowup') || hit('w')) histScroll += 3; if (hit('arrowdown') || hit('s')) histScroll = Math.max(0, histScroll - 3); }
+    else if (hit('p') || (hit('escape') && player.state !== 'picking')) { paused = !paused; pauseView = null; }
+    else if (paused && hit('n')) { pauseView = 'history'; histScroll = 0; }
     else if (paused && hit('s')) openSaves('save', 'play');
     else if (paused && hit('l')) openSaves('load', 'play');
     if (!paused) updateWorld(dt);
@@ -4215,7 +4236,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
