@@ -774,9 +774,9 @@ function newGame() {
   guards = []; for (let i = 0; i < BOUNTY_FORCE[0]; i++) makeUnit('guard', i, true);
   for (const h of houses) {
     h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.sus = 0; h.wake = 0; h.alarmT = 0; h.lead = null;
-    if (h.pet) { const d = h.pet, t = randFloor(maps[d.floor]); d.map = d.floor; d.x = t.x * TS + 8; d.y = t.y * TS + 12; d.path = null; d.wtarget = null; d.barkT = 0; }
+    if (h.pet) { const d = h.pet, t = randFloor(maps[d.floor]); d.map = d.floor; d.x = t.x * TS + 8; d.y = t.y * TS + 12; d.path = null; d.wtarget = null; d.barkT = 0; d.friend = 0; }
     h.dogCalled = false;
-    for (const r of h.residents) { const t = randFloor(maps[r.floor]); r.state = 'idle'; r.map = r.floor; r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.path = null; r.outCD = rnd(2, 60); r.reportCD = 0; r.wtarget = null; r.wait = 0; r.sawYou = false; }
+    for (const r of h.residents) { const t = randFloor(maps[r.floor]); r.state = 'idle'; r.map = r.floor; r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.path = null; r.outCD = rnd(2, 60); r.reportCD = 0; r.wtarget = null; r.wait = 0; r.sawYou = false; r.friend = 0; r.talks = 0; }
   }
   maps.jail.cellOpen = true;
 }
@@ -997,27 +997,31 @@ function knock(h) {
 function resolveKnock(h) {
   const p = player; p.state = 'free'; let refuse = null;
   const doorSpot = { x: h.door.x * TS + 8, y: h.door.y * TS + 6 }; const doorE = { x: doorSpot.x, y: doorSpot.y };
-  const knower = bounty >= 3 && h.residents.find(r => isHome(r) && r.sawYou);
+  const knower = bounty >= 3 && h.residents.find(r => isHome(r) && r.sawYou && !isFriend(r));
+  const friend = h.residents.find(r => isHome(r) && isFriend(r)), enemy = h.residents.find(r => isHome(r) && isEnemy(r));
   if (houseEmpty(h)) refuse = isMarketDay() ? "...(no answer) They're all at the market." : "...(no answer) Nobody's home.";
   else if (h.alarmT > 0) refuse = 'Get away from my door, thief!';
   else if (knower) {
     h.doorOpenT = 1.2; SFX.door(); doorBubble = { x: doorE.x, y: doorE.y, text: "IT'S YOU! THIEF!! WATCH! WATCH!", t: 3 };
     msg(`${knower.name} opened the door and recognized you!`, '#ff4040'); raiseAlarm(h, false); return;
   }
+  else if (enemy && !friend) refuse = `${enemy.name}: Not YOU. Go away.`;
+  else if (friend && !wanted) { /* friends always open up */ }
   else if (wanted) refuse = pick(['I heard the whistles. Go away!', 'Not with the Watch about!']);
   else if (h.cooldown > 0) refuse = pick(['You again? Clear off!', "I've had enough visitors today.", 'Come back another day.']);
   else if (isNight() && Math.random() < 0.35) refuse = "It's the middle of the night!";
   if (refuse) { doorBubble = { x: doorE.x, y: doorE.y, text: refuse, t: 2.8 }; SFX.deny(); return; }
   h.doorOpenT = 0.8; SFX.door();
-  doorBubble = { x: doorE.x, y: doorE.y, text: pick(['Come in, come in!', 'Oh, a visitor! Do come in.', 'Welcome, friend!', 'Wipe your boots!']), t: 1.6 };
+  doorBubble = { x: doorE.x, y: doorE.y, text: friend ? 'Ah, my friend! Come in, come in!' : pick(['Come in, come in!', 'Oh, a visitor! Do come in.', 'Welcome, friend!', 'Wipe your boots!']), t: 1.6 };
   transition(() => enterHouse(h));
 }
 let doorBubble = null;
 function enterHouse(h) {
   const p = player, m = h.map;
   p.map = h.key; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
-  h.visitStolen = 0; h.sus = 0; h.warned = false; h.caught = false;
+  h.visitStolen = 0; h.sus = 0; h.warned = false; h.caught = false; h.toured = false; h.askedLoot = false; h.tourT = 0;
   const home = h.residents.filter(isHome);
+  for (const r of home) r.talks = 0;
   h.lead = home.filter(r => !r.child).sort((a, b) => (a.map === h.key ? 0 : 1) - (b.map === h.key ? 0 : 1))[0] || home[0];
   for (const r of home) { r.state = 'host'; r.mode = r === h.lead ? 'watch' : 'chore'; r.modeT = rnd(2, 5); r.path = null; r.wtarget = null; r.caughtSay = false; }
   const lead = h.lead, spot = { x: m.entry.x, y: Math.max(2, m.entry.y - 2) };
@@ -1121,6 +1125,191 @@ function talkTo(t) {
   else line = pick(TALK[t.kind] || TALK.decor);
   say(p, pick(['Hello there!', 'Nice day, eh?', 'Hi!', 'How do you do?']), 1.4);
   say(t, line, 2.6);
+}
+// ---------- save slots (stored in this browser) ----------
+const SAVE_KEY = n => 'lightfingers_save_' + n;
+let saves = null; // { mode: 'save' | 'load', from: 'play' | 'title', items }
+function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); return raw ? JSON.parse(raw) : null; } catch (e) { return null; } }
+function snapshot() {
+  const p = player, d = dayInfo();
+  return { v: 1, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
+    player: { x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks },
+    houses: houses.map(h => ({ c: h.cooldown, r: h.residents.map(r => [r.friend || 0, r.sawYou ? 1 : 0]), pet: h.pet ? (h.pet.friend || 0) : null,
+      loot: h.floors.map(f => [...f.loot.values()].map(e => e.taken ? [1, Math.round(e.t)] : [0, e.item.name, e.item.value])) })) };
+}
+function canSave() { return player.map === 'town' && player.state === 'free' && !wanted; }
+function writeSlot(n) {
+  if (!canSave()) { msg('You can only save outdoors, when the Watch is not after you.', '#ffb36b'); SFX.deny(); return; }
+  try { localStorage.setItem(SAVE_KEY(n), JSON.stringify(snapshot())); msg(`Game saved to slot ${n}.`, '#9df0a0'); SFX.buy(); }
+  catch (e) { msg('Could not save - this browser is blocking storage.', '#ff8a6b'); SFX.deny(); }
+}
+function loadSlot(n) {
+  const d = readSlot(n); if (!d) { SFX.deny(); return false; }
+  newGame();
+  gameTime = d.gameTime; gold = d.gold; totalEarned = d.totalEarned; bounty = d.bounty; arrests = d.arrests; won = d.won; nightNotified = d.nightNotified; Object.assign(up, d.up);
+  const p = player; p.x = d.player.x; p.y = d.player.y; p.loot = d.player.loot; p.smoke = d.player.smoke; p.picks = d.player.picks;
+  d.houses.forEach((hs, i) => {
+    const h = houses[i]; if (!h) return; h.cooldown = hs.c;
+    hs.r.forEach(([f, saw], j) => { const r = h.residents[j]; if (r) { r.friend = f; r.sawYou = !!saw; } });
+    if (h.pet && hs.pet !== null) h.pet.friend = hs.pet;
+    hs.loot.forEach((list, fi) => { const f = h.floors[fi]; if (!f) return; [...f.loot.values()].forEach((e, k) => { const s = list[k]; if (!s) return; if (s[0]) { e.taken = true; e.t = s[1]; } else { e.taken = false; e.item = { name: s[1], value: s[2] }; } }); });
+  });
+  curDay = dayInfo().day; syncForce();
+  state = 'play'; saves = null; paused = false;
+  updateCamera(null, 'town', p.x, p.y - 8);
+  msg(`Loaded slot ${n}: ${d.label}.`, '#9df0a0'); return true;
+}
+function openSaves(mode, from) { saves = { mode, from, items: [] }; state = 'saves'; }
+function closeSaves() { state = saves.from === 'title' ? 'title' : 'play'; saves = null; }
+function pickSlot(n) {
+  if (saves.mode === 'save') { writeSlot(n); closeSaves(); paused = false; }
+  else if (!loadSlot(n)) msg('That slot is empty.', '#aaa');
+}
+function drawSaves() {
+  const pw = Math.min(280, VW - 12), ph = 96, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  saves.items = []; saves.px = px; saves.py = py; saves.pw = pw; saves.ph = ph;
+  panel(0, 0, VW, VH, 0.5); panel(px, py, pw, ph, 0.94); F(ctx, px, py, pw, 14, 'rgba(60,70,110,0.9)');
+  txt(saves.mode === 'save' ? 'SAVE GAME' : 'LOAD GAME', px + 6, py + 4, 6, '#f7d774');
+  for (let n = 1; n <= 3; n++) {
+    const d = readSlot(n), y = py + 20 + (n - 1) * 22, it = { x: px + 4, y, w: pw - 8, h: 19, fn: () => pickSlot(n) }; saves.items.push(it);
+    F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.07)');
+    txt(touchMode ? `Slot ${n}` : `[${n}] Slot ${n}`, px + 8, y + 3, 5, '#f7d774');
+    if (d) { txt(d.label, px + 8, y + 11, 4, '#ddd'); txt(`${d.gold}g  bounty ${d.bounty}`, px + pw - 8, y + 11, 4, '#ccc', 'right'); }
+    else txt('- empty -', px + 8, y + 11, 4, '#777');
+  }
+  const back = { x: px + 4, y: py + ph - 12, w: pw - 8, h: 10, fn: closeSaves }; saves.items.push(back);
+  txt(touchMode ? 'Back' : '[Esc] Back', px + pw / 2, py + ph - 10, 5, '#aaa', 'center');
+}
+
+// ---------- conversations ----------
+let chat = null;
+const addFriend = (t, n) => { t.friend = clamp((t.friend || 0) + n, -100, 100); };
+const isFriend = t => (t.friend || 0) >= 60;
+const isEnemy = t => (t.friend || 0) <= -50;
+function relation(t) { const f = t.friend || 0; return f >= 60 ? ['Friend', '#9df0a0'] : f >= 25 ? ['Friendly', '#cfe8a0'] : f <= -50 ? ['Enemy', '#ff6b6b'] : f <= -20 ? ['Annoyed', '#ffb36b'] : ['Stranger', '#cccccc']; }
+function pay(n) { if (gold < n) { chat.reply = "(You don't have enough gold.)"; SFX.deny(); return false; } gold -= n; SFX.coins(); return true; }
+function gossip() {
+  const petHouse = houses.find(h => h.pet && Math.random() < 0.5) || houses.find(h => h.pet);
+  const rich = pick(houses.filter(h => h.type === 'mansion'));
+  const lines = ["Market day is Saturday. The whole town goes - houses sit empty all day.", `The ${rich.family}s keep their best things upstairs in that big mansion.`,
+    'Sergeant Krell has never taken a bribe in his life.', 'Folks get jumpy at night. Doors stay locked.', 'Hay bales make a fine hiding spot. Not that I told you.'];
+  if (petHouse) lines.push(`Watch out for the ${petHouse.family}s' dog. Barks at anything.`);
+  return pick(lines);
+}
+function chatOpen(t) {
+  const p = player;
+  p.fa = Math.atan2(t.y - p.y, t.x - p.x); p.dir = dirFromAngle(p.fa);
+  if (t.kind !== 'guard' || t.unit !== 'dog') { t.fa = Math.atan2(p.y - t.y, p.x - t.x); t.dir = dirFromAngle(t.fa); }
+  if (t.kind === 'resident' && bounty >= 3 && t.sawYou && !isFriend(t) && t.state !== 'alarm' && t.state !== 'host') { calledOut(t, ' when you tried to chat'); return; }
+  let hello;
+  if (t.kind === 'resident') hello = wanted ? 'Stay away from me! Thief!' : t.state === 'sleep' ? 'Zzz...' : isEnemy(t) ? 'What do YOU want?' : isFriend(t) ? 'Oh, hello my friend!' : pick(t.child ? TALK.kid : t.state === 'host' ? TALK.host : t.state === 'market' ? TALK.market : TALK.resident);
+  else if (t.kind === 'guard') hello = t.unit === 'dog' ? 'Grrrrr...' : wanted ? 'YOU! Stop right there!' : pick(bounty >= 2 ? TALK.guardSus : TALK.guard);
+  else if (t.kind === 'pet') hello = (t.friend || 0) >= 40 ? '*wags tail happily*' : t.house.residents.some(r => r.state === 'host') ? pick(TALK.pet) : 'Grrr...';
+  else hello = pick(TALK[t.kind] || TALK.decor);
+  state = 'chat'; chat = { t, reply: hello, items: [] };
+}
+function chatClose() { state = 'play'; chat = null; }
+function chatOptions() {
+  const t = chat.t, p = player, o = [];
+  const add = (label, fn, cost) => o.push({ label, fn, cost });
+  if (t.kind === 'resident' && t.state !== 'sleep') {
+    const host = t.state === 'host', h = t.house;
+    if (wanted && !isFriend(t)) return o;
+    add('Small talk', () => {
+      const n = t.talks = (t.talks || 0) + 1;
+      if (n <= 4) { addFriend(t, 4); if (host) h.sus = Math.max(0, h.sus - 8); }
+      chat.reply = n > 4 ? 'Yes, yes. You said that already.' : pick(host ? TALK.host : t.child ? TALK.kid : t.state === 'market' ? TALK.market : TALK.resident);
+    });
+    if (!t.child) add('Compliment them', () => {
+      if (Math.random() < 0.55 + (t.friend || 0) / 200 + (up.tongue ? 0.2 : 0)) { addFriend(t, 9); if (host) h.sus = Math.max(0, h.sus - 15); chat.reply = pick(['Oh, stop it, you! *blushes*', 'Why, thank you!', 'Such a charmer.', 'You have excellent taste.']); }
+      else { addFriend(t, -3); if (host) h.sus += 8; chat.reply = pick(['Hmph. Flattery.', 'What are you after?', '...Right.']); }
+    });
+    if (host && h.lead === t && !h.toured) add('Ask for a tour of the house', () => {
+      h.toured = true;
+      if (Math.random() < 0.45 + (t.friend || 0) / 100 + (up.tongue ? 0.2 : 0)) { h.tourT = 25; t.mode = 'tour'; t.modeT = 25; t.wtarget = null; chat.reply = 'A tour? I\'d be delighted! Follow me.'; chatClose(); say(t, 'Right this way!', 2); }
+      else { h.sus += 6; chat.reply = 'Perhaps another time, dear.'; }
+    });
+    if (host && !t.child && !h.askedLoot) add('Ask about their valuables (risky)', () => {
+      h.askedLoot = true; h.sus += 25;
+      let best = null; for (const f of h.floors) for (const e of f.loot.values()) if (!e.taken && (!best || e.item.value > best.e.item.value)) best = { e, f };
+      if (!best) { chat.reply = 'Valuables? We have nothing left worth taking!'; return; }
+      best.e.hint = true;
+      const what = { [T.CHEST]: 'chest', [T.SHELF]: 'bookshelf', [T.DRESSER]: 'dresser', [T.POT]: 'old pot' }[best.f.tiles[best.e.y * best.f.w + best.e.x]];
+      chat.reply = `Oh, our ${best.e.item.name} is in the ${what}${best.f.upstairs ? ' upstairs' : ''}. ...Why do you ask?`;
+    });
+    if (t.child) add('Give them a copper coin (1g)', () => { if (!pay(1)) return; addFriend(t, 15); chat.reply = 'WOW! Thank you!!'; }, 1);
+    else add('Give them a gift (10g)', () => { if (!pay(10)) return; addFriend(t, 14); if (host) h.sus = Math.max(0, h.sus - 25); chat.reply = pick(['Oh! How generous of you!', 'For me? You shouldn\'t have!']); }, 10);
+    if (t.sawYou) add('Pay them to forget what they saw (40g)', () => { if (!pay(40)) return; t.sawYou = false; addFriend(t, 5); chat.reply = '...I didn\'t see anything. Ever.'; }, 40);
+    add('Insult them', () => {
+      addFriend(t, -25);
+      if (t.child) { chat.reply = 'WAAAAH! MUUUUM!'; if (host) h.sus += 20; return; }
+      chat.reply = pick(['How DARE you!', 'Well, I never!', 'What a horrid thing to say!']);
+      if (host) {
+        if (isEnemy(t) && h.alarmT <= 0) { chatClose(); say(t, 'GET OUT OF MY HOUSE!', 3); h.cooldown = 300; msg(`${t.name} threw you out!`, '#ffb36b'); leaveHouse(h); }
+        else h.sus = Math.min(90, h.sus + 20); // rude, but not a crime
+      }
+    });
+  } else if (t.kind === 'pet') {
+    add('Pet the dog', () => { addFriend(t, 15); chat.reply = (t.friend || 0) >= 40 ? '*rolls over for belly rubs*' : '*sniffs your hand cautiously*'; });
+    add('Give it a treat (5g)', () => { if (!pay(5)) return; addFriend(t, 35); chat.reply = '*munch munch* *wags tail*'; }, 5);
+  } else if (t.kind === 'guard' && t.unit === 'dog') {
+    add('Throw it a treat (5g)', () => { if (!pay(5)) return; t.state = 'stunned'; t.stunT = 4; chatClose(); say(t, '*munch munch*', 3); }, 5);
+  } else if (t.kind === 'guard' && wanted) {
+    add('Surrender', () => { chatClose(); player.grabG = t; t.state = 'grab'; arrest(); });
+    if (t.unit !== 'sarge') add('Bribe them to look the other way (80g)', () => {
+      if (!pay(80)) return;
+      if (Math.random() < 0.55) { chatClose(); say(t, 'I didn\'t see you. Now scram.', 2.5); wanted = false; for (const g of guards) if (HUNT_STATES.includes(g.state)) { g.state = 'return'; g.path = null; } msg('The watchman pockets your gold and looks away.', '#9df0a0'); }
+      else { chatClose(); say(t, 'Bribing an officer?! You\'re nicked!', 2.5); grab(t); }
+    }, 80);
+  } else if (t.kind === 'guard') {
+    add('Small talk', () => { chat.reply = pick(TALK.guard); });
+    add('Ask for gossip', () => { chat.reply = gossip(); });
+    if (bounty > 0) {
+      const cost = 30 * bounty;
+      add(`Bribe them to lower your bounty (${cost}g)`, () => {
+        if (t.unit === 'sarge') { chatClose(); say(t, 'You DARE bribe a sergeant?!', 2.5); setWanted('You tried to bribe a sergeant!'); startChase(t); return; }
+        if (!pay(cost)) return;
+        if (Math.random() < 0.7) { bounty--; syncForce(); chat.reply = 'Hm. Some paperwork may have... gone missing.'; msg(`Bounty lowered to ${bounty}.`, '#9df0a0'); }
+        else { chatClose(); say(t, 'A bribe?! You\'re under arrest!', 2.5); setWanted('The watchman refused your bribe!'); startChase(t); }
+      }, 30 * bounty);
+    }
+    add('Insult them', () => {
+      if (bounty >= 2) { chatClose(); say(t, "That's it. You're coming with me!", 2.5); setWanted(`You insulted ${t.name}!`); startChase(t); }
+      else chat.reply = pick(['Watch your mouth, citizen.', 'Keep talking and see where it gets you.']);
+    });
+  } else if (t.kind === 'vendor') {
+    add('Small talk', () => { chat.reply = pick(TALK.vendor); });
+    add('Buy an apple (2g) - restores stamina', () => { if (!pay(2)) return; player.stamina = 100; player.tired = false; chat.reply = 'Crisp and sweet! Enjoy.'; }, 2);
+  } else if (t.kind === 'fence') {
+    add('Trade goods', () => { chatClose(); openFence(t); });
+    add('Small talk', () => { chat.reply = pick(TALK.fence); });
+  } else add('Small talk', () => { chat.reply = pick(TALK[t.kind] || TALK.decor); });
+  add('Goodbye', () => chatClose());
+  return o;
+}
+function drawChat() {
+  const t = chat.t, opts = chatOptions(), pw = Math.min(310, VW - 12), cols = Math.floor((pw - 14) / 5);
+  const lines = wrap('"' + chat.reply + '"', cols), bar = t.kind === 'resident' || t.kind === 'pet';
+  const ph = 22 + (bar ? 8 : 0) + lines.length * 8 + 6 + opts.length * 13;
+  const px = Math.round(VW / 2 - pw / 2), py = Math.max(4, Math.round(VH - ph - (touchMode ? 84 : 20)));
+  chat.items = []; chat.px = px; chat.py = py; chat.pw = pw; chat.ph = ph;
+  panel(px, py, pw, ph, 0.93); F(ctx, px, py, pw, 14, 'rgba(60,70,110,0.9)');
+  txt(t.name, px + 6, py + 4, 6, '#f7d774');
+  let y = py + 18;
+  if (bar) {
+    const [label, col] = relation(t), f = t.friend || 0;
+    txt(label, px + pw - 6, py + 4, 5, col, 'right');
+    F(ctx, px + 6, y, 80, 4, '#222'); F(ctx, px + 46, y, Math.round(40 * clamp(f, -100, 100) / 100), 4, f >= 0 ? '#9df0a0' : '#ff6b6b'); F(ctx, px + 46, y - 1, 1, 6, '#fff');
+    txt(t.sawYou ? 'saw you steal!' : '', px + 92, y, 4, '#ff8a6b'); y += 8;
+  }
+  lines.forEach((l, i) => txt(l, px + 6, y + i * 8, 5, '#ffffff'));
+  y += lines.length * 8 + 6;
+  opts.forEach((op, i) => {
+    const ok = !op.cost || gold >= op.cost, it = { x: px + 4, y: y - 2, w: pw - 8, h: 12, fn: op.fn }; chat.items.push(it);
+    F(ctx, it.x, it.y, it.w, it.h, ok ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.02)');
+    txt(touchMode ? '' : `[${i + 1}]`, px + 7, y, 5, '#f7d774'); txt(op.label, px + (touchMode ? 8 : 26), y, 5, ok ? '#ffffff' : '#777');
+    y += 13;
+  });
 }
 function talkTarget() {
   const p = player; let best = null, bd = 24;
@@ -1283,7 +1472,11 @@ function touchEnd(e) {
 cv.addEventListener('touchend', touchEnd); cv.addEventListener('touchcancel', touchEnd);
 cv.addEventListener('mousedown', e => { audioInit(); tapUI(toV(e.clientX, e.clientY)); });
 function tapUI(v) {
-  if (state === 'title') { startGame(); return true; }
+  const inR = r => r && v.x >= r.x && v.x <= r.x + r.w && v.y >= r.y && v.y <= r.y + r.h;
+  if (state === 'title') { const it = titleUI.find(inR); if (it) it.fn(); else startGame(); return true; }
+  if (state === 'saves') { const it = saves.items.find(inR); if (it) it.fn(); else if (!inR({ x: saves.px, y: saves.py, w: saves.pw, h: saves.ph })) closeSaves(); return true; }
+  if (state === 'chat') { const it = chat.items.find(inR); if (it) it.fn(); else if (!inR({ x: chat.px, y: chat.py, w: chat.pw, h: chat.ph })) chatClose(); return true; }
+  if (paused && state === 'play') { const it = pauseUI.find(inR); if (it) it.fn(); else paused = false; return true; }
   if (state === 'menu') {
     const it = menu.items.find(i => v.x >= i.x && v.x <= i.x + i.w && v.y >= i.y && v.y <= i.y + i.h);
     if (it) it.fn(); else if (!(v.x >= menu.px && v.x <= menu.px + menu.pw && v.y >= menu.py && v.y <= menu.py + menu.ph)) closeMenu();
@@ -1291,7 +1484,6 @@ function tapUI(v) {
   }
   if (paused) { paused = false; return true; }
   if (state === 'play' && player.state === 'picking' && lockUI) {
-    const inR = r => r && v.x >= r.x && v.x <= r.x + r.w && v.y >= r.y && v.y <= r.y + r.h;
     const i = lockUI.pins.findIndex(inR);
     if (i >= 0) { player.lock.sel = i; lockPush(); return true; }
     if (inR(lockUI.set)) { lockSet(); return true; }
@@ -1363,7 +1555,7 @@ function updatePlayer(dt) {
       if (m.kind === 'house') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { if (L.to === 'town') leaveHouse(m.house); else changeFloor(L); return; } }
       findInteraction();
       p.talk = talkTarget();
-      if (p.talk && hit('t')) talkTo(p.talk);
+      if (p.talk && hit('t')) chatOpen(p.talk);
       if (p.inter && hit('e')) p.inter.act();
       else if (p.inter2 && hit('f')) p.inter2.act();
       if (hit('q')) useSmoke();
@@ -1483,6 +1675,7 @@ function placeFollower(e, c, dt) {
 
 function witness(r) {
   if (r.map !== 'town' || player.map !== 'town' || r.reportCD > 0 || r.state === 'alarm') return;
+  if (isFriend(r)) return; // friends never turn you in
   const knows = bounty >= 3 && r.sawYou;
   if (!(wanted || player.state === 'picking' || knows) || !canSee(r, player, 90, 0.35)) return;
   r.reportCD = 8; r.fa = Math.atan2(player.y - r.y, player.x - r.x);
@@ -1557,7 +1750,7 @@ function updateResident(r, dt) {
       if (r.mode === 'watch') {
         if (r.map === p.map) r.fa = turnToward(r.fa, Math.atan2(p.y - r.y, p.x - r.x), dt * 8);
         if (lead && (r.map !== p.map || dist(r, p) > 64)) { const t = tileOfE(p); navTo(r, p.map, t.x, t.y, 26, dt, true); }
-      } else wanderOn(r.map, 24);
+      } else { wanderOn(r.map, r.mode === 'tour' ? 18 : 24); if (r.mode === 'tour' && Math.random() < dt * 0.35) say(r, pick(['And this is the parlour.', 'Grandmother painted that.', 'Mind the step!', 'That chest was my father\'s.', 'We had the fireplace redone.', 'Lovely light in here, isn\'t it?']), 2.2); }
       const sees = canSee(r, p, 120, 0.55);
       if (sees && p.state === 'stealing') {
         h.seenSteal = true; h.caught = true; r.sawYou = true;
@@ -1596,7 +1789,7 @@ function updatePet(d, dt) {
   const h = d.house, p = player, here = inHouse(h, p.map);
   d.moving = false; d.barkCD -= dt;
   const hosting = h.residents.some(r => r.state === 'host'), sleeping = h.residents.some(r => r.state === 'sleep');
-  const sees = here && d.map === p.map && canSee(d, p, 80, -2);
+  const sees = here && d.map === p.map && (d.friend || 0) < 40 && canSee(d, p, 80, -2);
   const stealing = sees && p.state === 'stealing', intruder = sees && !hosting && h.alarmT <= 0;
   if (stealing || intruder) {
     d.fa = Math.atan2(p.y - d.y, p.x - d.x); d.wait = 0.5;
@@ -1637,9 +1830,11 @@ function houseTick(h, dt) {
     const hosts = h.residents.filter(r => r.state === 'host');
     if (hosts.length) {
       const tongue = up.tongue ? 0.6 : 1;
-      h.sus += (100 / 120) * tongue * dt; // a guest wears out their welcome in 2 minutes
+      const pal = h.lead && isFriend(h.lead) ? 0.5 : 1;
+      if (h.tourT > 0) h.tourT -= dt; // nobody minds a guest who's being shown around
+      else h.sus += (100 / 120) * tongue * pal * dt; // a guest wears out their welcome in 2 minutes
       if (seen) h.sus += 100 * dt;  // caught red-handed: full in 1 second, however many are watching
-      if (h.lead && h.lead.map !== p.map) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
+      if (h.lead && h.lead.map !== p.map && h.tourT <= 0) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
       if (h.sus >= 60 && !h.warned && h.lead) { h.warned = true; say(h.lead, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
       if (h.sus >= 100) raiseAlarm(h, h.caught);
     }
@@ -1755,6 +1950,7 @@ function render(dt) {
     if (di.dark > 0.1) for (const w of windows) F(ctx, w.x * TS + 4, w.y * TS + 3, 8, 8, `rgba(255,200,90,${di.dark * 0.9})`);
   } else {
     for (const e of m.loot.values()) if (e.taken) EMPTY[m.tiles[e.y * m.w + e.x]](ctx, e.x * TS, e.y * TS);
+      else if (e.hint && Math.floor(gameTime * 4) % 2) { F(ctx, e.x * TS + 7, e.y * TS - 3, 2, 6, '#fff6b0'); F(ctx, e.x * TS + 5, e.y * TS - 1, 6, 2, '#fff6b0'); }
     for (let x = 0; x < m.w; x++) if (m.tiles[m.w + x] === T.FIRE) { const f = Math.floor(gameTime * 10) % 3; F(ctx, x * TS + 6 + f % 2, 1 * TS + 9 - f, 2, 2, '#ffe08a'); }
     if (m.kind === 'jail') for (const x of [2, 6, 10]) if (!(m.cellOpen && x === 6)) { OP[T.BARS](ctx, x * TS, 4 * TS); F(ctx, x * TS + 6, 4 * TS + 7, 4, 3, '#c9a04a'); }
   }
@@ -1824,7 +2020,18 @@ function render(dt) {
   else drawHUD(di);
   if (state !== 'title' && p.state === 'picking') drawLock();
   if (state === 'menu') drawMenu();
-  if (paused && state === 'play') { panel(0, 0, VW, VH, 0.6); txt('PAUSED', VW / 2, VH / 2 - 20, 12, '#fff', 'center'); txt('P / Esc to resume', VW / 2, VH / 2, 6, '#ccc', 'center'); drawHelp(VW / 2 - 110, VH / 2 + 14); }
+  if (state === 'chat' && chat) drawChat();
+  if (state === 'saves' && saves) drawSaves();
+  if (paused && state === 'play') {
+    panel(0, 0, VW, VH, 0.6); const cy = Math.max(10, VH / 2 - 76);
+    txt('PAUSED', VW / 2, cy, 12, '#fff', 'center');
+    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')]].map(([label, k, fn], i) => {
+      const it = { x: VW / 2 - 60, y: cy + 18 + i * 15, w: 120, h: 12, fn }; F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.1)');
+      txt((touchMode ? '' : `[${k}] `) + label, VW / 2, it.y + 3, 5, i === 1 && !canSave() ? '#888' : '#fff', 'center', null); return it;
+    });
+    if (!canSave()) txt('(save outdoors, when not wanted)', VW / 2, cy + 64, 4, '#999', 'center', null);
+    drawHelp(VW / 2 - 110, cy + 74);
+  }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
 }
 function drawLighting(dark, cx, cy, m) {
@@ -1850,7 +2057,7 @@ function drawLighting(dark, cx, cy, m) {
   if (m.kind === 'town') for (const l of lamps) { const sx = l.x * TS + 8 - cx, sy = l.y * TS + 4 - cy; if (sx < -30 || sy < -30 || sx > VW + 30 || sy > VH + 30) continue; const gr = ctx.createRadialGradient(sx, sy, 0, sx, sy, 28); gr.addColorStop(0, `rgba(255,190,90,${0.28 * dark})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gr; ctx.fillRect(sx - 28, sy - 28, 56, 56); }
   ctx.globalCompositeOperation = 'source-over';
 }
-let lockUI = null;
+let lockUI = null, pauseUI = [], titleUI = [];
 function drawLock() {
   const p = player, L = p.lock; if (!L) return;
   const n = L.pins.length, lw = 24 + n * 26, lh = 58, pw = Math.min(VW - 8, lw + 92), ph = 82;
@@ -1950,7 +2157,7 @@ function drawHUD(di) {
   if (held('h') && !touchMode) { panel(VW / 2 - 116, VH / 2 - 64, 232, 140, 0.9); drawHelp(VW / 2 - 108, VH / 2 - 52); }
 }
 function drawHelp(x, y) {
-  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk to someone nearby'], ['P / Esc', 'pause'], ['M', 'mute']];
+  const L = [['WASD/Arrows', 'move'], ['Shift', 'sprint (stamina)'], ['E', 'knock / steal (hold) / talk / hide'], ['F', 'pick a lock (night / empty house)'], ['Space', 'struggle when grabbed'], ['Q', 'smoke bomb'], ['T', 'talk: chat, charm, bribe, insult'], ['P / Esc', 'pause'], ['M', 'mute']];
   L.forEach(([k, v], i) => { txt(k, x, y + i * 10, 5, '#f7d774'); txt(v, x + 64, y + i * 10, 5, '#ddd'); });
   txt('Residents watch you. Steal when they look away.', x, y + 76, 4, '#bbb');
   txt('Alarm = the Watch comes. Break line of sight.', x, y + 84, 4, '#bbb');
@@ -1999,7 +2206,10 @@ function drawTitle() {
   ctx.drawImage(PLAYER_SHEET.down[Math.floor(performance.now() / 200) % 2 ? 1 : 2], cxm - 8, ty + 38);
   const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'Pick locks at night or when nobody is home.', 'Saturday is market day: every house empties.', 'Beware of the dog: they bark at thieves.', 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
   lines.forEach((l, i) => txt(l, cxm, ty + 66 + i * 10, 5, '#ddd', 'center'));
-  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, ty + 70 + lines.length * 10, 7, '#fff', 'center');
+  const by = ty + 70 + lines.length * 10, any = [1, 2, 3].some(n => readSlot(n));
+  titleUI = [{ x: cxm - 70, y: by - 3, w: 140, h: 13, fn: startGame }].concat(any ? [{ x: cxm - 70, y: by + 13, w: 140, h: 12, fn: () => openSaves('load', 'title') }] : []);
+  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, by, 7, '#fff', 'center');
+  if (any) { F(ctx, cxm - 70, by + 13, 140, 12, 'rgba(255,255,255,0.1)'); txt(touchMode ? 'Load a saved game' : '[L] Load a saved game', cxm, by + 16, 5, '#f7d774', 'center', null); }
   if (!touchMode) txt('WASD move · Shift run · E act · Space struggle · Q smoke', cxm, VH - 14, 4, '#aaa', 'center');
 }
 
@@ -2014,6 +2224,13 @@ function frame(now) {
     gameTime += dt; for (const g of guards) updateGuard(g, dt);
     updateCamera(dt, 'town', 48 * TS + Math.sin(now / 9000) * 560, 34 * TS + Math.cos(now / 11000) * 360);
     if (hit('enter') || hit(' ') || hit('e')) startGame();
+    else if (hit('l')) openSaves('load', 'title');
+  } else if (state === 'chat') {
+    for (let i = 1; i <= 9; i++) if (hit(String(i))) { const o = chatOptions()[i - 1]; if (o) o.fn(); break; }
+    if (state === 'chat' && (hit('escape') || hit('t'))) chatClose();
+  } else if (state === 'saves') {
+    for (let n = 1; n <= 3; n++) if (hit(String(n))) { pickSlot(n); break; }
+    if (state === 'saves' && hit('escape')) closeSaves();
   } else if (state === 'menu') {
     if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('lockpicks', 20); if (hit('7')) buy('picks', 100);
     if (hit('escape') || hit('e')) closeMenu();
@@ -2021,6 +2238,8 @@ function frame(now) {
     for (const mm of msgs) mm.t -= dt * 0.3;
   } else {
     if (hit('p') || (hit('escape') && player.state !== 'picking')) paused = !paused;
+    else if (paused && hit('s')) openSaves('save', 'play');
+    else if (paused && hit('l')) openSaves('load', 'play');
     if (!paused) updateWorld(dt);
     updateCamera(paused ? 0 : dt, player.map, player.state === 'hidden' ? player.hay.x * TS + 8 : player.x, player.y - 8);
   }
@@ -2034,7 +2253,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
