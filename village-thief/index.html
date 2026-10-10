@@ -1603,7 +1603,7 @@ addEventListener('blur', () => keys.clear());
 const held = k => keys.has(k), hit = k => pressed.has(k);
 
 // touch
-let touchMode = false; const touch = { vx: 0, vy: 0, joy: null, btns: new Map() };
+let touchMode = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches); const touch = { vx: 0, vy: 0, joy: null, btns: new Map() };
 const BTN = () => [
   { id: 'act', k: 'e', x: VW - 30, y: VH - 38, r: 17, label: 'E' },
   { id: 'run', k: 'shift', x: VW - 68, y: VH - 24, r: 13, label: 'RUN' },
@@ -2114,7 +2114,7 @@ function render(dt) {
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   ctx.drawImage(m.canvas, 0, 0);
-  const di = dayInfo();
+  const di = state === 'title' ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
   if (m.kind === 'town') {
     for (const h of houses) if (h.doorOpenT > 0) { F(ctx, h.door.x * TS + 4, h.door.y * TS + 4, 8, 12, '#1a120b'); F(ctx, h.door.x * TS + 5, h.door.y * TS + 12, 6, 4, '#f3c47a'); }
@@ -2131,7 +2131,7 @@ function render(dt) {
   }
   // vision cones
   const range = guardRange();
-  for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
+  if (state !== 'title') for (const g of guards) if (g.map === camMap && Math.abs(g.x - cx - VW / 2) < VW && Math.abs(g.y - cy - VH / 2) < VH) {
     if (['hold', 'assist', 'escort_lead', 'escort_follow', 'grab'].includes(g.state)) continue;
     const col = g.state === 'chase' ? 'rgba(255,60,60,0.22)' : g.state === 'stunned' ? 'rgba(200,200,200,0.08)' : wanted ? 'rgba(255,170,60,0.18)' : 'rgba(255,250,200,0.10)';
     drawCone(g, g.unit === 'dog' ? range * 0.95 : range, g.unit === 'dog' ? Math.PI * 0.999 : Math.acos(0.62), col);
@@ -2139,8 +2139,8 @@ function render(dt) {
   for (const r of resHere) { if (r.state === 'woke' || r.state === 'prowl') drawCone(r, 110, Math.acos(0.55), 'rgba(255,90,90,0.17)'); if (r.state === 'host') drawCone(r, 120, Math.acos(0.55), r.mode === 'watch' ? 'rgba(255,90,90,0.17)' : 'rgba(255,250,200,0.11)'); }
   // characters
   const list = [];
-  if (state !== 'title' && p.state !== 'hidden') list.push(p);
-  for (const g of guards) if (g.map === camMap) list.push(g);
+  if (p.state !== 'hidden') list.push(p);
+  if (state !== 'title') for (const g of guards) if (g.map === camMap) list.push(g);
   if (camMap === 'town') list.push(...fences);
   if (camMap === 'jail') list.push(...jailNPCs);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
@@ -2373,21 +2373,33 @@ function drawMenu() {
   const cy = py + ph - 16, close = { x: px + 4, y: cy - 2, w: pw - 8, h: 14, fn: closeMenu }; menu.items.push(close);
   txt(touchMode ? 'Tap here to leave' : '[Esc] Leave', px + pw / 2, cy + 2, 5, '#aaa', 'center');
 }
-function drawTitle() {
-  panel(0, 0, VW, VH, 0.45);
-  const cxm = VW / 2, ty = Math.max(20, VH / 2 - 80);
-  txt('LIGHT FINGERS', cxm, ty, VW < 300 ? 12 : 18, '#f7d774', 'center', '#5a2d0a');
-  txt('a village of easy marks', cxm, ty + 26, 6, '#e8dcc0', 'center');
-  ctx.drawImage(PLAYER_SHEET.down[Math.floor(performance.now() / 200) % 2 ? 1 : 2], cxm - 8, ty + 38);
-  const lines = ['Knock on doors - villagers invite you in.', 'Steal while they look away.', "Get spotted? They'll call the Watch. RUN!", 'Pick locks at night or when nobody is home.', 'Saturday is market day: every house empties.', 'Shops open by day; the inn never closes.', 'Beware of the dog: they bark at thieves.', 'Sell loot to fences. Buy upgrades.', 'Caught? Two watchmen march you to jail.'];
-  lines.forEach((l, i) => txt(l, cxm, ty + 66 + i * 10, 5, '#ddd', 'center'));
-  const by = ty + 70 + lines.length * 10, any = [1, 2, 3].some(n => readSlot(n));
-  titleUI = [{ x: cxm - 70, y: by - 3, w: 140, h: 13, fn: startGame }].concat(any ? [{ x: cxm - 70, y: by + 13, w: 140, h: 12, fn: () => openSaves('load', 'title') }] : []);
-  if (Math.floor(performance.now() / 500) % 2) txt(touchMode ? 'TAP TO BEGIN' : 'PRESS ENTER TO BEGIN', cxm, by, 7, '#fff', 'center');
-  if (any) { F(ctx, cxm - 70, by + 13, 140, 12, 'rgba(255,255,255,0.1)'); txt(touchMode ? 'Load a saved game' : '[L] Load a saved game', cxm, by + 16, 5, '#f7d774', 'center', null); }
-  if (!touchMode) txt('WASD move · Shift run · E act · Space struggle · Q smoke', cxm, VH - 14, 4, '#aaa', 'center');
+const TITLE_NIGHT = { dark: 0.58, name: 'Night', day: 1, t: 0.7, weekday: 'Friday' };
+let titleSpot = null;
+// The thief on the doorstep of a lamplit mansion, about to knock.
+function titleScene() {
+  if (titleSpot) return titleSpot;
+  let best = null, bd = 1e9;
+  for (const h of houses) if (!h.shop) {
+    const d = Math.min(...lamps.map(l => Math.hypot(l.x - h.approach.x, l.y - h.approach.y))) - (h.type === 'mansion' ? 4 : 0);
+    if (d < bd) { bd = d; best = h; }
+  }
+  return titleSpot = { x: best.approach.x * TS + 8, y: best.approach.y * TS + 10 };
 }
-
+function drawTitle() {
+  const cxm = VW / 2;
+  // darken the sky behind the title and the street behind the prompt, leave the doorway lit
+  let gr = ctx.createLinearGradient(0, 0, 0, VH * 0.5); gr.addColorStop(0, 'rgba(6,7,18,0.92)'); gr.addColorStop(1, 'rgba(6,7,18,0)'); ctx.fillStyle = gr; ctx.fillRect(0, 0, VW, VH * 0.5);
+  gr = ctx.createLinearGradient(0, VH * 0.72, 0, VH); gr.addColorStop(0, 'rgba(6,7,18,0)'); gr.addColorStop(1, 'rgba(6,7,18,0.9)'); ctx.fillStyle = gr; ctx.fillRect(0, VH * 0.72, VW, VH * 0.28);
+  const size = Math.min(24, Math.floor((VW - 24) / 13)), ty = Math.round(VH * 0.12);
+  txt('LIGHT FINGERS', cxm + 1, ty + 2, size, '#3a1e06', 'center', null);
+  txt('LIGHT FINGERS', cxm, ty, size, '#f7d774', 'center', '#7a4a10');
+  txt('Knock. Smile. Steal.', cxm, ty + size + 12, 7, '#e8dcc0', 'center', '#000');
+  const any = [1, 2, 3].some(n => readSlot(n)), by = Math.round(VH - (any ? 44 : 32));
+  const cta = touchMode ? 'Tap to begin' : 'Press Enter';
+  titleUI = [{ x: cxm - 60, y: by - 4, w: 120, h: 16, fn: startGame }].concat(any ? [{ x: cxm - 50, y: by + 16, w: 100, h: 12, fn: () => openSaves('load', 'title') }] : []);
+  txt(cta, cxm, by, 8, '#ffffff', 'center', '#000');
+  if (any) txt(touchMode ? 'Load game' : 'L - Load game', cxm, by + 19, 5, '#cbb98a', 'center', '#000');
+}
 // =====================================================================
 //  MAIN LOOP
 // =====================================================================
@@ -2396,8 +2408,10 @@ function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.05); last = now;
   if (hit('m')) { muted = !muted; msg(muted ? 'Sound off' : 'Sound on', '#aaa'); }
   if (state === 'title') {
-    gameTime += dt; for (const g of guards) updateGuard(g, dt);
-    updateCamera(dt, 'town', 60 * TS + Math.sin(now / 9000) * 760, 44 * TS + Math.cos(now / 11000) * 480);
+    // nothing moves on the title: one still night scene
+    const sc = titleScene(), p = player;
+    p.map = 'town'; p.x = sc.x; p.y = sc.y; p.dir = 'up'; p.moving = false; p.bubble = null;
+    updateCamera(null, 'town', sc.x, sc.y - VH * 0.12);
     if (hit('enter') || hit(' ') || hit('e')) startGame();
     else if (hit('l')) openSaves('load', 'title');
   } else if (state === 'chat') {
