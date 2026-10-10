@@ -5,6 +5,7 @@
 - Rendering: integer pixel scale, everything drawn with canvas rects. Tile painters `GP[]` (ground) and `OP[]` (objects);
   maps are cached canvases built by `renderMap`.
 - Time: `DAY_LEN` = 900 s (a 15-minute day). Night is t 0.65-0.9 of the day.
+- No thieves' guild or gangs: the sewer robbers (`thieves`) just rob houses at night; fences only trade. `rats` is an empty array (the Mudford Rats were removed); the old guild job/heist/contest code is unreachable.
 - World: maps `town` (560×124 tiles: big town x<170, Deepwood, Mudford x 296-377, walled Kingsbridge x 392-557; generated west-to-east, new areas appended at the end of genTown so old houses keep their indexes), house interiors (`h<n>` keys), `jail`, `sewer`. NPCs move with `navTo`.
   World generation is seeded (`mulberry32`, `hash`), so every player gets the same town.
 - Main loop: `frame()` → `updateWorld(dt)` → `render(dt)`. Game states: `title`, `play`, `chat`, `shop`, `menu`, `saves`, ...
