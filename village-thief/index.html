@@ -3088,6 +3088,8 @@ function tapUI(v) {
     return true;
   }
   if (paused) { paused = false; return true; }
+  if (state === 'play' && online.chat) { const it = (online.items || []).find(inR); if (it) it.fn(); else online.chat = false; return true; }
+  if (state === 'play' && onlineUI && inR(onlineUI)) { online.chat = true; return true; }
   if (state === 'play' && player.state === 'picking' && lockUI) {
     const i = lockUI.pins.findIndex(inR);
     if (i >= 0) { player.lock.sel = i; lockPush(); return true; }
@@ -3716,9 +3718,9 @@ function drawEntity(e) {
   let sx = Math.round(e.x), sy = Math.round(e.y);
   if (e.shake > 0 || (e.kind === 'resident' && e.state === 'alarm')) sx += Math.random() < 0.5 ? -1 : 1;
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
-  const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e.sheet;
+  const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e.ghost && (e.st === 'escorted' || e.st === 'held') ? e.boundSheet : e.sheet;
   if (e === player && disguised() && !(player.sneak && player.state === 'free')) { ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22); F(ctx, sx - 5, sy - 23, 10, 2, '#3a2a1a'); F(ctx, sx - 3, sy - 26, 6, 3, '#3a2a1a'); if (e.dir !== 'up') F(ctx, sx - 3, sy - 13, 6, 3, '#6a4a2a'); return; }
-  if (e === player && player.sneak && player.state === 'free') {
+  if ((e === player && player.sneak && player.state === 'free') || (e.ghost && e.st === 'sneak')) {
     const img = sheet[e.dir][e.moving ? WALK[Math.floor(e.animT * 4) % 4] : 0], bob = e.moving ? Math.round(Math.sin(e.animT * 6)) * 0.5 : 0;
     ctx.drawImage(img, 0, 15, 16, 7, sx - 9, sy - 5, 18, 5); // bent knees, wide stance
     ctx.drawImage(img, 0, 0, 16, 15, sx - 8, sy - 19 + bob, 16, 15); // body hunched low
@@ -3817,6 +3819,7 @@ function render(dt) {
   if (!titleish) for (const t of thieves) if (t.map === camMap) list.push(t);
   if (camMap === 'town') list.push(...yardDogs);
   if (!titleish) for (const r of rats) if (r.map === camMap) list.push(r);
+  if (!titleish) for (const g of online.ghosts.values()) if (g.map === camMap && g.st !== 'hidden') list.push(g);
   if (camMap === 'jail') list.push(...jailNPCs);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
   for (const d of pets) if (d.map === camMap) list.push(d);
@@ -3862,8 +3865,9 @@ function render(dt) {
   if (p.state === 'stealing' || p.state === 'pickpocket') { const w = 18, x = Math.round(p.x - w / 2), y = Math.round(p.y - 30); F(ctx, x - 1, y - 1, w + 2, 5, '#111'); F(ctx, x, y, Math.round(w * Math.min(1, p.stealT / (p.state === 'pickpocket' ? 1.2 : stealTime()))), 3, '#f7d774'); }
   { const z = Math.floor(gameTime * 1.5) % 3, done = {}; for (const r of resHere) if (r.state === 'sleep' && !done[r.bed.x]) { done[r.bed.x] = 1; txt('z'.repeat(z + 1), r.bed.x * TS + 10, r.bed.y * TS - 4 - z * 2, 5, '#cfd8ff'); } }
   for (const r of resHere) if (['woke', 'prowl'].includes(r.state) && !r.bubble) txt('?', r.x - 2, r.y - 34, 8, '#ffb040');
+  if (!titleish) drawOnlineTags(camMap);
   // name tags for anyone close by
-  if (state === 'play' && p.state === 'free') for (const e of list.filter(e => e !== p && e.name && !e.bubble && Math.hypot(e.x - p.x, e.y - p.y) < 40).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 3)) {
+  if (state === 'play' && p.state === 'free') for (const e of list.filter(e => e !== p && e.name && !e.ghost && !e.bubble && Math.hypot(e.x - p.x, e.y - p.y) < 40).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 3)) {
     ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(e.name).width) + 4, x = Math.round(e.x - w / 2), y = Math.round(e.y - 31);
     F(ctx, x, y, w, 7, 'rgba(10,10,20,0.7)'); txt(e.name, x + 2, y + 2, 4, e.kind === 'guard' ? '#9ab8ff' : e === p.talk ? '#f7d774' : '#ffffff', 'left', null);
   }
@@ -4057,8 +4061,10 @@ function drawHUD(di) {
     const j = town.jail.door; dot(j.x, j.y, '#5a8aff', true);
     if (alertPing && Math.floor(gameTime * 4) % 2) dot(alertPing.x, alertPing.y, '#ff4040', true);
     if (wanted) for (const g of guards) if (g.state === 'chase') { const tp = townPos(g); dot(Math.floor(tp.x / TS), Math.floor(tp.y / TS), '#ff4040'); }
+    for (const g of online.ghosts.values()) { const tp = townPos(g); dot(Math.floor(tp.x / TS), Math.floor(tp.y / TS), g.wanted ? '#ff8a6b' : '#5af07a', true); }
     const pp = townPos(p); if (Math.floor(gameTime * 3) % 3) dot(Math.floor(pp.x / TS), Math.floor(pp.y / TS), '#e03030', true);
   }
+  if (state === 'play' && !paused) drawOnlineHUD((!narrow || state === 'play') && p.map === 'town' ? my + 13 + mh + 6 : my + 14);
   // visit meters
   { const hm = maps[p.map]; if (hm.kind === 'house' && hm.house.alarmT <= 0) {
     const h = hm.house, hosting = h.residents.some(r => r.state === 'host'), sleeping = h.residents.some(r => r.state === 'sleep');
@@ -4180,6 +4186,99 @@ function drawTitle() {
   labels.forEach((l, i) => { txt(l, lx, by + 19, 5, '#cbb98a', 'left', '#000'); titleUI.push({ x: lx - 3, y: by + 15, w: widths[i] + 6, h: 12, fn: links[i][2] }); lx += widths[i] + gap; });
 }
 // =====================================================================
+//  ONLINE: everyone with the game open right now shares the same town.
+//  Each player runs their own guards and townsfolk; what travels is where every thief is
+//  (presence) and quick-chat lines. With no connection the game simply plays solo.
+// =====================================================================
+const QUICK = ['Hey there!', 'Follow me', 'Guards! Watch out!', 'Wait here', 'Nice haul!', 'RUN!', 'Help me out!', 'Meet in the sewers'];
+const online = { room: null, user: null, ghosts: new Map(), sendT: 0, last: '', nameT: 0, chat: false, canChat: true };
+const ghostSheets = {};
+function ghostSheet(id, bound) { const k = id + (bound ? '!' : ''); if (!ghostSheets[k]) { const sk = THIEF_SKINS.find(t => t.id === id) || THIEF_SKINS[0]; ghostSheets[k] = thiefSheet(bound, sk.pal); } return ghostSheets[k]; }
+const onlineCount = () => online.ghosts.size;
+function onlinePeers(change) {
+  const seen = new Set();
+  for (const pr of change.peers) {
+    const pz = pr.presence || {};
+    if (pr.sameTab || pr.kind !== 'viewer' || pz.g !== 'lf1' || typeof pz.m !== 'string' || !maps[pz.m]) continue;
+    seen.add(pr.peer);
+    let g = online.ghosts.get(pr.peer);
+    const x = +pz.x || 0, y = +pz.y || 0;
+    if (!g) {
+      g = { ghost: true, peer: pr.peer, by: pr.by || (typeof pz.id === 'string' ? pz.id : null), label: 'Thief', x, y, map: pz.m, dir: 'down', animT: 0, moving: false, bubble: null };
+      online.ghosts.set(pr.peer, g); online.nameT = 0;
+      if (state === 'play') msg('Another thief has slipped into town.', '#7af0a0');
+    }
+    if (g.map !== pz.m || Math.hypot(g.x - x, g.y - y) > 80) { g.x = x; g.y = y; } // a door or a long way: jump there
+    g.map = pz.m; g.tx = x; g.ty = y; g.dir = ['up', 'down', 'left', 'right'].includes(pz.d) ? pz.d : 'down';
+    g.moving = !!pz.mv; g.st = String(pz.s || 'free'); g.wanted = !!pz.w; g.skin = String(pz.sk || 'teal');
+    g.sheet = ghostSheet(g.skin, false); g.boundSheet = ghostSheet(g.skin, true);
+  }
+  for (const [k, g] of online.ghosts) if (!seen.has(k)) { online.ghosts.delete(k); if (state === 'play') msg(`${g.label} left town.`, '#9aa8b8'); }
+}
+function onlineChat(m) {
+  if (m.sameTab) return; // ours was shown when we sent it
+  const i = m.data && m.data.i, g = online.ghosts.get(m.peer);
+  if (!Number.isInteger(i) || !QUICK[i] || !g) return;
+  say(g, QUICK[i], 3.5); msg(`${g.label}: "${QUICK[i]}"`, '#7af0a0');
+}
+function sendQuick(i) {
+  online.chat = false; if (!QUICK[i]) return;
+  say(player, QUICK[i], 3.5);
+  if (!online.room || !online.room.connected()) { msg('Nobody online to hear you.', '#9aa8b8'); return; }
+  online.room.emit('chat', { i }).catch(e => { if (e && e.code === 'not_permitted') { online.canChat = false; msg('You can only watch here - ask the owner for edit access to chat.', '#ffb36b'); } });
+}
+function updateOnline(dt) {
+  for (const g of online.ghosts.values()) {
+    if (g.tx !== undefined) { const k = Math.min(1, dt * 10); g.x += (g.tx - g.x) * k; g.y += (g.ty - g.y) * k; }
+    if (g.moving) g.animT += dt;
+    if (g.bubble) { g.bubble.t -= dt; if (g.bubble.t <= 0) g.bubble = null; }
+  }
+  const room = online.room; if (!room) return;
+  online.sendT -= dt;
+  if (online.sendT <= 0) {
+    online.sendT = 0.1; const p = player, play = state !== 'title' && state !== 'wardrobe' && state !== 'achievements';
+    const pz = play ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, id: online.myId || null } : { g: null };
+    const key = JSON.stringify(pz);
+    if (key !== online.last) { online.last = key; room.presence(pz).catch(() => { }); }
+  }
+  online.nameT -= dt;
+  if (online.nameT <= 0 && online.user && online.ghosts.size) {
+    online.nameT = 3; const ids = [...online.ghosts.values()].map(g => g.by).filter(Boolean);
+    if (ids.length) online.user.profiles(ids).then(ps => { for (const g of online.ghosts.values()) if (g.by && ps[g.by] && ps[g.by].name) g.label = ps[g.by].name.split(' ')[0].slice(0, 14); }).catch(() => { });
+  }
+}
+function drawOnlineTags(camMap) {
+  for (const g of online.ghosts.values()) if (g.map === camMap && g.st !== 'hidden' && !g.bubble) {
+    const t = g.wanted ? g.label + ' - WANTED' : g.label;
+    ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 4, x = Math.round(g.x - w / 2), y = Math.round(g.y - 31);
+    F(ctx, x, y, w, 7, 'rgba(10,30,16,0.75)'); txt(t, x + 2, y + 2, 4, g.wanted ? '#ff8a6b' : '#7af0a0', 'left', null);
+  }
+}
+let onlineUI = null;
+function drawOnlineHUD(y) {
+  const n = onlineCount(); onlineUI = null;
+  if (!online.room) return;
+  const t = n ? `${n + 1} thieves online` : 'Online - nobody else here yet';
+  ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 8 + (touchMode && online.canChat ? 22 : 0), x = VW - w - 4;
+  panel(x, y, w, 9, 0.75); F(ctx, x + 3, y + 3, 3, 3, online.room.connected() ? '#5af07a' : '#888'); txt(t, x + 8, y + 2, 4, '#cfe8d8', 'left', null);
+  if (touchMode && online.canChat) { F(ctx, x + w - 21, y + 1, 19, 7, '#2a5a3a'); txt('CHAT', x + w - 19, y + 2, 4, '#ffffff', 'left', null); onlineUI = { x: x + w - 21, y, w: 19, h: 9 }; }
+  if (!online.chat) { if (!touchMode && n && online.canChat) { panel(VW - 52, y + 10, 48, 8, 0.6); txt('[Y] quick chat', VW - 6, y + 12, 4, '#a8d8b8', 'right', null); } return; }
+  ctx.font = '5px ' + FONT; const pw = Math.ceil(Math.max(...QUICK.map(q => ctx.measureText('8. ' + q).width))) + 10, ph = QUICK.length * 9 + 14, px = VW - pw - 4, py = y + 12; panel(px, py, pw, ph, 0.9);
+  txt('Say to everyone:', px + 4, py + 3, 4, '#7af0a0', 'left', null); online.items = [];
+  QUICK.forEach((q, i) => { const iy = py + 11 + i * 9; txt(`${touchMode ? '' : (i + 1) + '. '}${q}`, px + 4, iy + 1, 5, '#ffffff', 'left', null); online.items.push({ x: px, y: iy, w: pw, h: 9, fn: () => sendQuick(i) }); });
+}
+(async () => {
+  try {
+    if (!window.claude || !window.claude.use) return;
+    const [room, user] = await Promise.all([window.claude.use('room'), window.claude.use('user').catch(() => null)]);
+    if (!room) return;
+    online.user = user; try { online.myId = user ? await user.id() : null; } catch (e) { }
+    online.room = room;
+    room.onPeers(onlinePeers, () => { online.room = null; online.ghosts.clear(); });
+    room.on('chat', onlineChat);
+  } catch (e) { online.room = null; }
+})();
+// =====================================================================
 //  MAIN LOOP
 // =====================================================================
 let last = performance.now();
@@ -4219,13 +4318,16 @@ function frame(now) {
     for (const mm of msgs) mm.t -= dt * 0.3;
   } else {
     if (paused && pauseView === 'history') { if (hit('n') || hit('escape') || hit('p')) pauseView = null; if (hit('arrowup') || hit('w')) histScroll += 3; if (hit('arrowdown') || hit('s')) histScroll = Math.max(0, histScroll - 3); }
-    else if (hit('p') || (hit('escape') && player.state !== 'picking')) { paused = !paused; pauseView = null; }
+    else if (hit('p') || (hit('escape') && player.state !== 'picking' && !online.chat)) { paused = !paused; pauseView = null; }
     else if (paused && hit('n')) { pauseView = 'history'; histScroll = 0; }
     else if (paused && hit('s')) openSaves('save', 'play');
     else if (paused && hit('l')) openSaves('load', 'play');
+    if (!paused && online.chat) { for (let i = 1; i <= QUICK.length; i++) if (hit(String(i))) { sendQuick(i - 1); break; } if (hit('y') || hit('escape')) { online.chat = false; pressed.delete('escape'); } }
+    else if (!paused && hit('y') && online.room && online.canChat) online.chat = true;
     if (!paused) updateWorld(dt);
     updateCamera(paused ? 0 : dt, player.map, player.state === 'hidden' ? player.hay.x * TS + 8 : player.x, player.y - 8);
   }
+  updateOnline(dt);
   render(dt);
   pressed.clear();
   requestAnimationFrame(frame);
@@ -4236,7 +4338,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, get pauseView() { return pauseView; }, rats, get up() { return up; }, castLine, landFish, fishSpot, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
