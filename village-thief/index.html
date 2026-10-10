@@ -1153,7 +1153,7 @@ function updateThief(t, dt) {
       const m = maps[t.map];
       if (!m.house) { t.state = 'home'; break; }
       if (!t.loot) {
-        const opts = [...m.loot.values()].filter(e => !e.taken && !e.claimed && freeBeside(m, e.x, e.y));
+        const opts = [...m.loot.values()].filter(e => !e.taken && !e.claimed && !e.contract && freeBeside(m, e.x, e.y));
         if (!opts.length || t.grabs <= 0 || !night) { t.state = 'home'; t.path = null; t.mark = null; break; }
         t.loot = pick(opts); t.loot.claimed = t; t.spot = freeBeside(m, t.loot.x, t.loot.y); t.work = 0;
       }
@@ -1270,6 +1270,7 @@ const jailNPCs = [
   ...INMATES.map(([name, k, row, lines], i) => ({ kind: 'decor', name: 'Prisoner ' + name, map: 'jail', x: (2 + 4 * k) * TS + 8, y: (row === 'top' ? 3 : 11) * TS + 12,
     dir: row === 'top' ? 'down' : 'up', sheet: INMATE_SHEETS[i % INMATE_SHEETS.length], animT: 0, bubble: null, lines })),
 ];
+let rep = 0, job = null; // thief reputation among the sewer crowd, and the job you've taken on
 let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, curDay = 1;
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
@@ -1277,7 +1278,7 @@ function newGame() {
   player = { cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
-  up = { sack: false, boots: false, tongue: false, picks: false }; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
+  up = { sack: false, boots: false, tongue: false, picks: false }; rep = 0; job = null; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
   guards = []; for (let i = 0; i < BOUNTY_FORCE[0]; i++) makeUnit('guard', i, true);
   makePosts(); for (const E of estates) { E.shut = true; E.invited = false; E.banned = false; }
   for (const h of houses) {
@@ -1300,6 +1301,36 @@ function say(e, text, dur = 2.6) {
 }
 const sackCap = () => up.sack ? 10 : 6;
 const lootValue = () => player.loot.reduce((a, b) => a + b.value, 0);
+// ---------- thief reputation and jobs ----------
+const REP_RANKS = [[0, 'Nobody'], [1, 'Pickpocket'], [3, 'Footpad'], [6, 'Prowler'], [10, 'Cat Burglar'], [15, 'Master Thief'], [25, 'King of the Sewers']];
+const rankIdx = () => { let k = 0; REP_RANKS.forEach(([n], i) => { if (rep >= n) k = i; }); return k; };
+const rankName = () => REP_RANKS[rankIdx()][1];
+const fenceBonus = () => 1 + rankIdx() * 0.05; // fences pay 5% more per rank
+const saleValue = () => Math.round(player.loot.filter(i => !i.job).reduce((a, b) => a + b.value, 0) * fenceBonus());
+const jobEntry = j => houses[j.h].floors[j.f].loot.get(j.key);
+function offerJob(t) {
+  const r = rankIdx(), opts = [];
+  for (const h of houses) {
+    if (h.shop || h.alarmT > 0 || (h.estate && r < 4) || (h.type === 'mansion' && r < 3)) continue;
+    h.floors.forEach((f, fi) => { for (const [key, e] of f.loot) if (!e.taken && !e.claimed && e.item.value >= 12) opts.push({ h, fi, key, e }); });
+  }
+  if (!opts.length) return 'Nothing going right now. Come back later.';
+  const { h, fi, key, e } = pick(opts), floor = h.floors[fi];
+  job = { giver: t.i, h: h.idx, f: fi, key, name: e.item.name, family: h.family, upstairs: !!floor.upstairs,
+    pay: Math.round(e.item.value * 1.5 + 15 + r * 5), rep: h.estate ? 3 : h.type === 'mansion' ? 2 : 1, got: false };
+  e.contract = true;
+  msg(`JOB: steal the ${job.name} from the ${job.family}s'${job.upstairs ? ' (upstairs)' : ''} for ${t.name}. Pays ${job.pay}g.`, '#c9a0ff');
+  return `There's a ${job.name} in the ${job.family} house${job.upstairs ? ', upstairs' : ''}. Bring it to me and it's ${job.pay}g. Don't sell it to the fences!`;
+}
+function dropJob() { if (!job) return; if (!job.got) { const e = jobEntry(job); if (e) e.contract = false; } player.loot = player.loot.filter(i => !i.job); job = null; }
+function finishJob(t) {
+  const before = rankIdx(); player.loot = player.loot.filter(i => !i.job);
+  gold += job.pay; totalEarned += job.pay; rep += job.rep; stat('jobs'); SFX.coins();
+  msg(`Job done! ${t.name} pays ${job.pay}g. Reputation +${job.rep}.`, '#c9a0ff');
+  if (rankIdx() > before) msg(`Word gets around the sewers: you're a ${rankName()} now!${rankIdx() === 3 ? ' Mansion jobs open up.' : rankIdx() === 4 ? ' Estate jobs open up.' : ''}`, '#f7d774');
+  job = null;
+  return pick(['Lovely. Pleasure doing business.', "That's the one! You've got talent.", 'Nice work. The others will hear of this.']);
+}
 function dayInfo() {
   const t = ((gameTime + 60) % DAY_LEN) / DAY_LEN; let dark = 0, name = 'Day';
   if (t < 0.55) { dark = 0; name = 'Day'; } else if (t < 0.65) { dark = (t - 0.55) / 0.1 * 0.62; name = 'Dusk'; }
@@ -1711,7 +1742,7 @@ function readSlot(n) { try { const raw = localStorage.getItem(SAVE_KEY(n)); retu
 function snapshot() {
   const p = player, d = dayInfo();
   return { v: 3, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
-    est: estates.map(E => [E.invited ? 1 : 0, E.banned ? 1 : 0]),
+    est: estates.map(E => [E.invited ? 1 : 0, E.banned ? 1 : 0]), rep, job,
     player: { map: p.map, x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks, cakes: p.cakes, rings: p.rings, room: p.room },
     houses: houses.map(h => ({ c: h.cooldown, r: h.residents.map(r => [r.friend || 0, r.sawYou ? 1 : 0]), pet: h.pet ? (h.pet.friend || 0) : null,
       loot: h.floors.map(f => [...f.loot.values()].map(e => e.taken ? [1, Math.round(e.t)] : [0, e.item.name, e.item.value])) })) };
@@ -1737,6 +1768,7 @@ function loadSlot(n) {
     if (h.pet && hs.pet !== null) h.pet.friend = hs.pet;
     hs.loot.forEach((list, fi) => { const f = h.floors[fi]; if (!f) return; [...f.loot.values()].forEach((e, k) => { const s = list[k]; if (!s) return; if (s[0]) { e.taken = true; e.t = s[1]; } else { e.taken = false; e.item = { name: s[1], value: s[2] }; } }); });
   });
+  rep = d.rep || 0; job = d.job || null; if (job && !job.got) { const e = jobEntry(job); if (e && !e.taken) e.contract = true; else job = null; }
   curDay = dayInfo().day; syncForce();
   state = 'play'; saves = null; paused = false;
   updateCamera(null, p.map, p.x, p.y - 8);
@@ -1792,7 +1824,7 @@ function chatOpen(t) {
   if (t.kind === 'resident') hello = wanted ? 'Stay away from me! Thief!' : t.state === 'sleep' ? 'Zzz...' : isEnemy(t) ? 'What do YOU want?' : isFriend(t) ? 'Oh, hello my friend!' : pick(t.child ? TALK.kid : t.state === 'host' ? TALK.host : t.state === 'market' ? TALK.market : TALK.resident);
   else if (t.kind === 'guard') hello = t.unit === 'dog' ? 'Grrrrr...' : wanted ? 'YOU! Stop right there!' : pick(bounty >= 2 ? TALK.guardSus : TALK.guard);
   else if (t.kind === 'pet') hello = (t.friend || 0) >= 40 ? '*wags tail happily*' : t.house.residents.some(r => r.state === 'host') ? pick(TALK.pet) : 'Grrr...';
-  else hello = pick(TALK[t.kind] || (t.kind === 'steward' ? ['Good day. I keep the guest list for the great houses.'] : TALK.decor));
+  else hello = pick((t.kind === 'thief' ? [rep ? `Well if it isn't the ${rankName()}.` : 'Who are you? Never seen you down here.', ...TALK.thief] : null) || TALK[t.kind] || (t.kind === 'steward' ? ['Good day. I keep the guest list for the great houses.'] : TALK.decor));
   state = 'chat'; chat = { t, reply: hello, items: [] }; stat('chats');
 }
 function chatClose() { state = 'play'; chat = null; }
@@ -1960,6 +1992,9 @@ function chatOptions() {
     add('Small talk', () => { chat.reply = pick(TALK.vendor); });
     add('Buy an apple (2g) - restores stamina', () => { if (!pay(2)) return; player.stamina = 100; player.tired = false; chat.reply = 'Crisp and sweet! Enjoy.'; }, 2);
   } else if (t.kind === 'thief') {
+    if (job && job.giver === t.i && job.got) add(`Hand over the ${job.name} (+${job.pay}g)`, () => { chat.reply = finishJob(t); });
+    else if (job && job.giver === t.i) { add('About that job...', () => { chat.reply = `The ${job.name}, in the ${job.family} house${job.upstairs ? ', upstairs' : ''}. ${job.pay}g when you bring it.`; }); add('Drop the job', () => { dropJob(); chat.reply = 'Pfft. Thought you had nerve.'; }); }
+    else if (!job) add('Any jobs going?', () => { chat.reply = offerJob(t); });
     add('Small talk', () => { chat.reply = pick(TALK.thief); });
     add('Ask for a tip', () => {
       const h = pick(houses.filter(x => !x.estate && !x.shop && [...x.map.loot.values()].some(e => !e.taken && e.item.value >= 30)));
@@ -2022,7 +2057,8 @@ function startSteal(e) {
   player.state = 'stealing'; player.stealT = 0; player.stealTarget = e;
 }
 function finishSteal() {
-  const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0; p.loot.push(e.item); h.visitStolen++;
+  const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0; h.visitStolen++;
+  if (e.contract) { e.contract = false; job.got = true; p.loot.push(Object.assign({ job: true }, e.item)); msg(`Got the ${e.item.name}! Take it to ${thieves[job.giver].name} in the sewers.`, '#c9a0ff'); } else p.loot.push(e.item);
   SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free';
   stat('steal');
   if (isNight()) stat('nightSteal');
@@ -2054,9 +2090,9 @@ function openFence(f) {
   state = 'menu'; menu = { fence: f, items: [] }; say(f, pick(['What have you got for me?', 'Psst. Quick, show me.', 'Nice and quiet now...']));
 }
 function sellAll() {
-  const v = lootValue();
-  if (!v) { say(menu.fence, "You've got nothing to sell!"); SFX.deny(); return; }
-  gold += v; totalEarned += v; player.loot = []; SFX.coins(); msg(`Sold your loot for ${v}g`, '#f7d774');
+  const v = saleValue();
+  if (!v) { say(menu.fence, player.loot.length ? "That one's spoken for. I won't touch it." : "You've got nothing to sell!"); SFX.deny(); return; }
+  gold += v; totalEarned += v; player.loot = player.loot.filter(i => i.job); SFX.coins(); msg(`Sold your loot for ${v}g${rankIdx() ? ` (${rankName()} bonus)` : ''}`, '#f7d774');
   stat('sold', v); if (v >= 300) unlock('big_score');
   say(menu.fence, pick(['Pleasure doing business.', 'Ill-gotten gains... my favourite.', "I'll find a buyer. Eventually."]));
 }
@@ -2119,6 +2155,7 @@ function finishEscort() {
     const p = player, j = maps.jail; p.map = 'jail'; p.x = j.cellSpot.x * TS + 8; p.y = j.cellSpot.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
     j.cellOpen = false; p.state = 'jailed'; arrests++; stat('jailed');
     const lost = lootValue(), fine = Math.floor(gold * 0.2); gold -= fine; p.loot = [];
+    if (job && job.got) { msg(`The Watch took the ${job.name}. The job's off.`, '#ff8a6b'); job = null; }
     p.jailT = Math.min(90, 15 + bounty * 12 + arrests * 3); p.sentence = p.jailT; msg(`Sentenced to ${Math.round(p.jailT)}s in the cells${bounty ? ` (bounty ${bounty})` : ''}.`, '#ffb36b');
     SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g) and fined ${fine}g.`, '#ff6b6b');
     say(jailNPCs[0], pick(jailNPCs[0].lines), 3);
@@ -2747,7 +2784,7 @@ function render(dt) {
     if (di.dark > 0.1) for (const w of windows) F(ctx, w.x * TS + 4, w.y * TS + 3, 8, 8, `rgba(255,200,90,${di.dark * 0.9})`);
   } else {
     for (const e of m.loot.values()) if (e.taken) EMPTY[m.tiles[e.y * m.w + e.x]](ctx, e.x * TS, e.y * TS);
-      else if (e.hint && Math.floor(gameTime * 4) % 2) { F(ctx, e.x * TS + 7, e.y * TS - 3, 2, 6, '#fff6b0'); F(ctx, e.x * TS + 5, e.y * TS - 1, 6, 2, '#fff6b0'); }
+      else if ((e.hint || e.contract) && Math.floor(gameTime * 4) % 2) { F(ctx, e.x * TS + 7, e.y * TS - 3, 2, 6, '#fff6b0'); F(ctx, e.x * TS + 5, e.y * TS - 1, 6, 2, '#fff6b0'); }
     for (let x = 0; x < m.w; x++) if (m.tiles[m.w + x] === T.FIRE) { const f = Math.floor(gameTime * 10) % 3; F(ctx, x * TS + 6 + f % 2, 1 * TS + 9 - f, 2, 2, '#ffe08a'); }
     if (m.kind === 'jail') for (const d of m.cellDoors) if (!(m.cellOpen && d.x === m.cell.x && d.y === m.cell.y)) { OP[T.BARS](ctx, d.x * TS, d.y * TS); F(ctx, d.x * TS + 6, d.y * TS + 7, 4, 3, '#c9a04a'); }
   }
@@ -2961,14 +2998,16 @@ function coinIcon(x, y) { F(ctx, x + 1, y, 4, 6, '#e8b830'); F(ctx, x, y + 1, 6,
 function sackIcon(x, y) { F(ctx, x + 1, y + 2, 5, 5, '#9c7a4a'); F(ctx, x + 2, y + 1, 3, 1, '#7a5a34'); F(ctx, x + 2, y, 3, 1, '#9c7a4a'); }
 function drawHUD(di) {
   const p = player, narrow = VW < 300;
-  panel(4, 4, 112, 64);
+  panel(4, 4, 112, 74);
   coinIcon(9, 9); txt(`${gold}g`, 18, 9, 6, '#f7d774');
   sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
   txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc');
+  txt(`REP ${rankName()}`, 9, 66, 5, rep ? '#c9a0ff' : '#888');
+  if (job) { const jt = `JOB: ${job.name} (${job.family}s)${job.got ? ' - deliver!' : ''}`; panel(4, 90, Math.min(VW - 8, 10 + jt.length * 4), 11, 0.8); txt(jt, 9, 93, 4, '#c9a0ff'); }
   if (p.sneak) { panel(VW / 2 - 30, VH - 26 - (touchMode ? 76 : 0), 60, 12, 0.75); txt('SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, '#9ab0ff', 'center', null); }
-  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 71, 4, '#9df0a0');
+  if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 81, 4, '#9df0a0');
   txt(`picks x${p.picks}`, 9, 56, 5, p.picks ? '#ccc' : '#ff8a6b'); txt(`watch ${guards.filter(g => !g.leaving && !g.post).length}`, 70, 56, 5, bounty ? '#ff9a9a' : '#aaa');
   txt('BOUNTY', 9, 47, 5, bounty ? '#ff6b6b' : '#888');
   for (let i = 0; i < 5; i++) { const x = 50 + i * 10, on = i < bounty; F(ctx, x, 46, 7, 7, on ? '#2a0a0a' : '#222'); F(ctx, x + 1, 47, 5, 5, on ? (bounty >= 4 && Math.floor(gameTime * 4) % 2 ? '#ff7a40' : '#e03030') : '#3a3a3a'); if (on) { F(ctx, x + 2, 48, 1, 1, '#000'); F(ctx, x + 4, 48, 1, 1, '#000'); } }
@@ -2979,6 +3018,7 @@ function drawHUD(di) {
     panel(mx - 2, my + 13, mw + 4, mh + 4); ctx.drawImage(miniCv, mx, my + 15, mw, mh);
     const dot = (tx, ty, col, big) => { if (big) F(ctx, mx + mm(tx) - 1, my + 15 + mm(ty) - 1, 3, 3, '#000'); F(ctx, mx + mm(tx), my + 15 + mm(ty), 1, 1, col); };
     for (const mh of manholes) dot(mh.x, mh.y, '#f7d774', true); // the way down to the fences
+    if (job && !job.got && Math.floor(gameTime * 3) % 2) { const d = houses[job.h].door; dot(d.x, d.y, '#c9a0ff', true); }
     for (const E of estates) dot(E.gate[0].x, E.gate[0].y, E.invited ? '#9df0a0' : '#c070ff', true);
     const j = town.jail.door; dot(j.x, j.y, '#5a8aff', true);
     if (alertPing && Math.floor(gameTime * 4) % 2) dot(alertPing.x, alertPing.y, '#ff4040', true);
@@ -2993,7 +3033,7 @@ function drawHUD(di) {
       panel(VW / 2 - 50, y, 100, 16, 0.8); txt(label, VW / 2, y + 2, 5, hosting ? '#f0c040' : '#9ab0ff', 'center');
       F(ctx, VW / 2 - 44, y + 10, 88, 4, '#222'); F(ctx, VW / 2 - 43, y + 11, Math.round(86 * clamp(v, 0, 100) / 100), 2, v < 50 ? (hosting ? '#8bd46a' : '#7a8ad8') : v < 80 ? '#f0c040' : '#f05040');
     }
-    if (hm.upstairs) txt('UPSTAIRS', 9, 80, 4, '#cfd8ff');
+    if (hm.upstairs) txt('UPSTAIRS', 9, 87, 4, '#cfd8ff');
   } }
   // status banners
   if (wanted) {
@@ -3044,7 +3084,7 @@ function drawMenu() {
   const v = lootValue();
   txt(`Your sack: ${player.loot.length} item${player.loot.length === 1 ? '' : 's'} worth ${v}g`, px + 6, py + 19, 5, '#ddd');
   const opts = [
-    ['1', `Sell everything (+${v}g)`, '', () => sellAll(), v > 0],
+    ['1', `Sell everything (+${saleValue()}g)`, '', () => sellAll(), saleValue() > 0],
     ['2', 'Bigger Sack (10 slots)', up.sack ? 'OWNED' : '120g', () => buy('sack', 120), !up.sack && gold >= 120],
     ['3', 'Swift Boots (+speed)', up.boots ? 'OWNED' : '150g', () => buy('boots', 150), !up.boots && gold >= 150],
     ['4', 'Silver Tongue (less suspicion)', up.tongue ? 'OWNED' : '130g', () => buy('tongue', 130), !up.tongue && gold >= 130],
@@ -3148,7 +3188,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
