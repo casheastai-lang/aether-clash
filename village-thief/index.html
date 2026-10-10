@@ -3376,21 +3376,33 @@ function chatOptions() {
       for (const g of gang) if (g.state === 'base' || g.state === 'follow') { for (const [k, want] of [['rations', 3], ['picks', 3], ['smoke', g.skill >= 2 ? 1 : 0]]) { const n = Math.min(Math.max(0, want - g.kit[k]), supplies[k]); supplies[k] -= n; g.kit[k] += n; } if (g.kit.rations && g.kit.picks) g.request = null; }
       SFX.buy(); msg('You hand out supplies to the gang.', '#9df0a0'); });
     if (orders.length) add(`Deliveries on the way: ${orders.length}`, () => { chat.reply = orders.map(o => o.what).join('; '); });
+  } else if (t.kind === 'planner' && chat.pickMember) { // who goes (paged: a manor gang is ten strong)
+    const free = gang.filter(g => g.state === 'base' || g.state === 'follow'), per = 6, pages = Math.max(1, Math.ceil(free.length / per)), pg = (chat.mpage || 0) % pages;
+    for (const g of free.slice(pg * per, pg * per + per)) add(`${g.name} (skill ${g.skill}${g.hungry ? ', hungry' : ''}${g.kit.picks ? '' : ', no picks'})`, () => { chat.pickFor = g; chat.pickMember = false; chat.page = 0; chat.reply = chat.withMe ? `Which house do you and ${g.name} hit together?` : `Which house should ${g.name} hit? (They keep ${g.cut}%.)`; });
+    if (pages > 1) add(`More of the gang (${pg + 1}/${pages})`, () => { chat.mpage = pg + 1; });
+    add('Back', () => { chat.pickMember = false; chat.reply = 'What\'s the plan?'; });
+    return o;
   } else if (t.kind === 'planner') {
-    if (freeCrew().length >= 3) add('Plan a big heist with the whole crew', () => { chat.bigHeist = true; chat.reply = 'The big ones. Pick the target - they go at dark, back by dawn.'; });
-    else if (bigJob) add(`Heist under way: ${BIG_TARGETS[bigJob.t].name}`, () => { chat.reply = `${bigJob.crew.join(', ')}. ${Math.round(bigJob.odds * 100)}% odds.`; });
-    add('Order supplies (delivered here)', () => { chat.ordering = true; chat.reply = 'The courier comes after dark and leaves it in the basement storeroom.'; });
+    const free = gang.filter(g => g.state === 'base' || g.state === 'follow'), away = gang.length - free.length;
     if (!gang.length) chat.reply = 'No gang yet. Vex the Broker hires out hands on the black market, down in the sewers.';
-    for (const g of gang) {
-      if (g.state === 'job') add(`${g.name}: out on a job`, () => { chat.reply = `${g.name} is robbing the ${houses[g.job.h].family} house.`; });
-      else if (g.state === 'jail') add(`${g.name}: locked up until tomorrow`, () => { chat.reply = 'Nothing to do but wait.'; });
-      else if (g.state === 'heist') add(`${g.name}: out on the big heist`, () => { chat.reply = 'Back by dawn.'; });
-      else add(`Send ${g.name} (skill ${g.skill}${g.hungry ? ', hungry' : ''}${g.kit.picks ? '' : ', no picks'}) to rob a house`, () => { chat.pickFor = g; chat.page = 0; chat.reply = `Which house should ${g.name} hit? (They keep ${g.cut}%.)`; });
+    else chat.reply = `${free.length} of your gang ready${away ? `, ${away} away or locked up` : ''}. What's the plan?`;
+    if (free.length) {
+      add('Send someone on a job (they go alone)', () => { chat.withMe = false; chat.pickMember = true; chat.mpage = 0; chat.reply = 'Who goes?'; });
+      add('Take someone robbing WITH YOU', () => { chat.withMe = true; chat.pickMember = true; chat.mpage = 0; chat.reply = 'Who\'s coming with you?'; });
     }
+    if (bigJob) add(`Heist under way: ${BIG_TARGETS[bigJob.t].name}`, () => { chat.reply = `${bigJob.crew.join(', ')}${bigJob.withMe ? ' - waiting for you to lead them in.' : `. ${Math.round(bigJob.odds * 100)}% odds.`}`; });
+    else if (free.length >= 3) {
+      add('Big heist: send the whole crew', () => { chat.withMe = false; chat.bigHeist = true; chat.reply = 'The big ones. Pick the target - they go at dark, back by dawn.'; });
+      add('Big heist: LEAD IT YOURSELF', () => { chat.withMe = true; chat.bigHeist = true; chat.reply = 'You lead them in. Better odds - if you keep it quiet.'; });
+    }
+    add('Order supplies (delivered here)', () => { chat.ordering = true; chat.reply = 'The courier comes after dark and leaves it in the basement storeroom.'; });
+    const busy = gang.filter(g => !free.includes(g)).slice(0, 3);
+    for (const g of busy) add(`${g.name}: ${g.state === 'job' ? 'out on a job' : g.state === 'heist' ? 'out on the big heist' : 'locked up'}`, () => { chat.reply = g.state === 'job' ? `${g.name} is robbing the ${houses[g.job.h].family} house.` : g.state === 'jail' ? 'In the Watch House cells. Bail them at Jailer Grubb\'s desk, or break them out.' : 'Back by dawn.'; });
   } else if (t.kind === 'gang') {
     if (t.state === 'follow') add('Go back to the base', () => { t.state = 'base'; chat.reply = 'Right you are, boss.'; });
     else add('Come with me', () => { t.state = 'follow'; t.path = null; chat.reply = pick(['Lead the way, boss.', 'Right behind you.']); });
-    add(`Go rob a house for me - I'll pick which (you keep ${t.cut}%)`, () => { chat.pickFor = t; chat.page = 0; chat.reply = 'Which one, boss?'; });
+    add(`Go rob a house for me (they keep ${t.cut}%)`, () => { chat.withMe = false; chat.pickFor = t; chat.page = 0; chat.reply = 'Which one, boss?'; });
+    add(`Let's rob a house TOGETHER`, () => { chat.withMe = true; chat.pickFor = t; chat.page = 0; chat.reply = 'You and me, boss? Where to?'; });
     if (t.request) add(`Give ${t.name} the ${SUPPLY_NAME[t.request]} they asked for`, () => giveSupply(t, t.request, t.request === 'smoke' ? 1 : 3));
     add('Give 3 lockpicks', () => giveSupply(t, 'picks', 3)); add('Give a smoke bomb', () => giveSupply(t, 'smoke', 1));
     if (supplies.rations) add('Give 3 rations (from storage)', () => giveSupply(t, 'rations', 3));
