@@ -46,7 +46,7 @@ resize();
 
 // ---------- tuning ----------
 const P_WALK = 50, P_RUN = 84, G_PATROL = 30, G_RUN = 56, G_CHASE = 64;
-const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_BASE = 1.1, HEAT_TIME = 12, GOAL = 1000;
+const STAM_DRAIN = 24, STAM_REGEN = 14, STEAL_BASE = 1.1, HEAT_TIME = 12;
 const DAY_LEN = 300;
 
 // ---------- helpers ----------
@@ -2059,7 +2059,6 @@ function sellAll() {
   gold += v; totalEarned += v; player.loot = []; SFX.coins(); msg(`Sold your loot for ${v}g`, '#f7d774');
   stat('sold', v); if (v >= 300) unlock('big_score');
   say(menu.fence, pick(['Pleasure doing business.', 'Ill-gotten gains... my favourite.', "I'll find a buyer. Eventually."]));
-  if (!won && totalEarned >= GOAL) { won = true; wonT = 7; SFX.win(); msg('You earned 1000g — LEGENDARY THIEF! Keep going if you like.', '#9df0a0'); }
 }
 function buy(kind, cost) {
   if (kind !== 'smoke' && kind !== 'lockpicks' && up[kind]) return;
@@ -2211,7 +2210,7 @@ function tapUI(v) {
   }
   return false;
 }
-function startGame() { newGame(); state = 'play'; audioInit(); msg('Knock on doors [E]. Steal when nobody is looking.', '#f7d774'); msg('Sell loot to the fences in the sewers (manholes: $ on the map). Earn 1000g!', '#f7d774'); }
+function startGame() { newGame(); state = 'play'; audioInit(); msg('Knock on doors [E]. Steal when nobody is looking.', '#f7d774'); msg('Sell loot to the fences in the sewers (manholes: $ on the map).', '#f7d774'); }
 function closeMenu() { state = 'play'; menu = null; }
 
 // =====================================================================
@@ -2968,7 +2967,7 @@ function drawHUD(di) {
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
   txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc');
-  if (p.sneak) { panel(VW / 2 - 30, VH - 26 - (touchMode ? 76 : 0), 60, 12, 0.75); txt('SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, '#9ab0ff', 'center', null); } txt(`${Math.min(totalEarned, GOAL)}/${GOAL}`, 70, 37, 5, won ? '#9df0a0' : '#aaa');
+  if (p.sneak) { panel(VW / 2 - 30, VH - 26 - (touchMode ? 76 : 0), 60, 12, 0.75); txt('SNEAKING', VW / 2, VH - 23 - (touchMode ? 76 : 0), 5, '#9ab0ff', 'center', null); }
   if (up.sack || up.boots || up.tongue || up.picks) txt([up.sack ? 'SACK' : '', up.boots ? 'BOOTS' : '', up.tongue ? 'TONGUE' : '', up.picks ? 'PICKS' : ''].filter(Boolean).join(' '), 6, 71, 4, '#9df0a0');
   txt(`picks x${p.picks}`, 9, 56, 5, p.picks ? '#ccc' : '#ff8a6b'); txt(`watch ${guards.filter(g => !g.leaving && !g.post).length}`, 70, 56, 5, bounty ? '#ff9a9a' : '#aaa');
   txt('BOUNTY', 9, 47, 5, bounty ? '#ff6b6b' : '#888');
@@ -3012,7 +3011,6 @@ function drawHUD(di) {
   if (p.state === 'escorted') { panel(VW / 2 - 90, 30, 180, 16, 0.8); txt('Being escorted to the jail cell...', VW / 2, 35, 5, '#ffb36b', 'center'); }
   if (p.state === 'jailed') { const jy = VH - 64 - (touchMode ? 76 : 0); panel(VW / 2 - 70, jy, 140, 24, 0.8); txt('IN JAIL', VW / 2, jy + 3, 8, '#ff6b6b', 'center'); txt(`Release in ${Math.ceil(p.jailT)}s`, VW / 2, jy + 14, 5, '#fff', 'center'); }
   if (p.state === 'hidden') { panel(VW / 2 - 60, VH - 70, 120, 14, 0.8); txt('Hiding in the hay... [E] leave', VW / 2, VH - 66, 4, '#e3c25a', 'center'); }
-  if (wonT > 0) { panel(VW / 2 - 100, VH / 2 - 40, 200, 30, 0.85); txt('LEGENDARY THIEF!', VW / 2, VH / 2 - 34, 10, '#9df0a0', 'center'); txt('1000g earned. The village trembles.', VW / 2, VH / 2 - 20, 5, '#fff', 'center'); }
   // messages
   let y = VH - 10 - (touchMode ? 76 : 0);
   for (let i = msgs.length - 1; i >= 0; i--) {
