@@ -676,9 +676,9 @@ function genInterior(h) {
   town.links.push({ x: h.approach.x, y: h.approach.y, to: h.key, ax: g.entry.x, ay: g.entry.y });
   // the family
   const beds = floors.flatMap(f => f.beds), D = HOUSE_TYPES[h.type], n = ri(D.people[0], D.people[1]);
-  const mansion = h.type === 'mansion';
+  const mansion = h.type === 'mansion', hasKids = r() < 0.4; // other big households are grandparents, siblings or lodgers
   for (let i = 0; i < n; i++) {
-    const child = mansion ? (i === 2 || i === 3) : i >= 2, servant = mansion && i >= 4;
+    const servant = mansion && i >= 4, child = hasKids && !servant && i >= 2 && (i === 2 || r() < 0.6);
     const sheet = residentSheet(r, { child, servant });
     const first = child ? KIDS[ri(0, KIDS.length - 1)] : (sheet.dress ? WOMEN : MEN)[ri(0, 17)];
     const floor = mansion && !servant ? floors[1].key : g.key;
@@ -687,7 +687,7 @@ function genInterior(h) {
       bubble: null, alarmT: 0, outCD: 0, reportCD: 0, sawYou: false, bed: beds[i % beds.length] });
   }
   // some households keep a dog; it stays home even on market day
-  if (r() < ({ cottage: 0.25, house: 0.35, large: 0.5, mansion: 0.8 })[h.type]) {
+  if (r() < ({ cottage: 0.12, house: 0.18, large: 0.3, mansion: 0.5 })[h.type]) {
     const name = PET_NAMES[ri(0, PET_NAMES.length - 1)];
     h.pet = { kind: 'pet', name: `${name} (${h.family}s' dog)`, house: h, map: g.key, floor: g.key, x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet: PET_SHEETS[ri(0, PET_SHEETS.length - 1)],
       animT: 0, path: null, repath: 0, wait: 0, wtarget: null, bubble: null, barkCD: 0, barkT: 0 };
