@@ -4,9 +4,16 @@
   "private": true,
   "description": "Light Fingers - a 2D pixel-art village thief game (single-file HTML5 canvas).",
   "type": "module",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "build:artifact": "node scripts/build-artifact.mjs"
+    "build:pyric": "esbuild src/pyric-entry.js --bundle --format=iife --platform=browser --minify --legal-comments=none --outfile=vendor/pyric.min.js",
+    "build:artifact": "npm run build:pyric && node scripts/build-artifact.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0",
+    "pyric": "0.1.0-alpha.22"
   }
 }

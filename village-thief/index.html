@@ -26,6 +26,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<script src="vendor/pyric.min.js"></script>
 <div id="codewrap"><div id="codepanel"><div id="codetitle"></div><textarea id="codebox" spellcheck="false"></textarea><div><button id="codeok"></button><button id="codecancel" class="alt">Close</button></div></div></div>
 <input id="chatbox" maxlength="120" autocomplete="off" spellcheck="false" placeholder="Say something to everyone... (Enter to send, Esc to cancel)">
 <script>
@@ -623,9 +624,9 @@ const THIEF_SKINS = [
   { id: 'ghost', name: 'Ghost', pal: { H: '#c8ccd4', Hh: '#f4f6fa', Hd: '#9a9ea8', C: '#b0b4bc', Cd: '#8a8e96', SC: '#5a5e66', SCh: '#7a7e86', P: '#7a7e86', TU: '#9a9ea6' } },
   { id: 'outlaw', name: 'Outlaw', pal: { H: '#2a2a2a', Hh: '#444444', Hd: '#151515', C: '#222222', Cd: '#121212', SC: '#c0392b', SCh: '#e04a3a', TU: '#4a2a1a', GO: '#c0392b' } },
 ];
-function drawThief(dir, f, bound, pal = {}) {
-  const c = mk(16, 22), g = c.getContext('2d'), ox = 2, oy = 6;
-  const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y, w, h); };
+function drawThief(dir, f, bound, pal = {}, crouch = false) {
+  const c = mk(16, 22), g = c.getContext('2d'), ox = 2, oy = 6, drop = crouch ? 3 : 0;
+  const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y + (y < 12 ? drop : 0), w, h); }; // crouching lowers everything above the legs
   const K = Object.assign({}, THIEF_BASE, pal);
   const H = K.H, Hh = K.Hh, Hd = K.Hd, C = K.C, Cd = K.Cd, TU = K.TU, BE = K.BE, GO = K.GO,
     SK = '#f1c27d', SKd = '#c99a5e', SC = K.SC, SCh = K.SCh, P = K.P, BT = K.BT, BTh = K.BTh, GL = K.GL,
@@ -633,8 +634,13 @@ function drawThief(dir, f, bound, pal = {}) {
   const a = f === 1 ? 1 : 0, b = f === 2 ? 1 : 0;
   if (dir === 'down' || dir === 'up') {
     // boots and legs
+    if (crouch) { // knees bent out to the sides, feet wide, one foot creeping forward at a time
+      r(-1 - a, 14, 2, 1, P); r(-1 - a, 15, 3, 1, BT); r(-1 - a, 15, 1, 1, BTh);
+      r(10 + b, 14, 2, 1, P); r(9 + b, 15, 3, 1, BT); r(11 + b, 15, 1, 1, BTh);
+    } else {
     r(3, 12, 2, 2 - a, P); r(3, 14 - a, 2, 2, BT); r(3, 14 - a, 2, 1, BTh);
     r(7, 12, 2, 2 - b, P); r(7, 14 - b, 2, 2, BT); r(7, 14 - b, 2, 1, BTh);
+    }
     // cloak
     r(2, 6, 8, 6, C); r(1, 8, 1, 4, Cd); r(10, 8, 1, 4, Cd); r(1, 11, 10, 1, Cd);
     if (dir === 'down') {
@@ -653,7 +659,9 @@ function drawThief(dir, f, bound, pal = {}) {
       r(7, 5, 2, 3 + b, SC); r(1, 5, 10, 2, H); r(1, 6, 10, 1, Hd);
     }
   } else { // left (right is mirrored)
-    if (f === 1) { r(2, 12, 2, 2, P); r(1, 14, 3, 2, BT); r(1, 14, 3, 1, BTh); r(7, 12, 2, 2, P); r(7, 14, 3, 2, BT); r(7, 14, 3, 1, BTh); }
+    if (crouch) { const fa = f === 1 ? -1 : 0, fb = f === 2 ? 1 : 0; // front knee forward, back knee down
+      r(0 + fa, 14, 3, 1, P); r(-1 + fa, 15, 4, 1, BT); r(-1 + fa, 15, 1, 1, BTh); r(8 + fb, 14, 2, 1, P); r(8 + fb, 15, 3, 1, BT); }
+    else if (f === 1) { r(2, 12, 2, 2, P); r(1, 14, 3, 2, BT); r(1, 14, 3, 1, BTh); r(7, 12, 2, 2, P); r(7, 14, 3, 2, BT); r(7, 14, 3, 1, BTh); }
     else if (f === 2) { r(4, 12, 2, 2, P); r(5, 12, 2, 2, P); r(3, 14, 5, 2, BT); r(3, 14, 5, 1, BTh); }
     else { r(4, 12, 3, 2, P); r(3, 14, 4, 2, BT); r(3, 14, 4, 1, BTh); }
     r(3, 6, 6, 6, C); r(3, 11, 7, 1, Cd); r(9, 8, 1, 4, Cd);
@@ -668,8 +676,8 @@ function drawThief(dir, f, bound, pal = {}) {
   }
   return c;
 }
-function thiefSheet(bound, pal) { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawThief(d, f, bound, pal)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; }
-let PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true);
+function thiefSheet(bound, pal, crouch) { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawThief(d, f, bound, pal, crouch)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; }
+let PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true), PLAYER_CROUCH = thiefSheet(false, {}, true);
 
 // ---------- profile: lifetime stats, achievements and skins (kept across games, in this browser) ----------
 const PROFILE_KEY = 'lightfingers_profile';
@@ -679,7 +687,7 @@ try { const raw = localStorage.getItem(PROFILE_KEY); if (raw) profile = Object.a
 function saveProfile() { try { localStorage.setItem(PROFILE_KEY, JSON.stringify(profile)); } catch (e) { } profDirty = true; }
 function applySkin(id) {
   const sk = THIEF_SKINS.find(k => k.id === id) || THIEF_SKINS[0];
-  PLAYER_SHEET = thiefSheet(false, sk.pal); PLAYER_BOUND = thiefSheet(true, sk.pal);
+  PLAYER_SHEET = thiefSheet(false, sk.pal); PLAYER_BOUND = thiefSheet(true, sk.pal); PLAYER_CROUCH = thiefSheet(false, sk.pal, true);
   try { if (player) player.sheet = PLAYER_SHEET; } catch (e) { /* player isn't created yet at startup */ }
   profile.skin = sk.id; saveProfile();
 }
@@ -1168,8 +1176,9 @@ function genTown() {
         return;
       }
       if (y1 - y0 >= 15) { // a back lane through the block, with a second row of houses on it
-        const lane = y0 + 8; for (let x = x0; x <= x1; x++) setG(x, lane, T.PATH);
-        southBand(x0, x1, lane - 1, DIST[ri0]); southBand(x0, x1, y1, DIST[ri0].filter(t => HOUSE_TYPES[t].h <= y1 - lane), lane + 1);
+        const lane = y0 + 8, front = y1 + 1 >= 86 ? y1 - 1 : y1; for (let x = x0; x <= x1; x++) setG(x, lane, T.PATH);
+        if (front !== y1) for (let x = x0; x <= x1; x++) setG(x, y1, T.PATH); // the last row faces a towpath along the river, not the water
+        southBand(x0, x1, lane - 1, DIST[ri0]); southBand(x0, x1, front, DIST[ri0].filter(t => HOUSE_TYPES[t].h <= front - lane), lane + 1);
       } else southBand(x0, x1, y1, DIST[ri0], y0 + 1);
     }));
     // south of the river: a busy quarter of smaller homes, and the coach yard by the gate
@@ -3948,13 +3957,25 @@ function drawEntity(e) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
   const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e.ghost && (e.st === 'escorted' || e.st === 'held') ? e.boundSheet : e.sheet;
   if (e === player && disguised() && !(player.sneak && player.state === 'free')) { ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22); F(ctx, sx - 5, sy - 23, 10, 2, '#3a2a1a'); F(ctx, sx - 3, sy - 26, 6, 3, '#3a2a1a'); if (e.dir !== 'up') F(ctx, sx - 3, sy - 13, 6, 3, '#6a4a2a'); return; }
-  if ((e === player && player.sneak && player.state === 'free') || (e.ghost && e.st === 'sneak')) {
-    const img = sheet[e.dir][e.moving ? WALK[Math.floor(e.animT * 4) % 4] : 0], bob = e.moving ? Math.round(Math.sin(e.animT * 6)) * 0.5 : 0;
-    ctx.drawImage(img, 0, 15, 16, 7, sx - 9, sy - 5, 18, 5); // bent knees, wide stance
-    ctx.drawImage(img, 0, 0, 16, 15, sx - 8, sy - 19 + bob, 16, 15); // body hunched low
+  if ((e === player && player.sneak && player.state === 'free') || (e.ghost && e.st === 'sneak')) { // creeping: slow steps, a little sway
+    const cs = e === player ? PLAYER_CROUCH : e.crouchSheet || sheet, cf = e.moving ? WALK[Math.floor(e.animT * 5) % 4] : 0;
+    ctx.drawImage(cs[e.dir][cf], sx - 8 + (e.moving && cf === 0 && (e.dir === 'left' || e.dir === 'right') ? (e.dir === 'left' ? -1 : 1) : 0), sy - 22);
     return;
   }
-  ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22);
+  const humanoid = !['pet', 'dog'].includes(e.kind) && e.unit !== 'dog' && sheet[e.dir][0].height === 22;
+  const running = e.moving && (e === player ? player.running : e.ghost ? e.running : e.state === 'chase' || e.fast);
+  let bob = 0, lean = 0;
+  if (humanoid && e.moving) { bob = fr === 0 ? (running ? -2 : -1) : 0; if (running) lean = e.dir === 'left' ? -1 : e.dir === 'right' ? 1 : 0; } // up on the passing step, leaning into a sprint
+  if (running && (e === player || e.ghost)) { const step = Math.floor(e.animT * 8) % 4; if (step !== e.lastStep && (step === 1 || step === 3)) { const back = { left: 4, right: -4, up: 0, down: 0 }[e.dir]; dust.push({ map: e.map, x: e.x + back + (step === 1 ? -2 : 2), y: e.y - 1, t: 0.4 }); } e.lastStep = step; }
+  ctx.drawImage(sheet[e.dir][fr], sx - 8 + lean, sy - 22 + bob);
+}
+const dust = []; // puffs kicked up by running feet
+function drawDust(camMap, dt) {
+  for (let i = dust.length - 1; i >= 0; i--) {
+    const d = dust[i]; d.t -= dt; if (d.t <= 0) { dust.splice(i, 1); continue; }
+    if (d.map !== camMap) continue;
+    const k = 1 - d.t / 0.4; ctx.fillStyle = `rgba(215,205,180,${0.75 * (1 - k)})`; ctx.beginPath(); ctx.arc(d.x, d.y - k * 3, 1.5 + k * 3.5, 0, 7); ctx.fill();
+  }
 }
 function drawCone(e, range, half, color) {
   const ex = e.x, ey = e.y - 8, m = maps[e.map], N = 16;
@@ -4058,6 +4079,7 @@ function render(dt) {
     ctx.drawImage(r.sheet.down[0], 0, r.child ? 6 : 4, 16, 10, b.x * TS + off, b.y * TS + 3, 16, 10); F(ctx, b.x * TS + 2, b.y * TS + 13, 12, 3, m.blanket);
   }
   list.sort((a, b) => a.y - b.y);
+  drawDust(camMap, dt);
   for (const e of list) drawEntity(e);
   if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
     const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
@@ -4428,7 +4450,7 @@ function drawTitle() {
       txt((touchMode ? '' : k + ' ') + l, x + bw / 2, my + 4, 6, on ? '#ffffff' : '#9a9080', 'center', null);
       titleUI.unshift({ x, y: my, w: bw, h: 14, fn: () => setMode(m) });
     });
-    const st = online.mode === 'solo' ? 'Just you. Nobody else in town.' : !online.ready ? 'Joining the world...' : !online.room ? 'Can\'t join the world - sign in to claude.ai and open the game link' : online.local && !n ? 'Local test server - open another tab to play together' : n ? `One big world for everyone - ${n} other thie${n > 1 ? 'ves' : 'f'} playing now` : 'One big world for everyone - nobody else on yet';
+    const st = online.mode === 'solo' ? 'Just you. Nobody else in town.' : !online.ready ? 'Joining the world...' : !online.room ? 'Multiplayer backend didn\'t start - see the browser console' : online.backend === 'pyric' && !n ? 'Pyric sandbox: open the game in another tab to meet another thief' : n ? `One big world for everyone - ${n} other thie${n > 1 ? 'ves' : 'f'} playing now` : 'One big world for everyone - nobody else on yet';
     txt(st, cxm, my + 18, 5, online.mode === 'multi' && online.ready && !online.room ? '#ff9a8a' : online.mode === 'multi' ? '#7af0a0' : '#cbb98a', 'center', '#000'); }
   // small links: load, wardrobe, achievements
   const links = [...(readResume() ? [['R', 'Resume last game', () => resumeGame(readResume())]] : []), ['L', 'Load game', () => openSaves('load', 'title')], ['C', 'Wardrobe', () => { state = 'wardrobe'; wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)) }; }],
@@ -4458,7 +4480,7 @@ function syncWorldClock(start) {
   else if (diff >= WORLD_WEEK / 2 && WORLD_WEEK - diff > 1) clockRate = 0.5; // slept ahead at the inn: your clock idles until the world catches up
 }
 const ghostSheets = {};
-function ghostSheet(id, bound) { const k = id + (bound ? '!' : ''); if (!ghostSheets[k]) { const sk = THIEF_SKINS.find(t => t.id === id) || THIEF_SKINS[0]; ghostSheets[k] = thiefSheet(bound, sk.pal); } return ghostSheets[k]; }
+function ghostSheet(id, bound) { const k = id + (bound === 'crouch' ? '_' : bound ? '!' : ''); if (!ghostSheets[k]) { const sk = THIEF_SKINS.find(t => t.id === id) || THIEF_SKINS[0]; ghostSheets[k] = bound === 'crouch' ? thiefSheet(false, sk.pal, true) : thiefSheet(bound, sk.pal); } return ghostSheets[k]; }
 const onlineCount = () => online.ghosts.size;
 function onlinePeers(change) {
   const seen = new Set();
@@ -4476,7 +4498,7 @@ function onlinePeers(change) {
     if (g.map !== pz.m || Math.hypot(g.x - x, g.y - y) > 80) { g.x = x; g.y = y; } // a door or a long way: jump there
     g.map = pz.m; g.tx = x; g.ty = y; g.dir = ['up', 'down', 'left', 'right'].includes(pz.d) ? pz.d : 'down';
     g.moving = !!pz.mv; g.st = String(pz.s || 'free'); g.wanted = !!pz.w; g.skin = String(pz.sk || 'teal');
-    g.sheet = ghostSheet(g.skin, false); g.boundSheet = ghostSheet(g.skin, true);
+    g.sheet = ghostSheet(g.skin, false); g.boundSheet = ghostSheet(g.skin, true); g.crouchSheet = ghostSheet(g.skin, 'crouch'); g.running = !!pz.rn;
   }
   for (const [k, g] of online.ghosts) if (!seen.has(k)) { online.ghosts.delete(k); if (state === 'play' && multi()) msg(`${g.label} left town.`, '#9aa8b8'); }
 }
@@ -4523,12 +4545,12 @@ function updateOnline(dt) {
   online.sendT -= dt;
   if (online.sendT <= 0) {
     online.sendT = 0.1; const p = player, play = state !== 'title' && state !== 'wardrobe' && state !== 'achievements';
-    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, id: online.myId || null, nm: online.local ? 'Tab ' + (online.tabName = online.tabName || Math.random().toString(36).slice(2, 5).toUpperCase()) : null } : { g: null };
+    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, rn: p.running && p.moving ? 1 : 0 } : { g: null };
     const key = JSON.stringify(pz);
     if (key !== online.last) { online.last = key; room.presence(pz).catch(() => { }); }
   }
   online.nameT -= dt;
-  if (online.nameT <= 0 && online.user && online.ghosts.size) {
+  if (online.nameT <= 0 && online.user && online.ghosts.size) { // (only used by a claude.ai room backend)
     online.nameT = 3; const ids = [...online.ghosts.values()].map(g => g.by).filter(Boolean);
     if (ids.length) online.user.profiles(ids).then(ps => { for (const g of online.ghosts.values()) if (g.by && ps[g.by] && ps[g.by].name) g.label = ps[g.by].name.split(' ')[0].slice(0, 14); }).catch(() => { });
   }
@@ -4582,7 +4604,7 @@ function drawOnlineHUD(y) {
   const n = onlineCount(); onlineUI = null;
   if (!multi()) return;
   if (!online.room) { const t = online.ready ? 'OFFLINE - can\'t join the world' : 'Joining the world...'; ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 8; panel(VW - w - 4, y, w, 9, 0.75); F(ctx, VW - w - 1, y + 3, 3, 3, online.ready ? '#ff5a4a' : '#f7d774'); txt(t, VW - w + 4, y + 2, 4, '#ffd0c8', 'left', null); return; }
-  const t = (online.local ? 'Local test server - ' : 'Multiplayer - ') + (n ? `${n + 1} thieves in town` : 'nobody else here yet');
+  const t = (online.backend === 'pyric' ? 'Pyric sandbox - ' : 'Multiplayer - ') + (n ? `${n + 1} thieves in town` : 'nobody else here yet');
   ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(t).width) + 8 + (touchMode && online.canChat ? 22 : 0), x = VW - w - 4;
   panel(x, y, w, 9, 0.75); F(ctx, x + 3, y + 3, 3, 3, online.room.connected() ? '#5af07a' : '#888'); txt(t, x + 8, y + 2, 4, '#cfe8d8', 'left', null);
   if (touchMode && online.canChat) { F(ctx, x + w - 21, y + 1, 19, 7, '#2a5a3a'); txt('CHAT', x + w - 19, y + 2, 4, '#ffffff', 'left', null); onlineUI = { x: x + w - 21, y, w: 19, h: 9 }; }
@@ -4594,17 +4616,11 @@ function drawOnlineHUD(y) {
 }
 (async () => {
   try {
-    if (!window.claude || !window.claude.use) { // not on claude.ai: on your own computer, tabs share a local test town
-      if (location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) { const room = localRoom(); if (room) { online.room = room; online.local = true; room.onPeers(onlinePeers); room.on('chat', onlineChat); } }
-      online.ready = true; return;
-    }
-    const [room, user] = await Promise.all([window.claude.use('room'), window.claude.use('user').catch(() => null)]);
-    if (!room) { online.ready = true; return; }
-    online.user = user; try { online.myId = user ? await user.id() : null; } catch (e) { }
-    online.room = room;
-    room.onPeers(onlinePeers, () => { online.room = null; online.ghosts.clear(); });
-    room.on('chat', onlineChat);
-  } catch (e) { online.room = null; }
+    let name = '';
+    try { const user = window.claude && window.claude.use ? await window.claude.use('user') : null; if (user) name = ((await user.name()) || '').split(' ')[0].slice(0, 14); } catch (e) { }
+    online.room = await firebaseRoom(name); online.backend = 'pyric';
+    online.room.onPeers(onlinePeers); online.room.on('chat', onlineChat);
+  } catch (e) { online.room = null; console.warn('Multiplayer backend unavailable:', e); }
   online.ready = true;
 })();
 // =====================================================================
@@ -4663,31 +4679,65 @@ addEventListener('pagehide', () => { const d = autosave() || readResume(); if (d
   } catch (e) { cloud.db = null; }
 })();
 // =====================================================================
-//  LOCAL TEST SERVER: running from your own computer (npm start), every tab on this PC that picks
-//  Multiplayer shares one town, so multiplayer can be tested without publishing.
+//  MULTIPLAYER BACKEND: Firebase-shaped, running on pyric's in-page sandbox (Firestore + Auth).
+//  presence/{sid}  one document per open game: where that thief is (sid = uid + '_' + random)
+//  chat/{id}       chat lines
+//  The sandbox lives in this browser (saved to IndexedDB; every tab in the browser shares it), so for
+//  now you only meet the thieves in your other tabs. Swap the pyric imports for the real Firebase SDK
+//  (see src/pyric-entry.js) and the same code runs against a real project.
 // =====================================================================
-function localRoom() {
-  if (typeof BroadcastChannel === 'undefined') return null;
-  const me = 'tab-' + Math.random().toString(36).slice(2, 8), bc = new BroadcastChannel('lightfingers-local-room'), peers = new Map(), fns = [], topics = {};
-  let mine = {};
-  const fire = () => { const now = Date.now(); for (const [k, p] of peers) if (k !== me && now - p.seen > 6000) peers.delete(k); const ps = Object.freeze([...peers.values()]); fns.forEach(f => f({ peers: ps, joined: [], left: [], updated: [] })); };
-  const send = () => bc.postMessage({ t: 'p', peer: me, pz: mine });
-  bc.onmessage = ({ data: d }) => {
-    if (!d || typeof d !== 'object') return;
-    if (d.t === 'p') { peers.set(d.peer, { peer: d.peer, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false, presence: Object.freeze(d.pz || {}), updatedAt: Date.now(), seen: Date.now() }); fire(); }
-    else if (d.t === 'bye') { peers.delete(d.peer); fire(); }
-    else if (d.t === 'hello') send();
-    else if (d.t === 'e') (topics[d.topic] || []).forEach(f => f({ topic: d.topic, data: d.data, peer: d.peer, by: null, isMe: false, sameTab: false, kind: 'viewer', guest: false }));
+const FIRESTORE_RULES = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /presence/{sid} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid && sid.matches(request.auth.uid + '_.*')
+        && request.resource.data.m is string && request.resource.data.x is number && request.resource.data.y is number;
+      allow update: if request.auth != null && resource.data.uid == request.auth.uid && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    }
+    match /chat/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.uid == request.auth.uid
+        && ((request.resource.data.t is string && request.resource.data.t.size() <= 120) || request.resource.data.i is int);
+    }
+  }
+}`;
+const PRESENCE_STALE = 12000, PRESENCE_EVERY = 500, PRESENCE_BEAT = 4000; // ms: real Firestore wants about one write per second per document
+async function firebaseRoom(name) {
+  const P = window.Pyric; if (!P) throw new Error('pyric bundle not loaded');
+  const sandbox = P.initializeSandbox();
+  try { await P.attachPersistence(sandbox, { key: 'light-fingers' }); } catch (e) { } // IndexedDB can be blocked; then it's memory only
+  try { P.attachTabSync(sandbox); } catch (e) { }
+  P.setRules(sandbox, FIRESTORE_RULES);
+  const auth = P.getAuth(sandbox), db = P.getFirestore(sandbox);
+  const { user } = await P.signInAnonymously(auth), uid = user.uid, sid = uid + '_' + Math.random().toString(36).slice(2, 8);
+  const meRef = P.doc(db, 'presence', sid), label = name || 'Thief ' + sid.slice(-3).toUpperCase(), startedAt = Date.now();
+  let mine = null, dirty = false, lastWrite = 0, peerFns = [], chatFns = [], latest = [];
+  const flush = () => {
+    if (!dirty && (!mine || Date.now() - lastWrite < PRESENCE_BEAT)) return;
+    dirty = false; lastWrite = Date.now();
+    if (!mine || !mine.g) { P.deleteDoc(meRef).catch(() => { }); return; }
+    P.setDoc(meRef, { ...mine, uid, sid, nm: label, at: Date.now() }).catch(e => console.warn('presence write denied', e.code, e.denialContext || ''));
   };
-  setInterval(() => { send(); fire(); }, 2000);
-  addEventListener('pagehide', () => bc.postMessage({ t: 'bye', peer: me }));
-  bc.postMessage({ t: 'hello' });
-  return Object.freeze({
-    connected: () => true, peers: () => [...peers.values()],
-    presence: async p => { for (const k in p) if (p[k] === null) delete mine[k]; else mine[k] = p[k]; send(); },
-    onPeers: f => { fns.push(f); return () => { }; }, on: (t, f) => { (topics[t] = topics[t] || []).push(f); return () => { }; },
-    emit: async (t, data) => { bc.postMessage({ t: 'e', topic: t, data, peer: me }); },
-  });
+  setInterval(flush, PRESENCE_EVERY);
+  addEventListener('pagehide', () => { P.deleteDoc(meRef).catch(() => { }); });
+  const deliver = () => { const now = Date.now(), peers = latest.filter(d => d.sid === sid || now - (d.at || 0) < PRESENCE_STALE).map(d => ({ peer: d.sid, by: d.uid, sameTab: d.sid === sid, isMe: d.uid === uid, kind: 'viewer', guest: false, presence: d })); peerFns.forEach(f => f({ peers, joined: [], left: [], updated: [] })); };
+  P.onSnapshot(P.collection(db, 'presence'), snap => {
+    latest = snap.docs.map(d => d.data()); deliver();
+    for (const d of latest) if (d.uid === uid && d.sid !== sid && Date.now() - (d.at || 0) > PRESENCE_STALE) P.deleteDoc(P.doc(db, 'presence', d.sid)).catch(() => { }); // tidy up our own old sessions
+  }, e => console.warn('presence listener', e.code));
+  setInterval(deliver, 3000); // drop thieves whose game stopped updating
+  P.onSnapshot(P.collection(db, 'chat'), snap => {
+    for (const ch of snap.docChanges()) { const d = ch.doc.data(); if (ch.type !== 'added' || (d.at || 0) < startedAt) continue; chatFns.forEach(f => f({ topic: 'chat', peer: d.sid, by: d.uid, sameTab: d.sid === sid, data: d.t !== undefined ? { t: d.t } : { i: d.i } })); }
+  }, e => console.warn('chat listener', e.code));
+  return {
+    connected: () => true, sid, uid,
+    presence: async pz => { mine = pz; dirty = true; },
+    onPeers: f => { peerFns.push(f); return () => { }; },
+    on: (topic, f) => { if (topic === 'chat') chatFns.push(f); return () => { }; },
+    emit: async (topic, data) => { if (topic === 'chat') await P.addDoc(P.collection(db, 'chat'), { ...data, uid, sid, at: Date.now() }); },
+  };
 }
 // =====================================================================
 //  MAIN LOOP

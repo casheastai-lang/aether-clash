@@ -6,16 +6,18 @@ sell to the fences in the sewers, and outrun the Watch.
 ## Stack
 
 - **Language:** plain JavaScript (ES2020+), HTML and CSS, all in one file: `index.html`.
-- **Libraries / frameworks:** none. No build step, no bundler, no npm dependencies.
+- **Libraries / frameworks:** no UI framework. The game is vanilla JS; the only library is pyric (multiplayer backend).
 - **Browser APIs:** Canvas 2D (all graphics are drawn in code, no image files), Web Audio (sound effects
   are synthesised), `localStorage` (save slots, achievements, skins), `requestAnimationFrame`.
 - **External resource:** the "Press Start 2P" font from Google Fonts (falls back to monospace offline).
-- **Multiplayer and cloud saves:** the Claude Artifacts runtime (`window.claude.use("room")`, `("user")`, `("db")`).
-  It only exists on the published link. Running locally, Multiplayer joins a local test server shared by your
-  open tabs, and saves stay in that browser.
+- **Multiplayer backend:** Firebase-shaped (Auth + Firestore with Security Rules) running on
+  [pyric](https://pyric.dev)'s in-page sandbox (`pyric` on npm, bundled to `vendor/pyric.min.js`).
+  The sandbox lives in the browser: it's saved to IndexedDB and shared by every tab, so for now you meet
+  the thieves in your own other tabs. Swapping the `pyric/*` imports in `src/pyric-entry.js` for the
+  real `firebase/*` SDK (plus a project config) makes it real multiplayer.
+- **Cloud saves:** the Claude Artifacts `db` and `user` capabilities (only on the published link).
 - **Moving a game between copies:** Save game > Get a save code, then Load game > Paste a save code.
-- **Runtime needed to develop:** a web browser, plus Node.js 18+ for `npm start` (a tiny local web server,
-  `scripts/serve.mjs`) and `npm run build:artifact`.
+- **Runtime needed to develop:** a web browser and Node.js 22+ (`npm start`, `npm run build:pyric`, `npm run build:artifact`).
 
 ## One link
 
@@ -28,10 +30,12 @@ building and testing.
 ## Run it
 
 ```
+npm install
 npm start
 ```
 
-Then open http://localhost:8080. (`npm install` isn't needed - there are no dependencies.)
+Then open http://localhost:8080. `npm install` brings in pyric and esbuild (only needed to rebuild
+`vendor/pyric.min.js` with `npm run build:pyric`; the built file is committed).
 To test multiplayer, open a second tab and pick Multiplayer in both.
 
 ## Publish to Claude Artifacts
