@@ -130,13 +130,13 @@ const SFX = {
 // =====================================================================
 const T = {
   GRASS: 0, FLOWER: 1, PATH: 2, COBBLE: 3, TREE: 4, ROOF: 5, WALL: 6, WINDOW: 7, DOOR: 8, STONE: 9, JROOF: 10, JDOOR: 11,
-  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59,
+  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59, FENCEV: 60, DOGHOUSE: 61, SACK: 62, PLANTER: 63, SIGNPOST: 64,
   FLOOR: 30, IWALL: 31, IEDGE: 32, EXIT: 34, BED: 35, TABLE: 36, CHAIR: 37, CHEST: 38, SHELF: 39, DRESSER: 40, POT: 41,
   IBARREL: 42, FIRE: 43, PLANT: 44, SFLOOR: 45, SWALL: 46, BARS: 47, CELLDOOR: 48, DESK: 49, BENCH: 50, BED2: 51, SEDGE: 52, STAIRS_UP: 53, STAIRS_DN: 54,
 };
 const SOLID = new Set([T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.FENCE, T.BUSH, T.BARREL, T.CRATE,
   T.LAMP, T.WELL, T.STALL, T.HAY, T.IWALL, T.IEDGE, T.BED, T.BED2, T.TABLE, T.CHAIR, T.CHEST, T.SHELF, T.DRESSER, T.POT, T.IBARREL,
-  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT]);
+  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT, T.FENCEV, T.DOGHOUSE, T.SACK, T.PLANTER, T.SIGNPOST]);
 const OPAQUE = new Set([T.VDOOR, T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.BUSH, T.STALL, T.HAY,
   T.IWALL, T.IEDGE, T.FIRE, T.SWALL, T.SEDGE, T.SHELF, T.TORCH]);
 const LOOT = new Set([T.CHEST, T.SHELF, T.DRESSER, T.POT]);
@@ -144,6 +144,7 @@ const ROOFS = [['#b5473a', '#8e3328', '#cf6a55'], ['#3f5f9e', '#2f4777', '#5b7cc
 
 const maps = {};
 const houses = [];
+const yards = [], yardDogs = [], wallLamps = [];
 const estates = [], gateTiles = new Map();
 const gateAt = (x, y) => gateTiles.get(y * town.w + x);
 function newMap(key, w, h, kind) {
@@ -176,9 +177,20 @@ GP[T.FLOWER] = (g, ox, oy, tx, ty) => {
     F(g, x - 1, y, 3, 1, c); F(g, x, y - 1, 1, 3, c); F(g, x, y, 1, 1, '#f9e79f');
   }
 };
-GP[T.PATH] = (g, ox, oy, tx, ty) => {
+const ROADLIKE = new Set([T.PATH, T.COBBLE, T.BRIDGE, T.MANHOLE]);
+GP[T.PATH] = (g, ox, oy, tx, ty, m) => {
   F(g, ox, oy, 16, 16, '#b8915f'); speck(g, ox, oy, 18, ['#a47e50', '#c9a46f', '#9a7449'], 2, tx, ty);
-  if (hash(tx, ty, 3) < 0.5) F(g, ox + Math.floor(hash(tx, ty, 4) * 13), oy + Math.floor(hash(tx, ty, 5) * 14), 2, 1, '#8f8a80');
+  for (let i = 0; i < 2; i++) if (hash(tx, ty, 3 + i) < 0.5) { const px = ox + Math.floor(hash(tx, ty, 4 + i) * 13), py = oy + Math.floor(hash(tx, ty, 5 + i) * 14); F(g, px, py, 2, 2, '#8f8a80'); F(g, px, py, 2, 1, '#a8a296'); }
+  if (!m || m.kind !== 'town') return;
+  const road = (dx, dy) => { const x = tx + dx, y = ty + dy; return x < 0 || y < 0 || x >= m.w || y >= m.h || ROADLIKE.has(m.ground[y * m.w + x]); };
+  const L = road(-1, 0), Rr = road(1, 0), U = road(0, -1), D = road(0, 1);
+  if (L && Rr && !(U && D)) { F(g, ox, oy + (U ? 4 : 11), 16, 1, '#a07a4c'); } // wheel ruts along the street
+  if (U && D && !(L && Rr)) { F(g, ox + (L ? 4 : 11), oy, 1, 16, '#a07a4c'); }
+  const verge = (x, y, w, h) => { F(g, x, y, w, h, '#9d7a4e'); };
+  if (!U) { verge(ox, oy, 16, 1); for (let k = 0; k < 16; k += 3) F(g, ox + k, oy, 2, 1 + Math.floor(hash(tx * 5 + k, ty, 70) * 2), '#5d9c47'); }
+  if (!D) { verge(ox, oy + 15, 16, 1); for (let k = 1; k < 16; k += 3) F(g, ox + k, oy + 14 + Math.floor(hash(tx * 5 + k, ty, 71) * 2), 2, 2, '#5d9c47'); }
+  if (!L) { verge(ox, oy, 1, 16); for (let k = 0; k < 16; k += 3) F(g, ox, oy + k, 1 + Math.floor(hash(tx, ty * 5 + k, 72) * 2), 2, '#5d9c47'); }
+  if (!Rr) { verge(ox + 15, oy, 1, 16); for (let k = 1; k < 16; k += 3) F(g, ox + 14 + Math.floor(hash(tx, ty * 5 + k, 73) * 2), oy + k, 2, 2, '#5d9c47'); }
 };
 GP[T.COBBLE] = (g, ox, oy, tx, ty) => {
   F(g, ox, oy, 16, 16, '#6f6c68');
@@ -231,36 +243,72 @@ OP[T.TREE] = (g, ox, oy) => {
   F(g, ox + 10, oy + 8, 1, 1, '#5aa64c'); F(g, ox + 4, oy + 9, 1, 1, '#2a5a29');
 };
 function houseOf(m, tx, ty) { return houses[m.owner[ty * m.w + tx]]; }
+const THATCH = ['#c9a24a', '#a8822f', '#e0bd68'];
 OP[T.ROOF] = (g, ox, oy, tx, ty, m) => {
-  const h = houseOf(m, tx, ty), [c, d, l] = ROOFS[h.roof], row = ty - h.y;
+  const h = houseOf(m, tx, ty), [c, d, l] = h.thatch ? THATCH : ROOFS[h.roof], row = ty - h.y;
   F(g, ox, oy, 16, 16, c);
-  for (let k = 0; k < 4; k++) { const y = oy + k * 4; F(g, ox, y + 3, 16, 1, d); const off = ((k + row) % 2) * 4; for (let x = off; x < 16; x += 8) { F(g, ox + x, y, 1, 3, d); F(g, ox + x + 1, y, 3, 1, l); } }
-  if (row === 0) { F(g, ox, oy, 16, 2, d); F(g, ox, oy + 2, 16, 1, l); if (tx === h.x + h.w - 2) { F(g, ox + 5, oy - 0, 6, 9, '#7a706a'); F(g, ox + 4, oy, 8, 2, '#5a524c'); F(g, ox + 6, oy + 3, 1, 5, '#8e857e'); } }
+  if (h.thatch) { // straw, combed in uneven strands
+    for (let k = 0; k < 16; k += 2) { const n = hash(tx * 16 + k, ty, 31); F(g, ox + k, oy + Math.floor(n * 4), 1, 6 + Math.floor(n * 6), d); F(g, ox + k + 1, oy + 2 + Math.floor(n * 5), 1, 5, l); }
+    F(g, ox, oy + 14, 16, 2, d);
+  } else for (let k = 0; k < 4; k++) { const y = oy + k * 4; F(g, ox, y + 3, 16, 1, d); const off = ((k + row) % 2) * 4; for (let x = off; x < 16; x += 8) { F(g, ox + x, y, 1, 3, d); F(g, ox + x + 1, y, 3, 1, l); } }
+  if (row === 0) {
+    F(g, ox, oy, 16, 2, d); F(g, ox, oy + 2, 16, 1, l);
+    if (h.chimney && tx === h.chimX) { const brick = h.style === 'stone' ? '#8a8680' : '#9a4a34'; F(g, ox + 5, oy - 0, 6, 9, brick); F(g, ox + 4, oy, 8, 2, shade(brick, 0.7)); F(g, ox + 6, oy + 3, 1, 5, shade(brick, 1.2)); F(g, ox + 5, oy + 5, 6, 1, shade(brick, 0.75)); }
+    if (h.thatch && tx === h.x + 1) { F(g, ox + 4, oy + 5, 6, 5, '#3a2a1a'); F(g, ox + 5, oy + 6, 4, 3, '#e8c45a'); } // a little dormer window
+  }
   if (row === h.roofRows - 1) { F(g, ox, oy + 13, 16, 2, d); F(g, ox, oy + 15, 16, 1, '#2a1d14'); }
   if (tx === h.x) { F(g, ox, oy, 1, 16, '#2a1d14'); F(g, ox + 1, oy, 1, 16, d); }
   if (tx === h.x + h.w - 1) { F(g, ox + 15, oy, 1, 16, '#2a1d14'); F(g, ox + 14, oy, 1, 16, d); }
 };
+// Wall styles: timber-framed, brick, stone, coloured plaster and log cabins.
+function wallBase(g, ox, oy, tx, ty, h, row) {
+  const st = h.style || 'timber';
+  if (st === 'brick') {
+    F(g, ox, oy, 16, 16, '#a9563c'); for (let r = 0; r < 4; r++) { const y = oy + r * 4; F(g, ox, y + 3, 16, 1, '#7e3b28'); const off = (r + ty) % 2 ? 4 : 0; for (let x = off; x < 16; x += 8) F(g, ox + x, y, 1, 3, '#7e3b28'); }
+    speck(g, ox, oy, 6, ['#b8664a', '#96462f'], 41, tx, ty); return '#5e3a24';
+  }
+  if (st === 'stone') { stoneTile(g, ox, oy, tx, ty); F(g, ox, oy, 16, 16, 'rgba(230,220,190,0.25)'); return '#55504a'; }
+  if (st === 'log') {
+    F(g, ox, oy, 16, 16, '#8a5a33'); for (let y = 0; y < 16; y += 4) { F(g, ox, oy + y + 3, 16, 1, '#5e3a1e'); F(g, ox, oy + y, 16, 1, '#a3703f'); }
+    speck(g, ox, oy, 5, ['#7a4e2a', '#9a6a3c'], 43, tx, ty); return '#4a2e17';
+  }
+  F(g, ox, oy, 16, 16, st === 'plaster' ? h.wallC : '#e8d7ae'); speck(g, ox, oy, 8, st === 'plaster' ? [shade(h.wallC, 0.93), shade(h.wallC, 1.06)] : ['#d9c595', '#f1e3c0'], 7, tx, ty);
+  return '#6b4a2b';
+}
 OP[T.WALL] = (g, ox, oy, tx, ty, m) => {
-  const h = houseOf(m, tx, ty), row = ty - h.y, beam = '#6b4a2b';
-  F(g, ox, oy, 16, 16, '#e8d7ae'); speck(g, ox, oy, 8, ['#d9c595', '#f1e3c0'], 7, tx, ty);
-  if (row === h.roofRows) { F(g, ox, oy, 16, 2, beam); F(g, ox, oy + 15, 16, 1, beam); }
-  if (row > h.roofRows && row < h.h - 1) F(g, ox, oy + 15, 16, 1, beam);
+  const h = houseOf(m, tx, ty), row = ty - h.y, beam = wallBase(g, ox, oy, tx, ty, h, row), framed = !h.style || h.style === 'timber' || h.style === 'plaster';
+  if (row === h.roofRows) { F(g, ox, oy, 16, 2, beam); if (framed) F(g, ox, oy + 15, 16, 1, beam); }
+  if (framed && row > h.roofRows && row < h.h - 1) F(g, ox, oy + 15, 16, 1, beam);
   if (row === h.h - 1) { F(g, ox, oy + 13, 16, 3, '#8e877c'); F(g, ox, oy + 13, 16, 1, '#6f695f'); F(g, ox + 5, oy + 14, 1, 2, '#6f695f'); F(g, ox + 11, oy + 14, 1, 2, '#6f695f'); }
   if (tx === h.x) F(g, ox, oy, 2, 16, beam);
   if (tx === h.x + h.w - 1) F(g, ox + 14, oy, 2, 16, beam);
-  if (row === h.roofRows && m.tiles[ty * m.w + tx] === T.WALL && (tx - h.x) % 2 === 0 && tx !== h.x && tx !== h.x + h.w - 1) for (let i = 0; i < 12; i++) F(g, ox + 2 + i, oy + 2 + i, 2, 1, beam);
+  if ((!h.style || h.style === 'timber') && row === h.roofRows && m.tiles[ty * m.w + tx] === T.WALL && (tx - h.x) % 2 === 0 && tx !== h.x && tx !== h.x + h.w - 1) for (let i = 0; i < 12; i++) F(g, ox + 2 + i, oy + 2 + i, 2, 1, beam);
+  if (h.ivy && (tx === h.x || tx === h.x + h.w - 1) && row >= h.roofRows) for (let i = 0; i < 7; i++) { const lx = ox + (tx === h.x ? 1 : 10) + Math.floor(hash(tx, ty * 7 + i, 61) * 5), ly = oy + Math.floor(hash(tx * 3, ty + i, 62) * 14); F(g, lx, ly, 2, 2, i % 2 ? '#3f8a3a' : '#2f6e2f'); }
+  if (h.lamp && row === h.h - 2 && tx === h.door.x - 1) { F(g, ox + 10, oy + 6, 1, 4, '#2d2d33'); F(g, ox + 11, oy + 5, 4, 5, '#2d2d33'); F(g, ox + 12, oy + 6, 2, 3, '#f7d774'); }
 };
 OP[T.WINDOW] = (g, ox, oy, tx, ty, m) => {
   OP[T.WALL](g, ox, oy, tx, ty, m);
-  F(g, ox + 3, oy + 2, 10, 10, '#5a3b22'); F(g, ox + 4, oy + 3, 8, 8, '#8ec5d9');
-  F(g, ox + 7, oy + 3, 1, 8, '#5a3b22'); F(g, ox + 4, oy + 7, 8, 1, '#5a3b22'); F(g, ox + 5, oy + 4, 1, 2, '#d5f0f7');
-  F(g, ox + 3, oy + 12, 10, 2, '#7a4b24'); F(g, ox + 4, oy + 11, 1, 1, '#f07fa8'); F(g, ox + 7, oy + 11, 1, 1, '#f2d14b'); F(g, ox + 10, oy + 11, 1, 1, '#f07fa8');
+  const h = houseOf(m, tx, ty), grand = ['mansion', 'estate', 'bank', 'school', 'inn'].includes(h.type), frame = h.style === 'stone' || h.style === 'brick' ? '#e8e0d0' : '#5a3b22';
+  if (grand) { // tall arched windows
+    F(g, ox + 4, oy + 2, 8, 11, frame); F(g, ox + 5, oy + 1, 6, 1, frame); F(g, ox + 5, oy + 3, 6, 9, '#7ab4cc'); F(g, ox + 6, oy + 2, 4, 1, '#7ab4cc');
+    F(g, ox + 7, oy + 3, 2, 9, frame); F(g, ox + 5, oy + 7, 6, 1, frame); F(g, ox + 6, oy + 4, 1, 2, '#d5f0f7'); F(g, ox + 3, oy + 13, 10, 1, frame);
+  } else {
+    F(g, ox + 4, oy + 2, 8, 10, frame); F(g, ox + 5, oy + 3, 6, 8, '#8ec5d9');
+    F(g, ox + 7, oy + 3, 1, 8, frame); F(g, ox + 5, oy + 7, 6, 1, frame); F(g, ox + 5, oy + 4, 1, 2, '#d5f0f7');
+    if (h.shutters) { F(g, ox + 1, oy + 2, 3, 10, h.shutter); F(g, ox + 12, oy + 2, 3, 10, h.shutter); for (const sx of [1, 12]) { F(g, ox + sx, oy + 5, 3, 1, shade(h.shutter, 0.7)); F(g, ox + sx, oy + 9, 3, 1, shade(h.shutter, 0.7)); } }
+  }
+  if (h.flowers && !grand) { F(g, ox + 3, oy + 12, 10, 2, '#7a4b24'); const fc = ['#f07fa8', '#f2d14b', '#e04040', '#b48cf2'][h.idx % 4]; for (const fx of [4, 6, 8, 10]) { F(g, ox + fx, oy + 11, 1, 1, fx % 4 ? fc : '#f9f9f9'); F(g, ox + fx + 1, oy + 11, 1, 1, '#3f8a3a'); } }
+  else if (!grand) F(g, ox + 3, oy + 12, 10, 1, shade(frame, 0.8));
 };
 OP[T.DOOR] = (g, ox, oy, tx, ty, m) => {
   OP[T.WALL](g, ox, oy, tx, ty, m);
-  F(g, ox + 3, oy + 3, 10, 13, '#4a2e17'); F(g, ox + 5, oy + 2, 6, 1, '#4a2e17');
-  F(g, ox + 4, oy + 4, 8, 12, '#8a5a2b'); F(g, ox + 6, oy + 4, 1, 12, '#6e451f'); F(g, ox + 9, oy + 4, 1, 12, '#6e451f');
-  F(g, ox + 4, oy + 7, 8, 1, '#6e451f'); F(g, ox + 10, oy + 10, 1, 1, '#e8c45a'); F(g, ox + 2, oy + 15, 12, 1, '#9c968c');
+  const h = houseOf(m, tx, ty), dc = (h && h.doorC) || '#8a5a2b', dd = shade(dc, 0.78);
+  F(g, ox + 3, oy + 3, 10, 13, '#3a2414'); F(g, ox + 5, oy + 2, 6, 1, '#3a2414');
+  F(g, ox + 4, oy + 4, 8, 12, dc); F(g, ox + 6, oy + 4, 1, 12, dd); F(g, ox + 9, oy + 4, 1, 12, dd);
+  F(g, ox + 4, oy + 7, 8, 1, dd); F(g, ox + 10, oy + 10, 1, 1, '#e8c45a'); F(g, ox + 2, oy + 15, 12, 1, '#9c968c');
+  if (h && h.side) return; // the estates' servants' doors stay plain
+  F(g, ox + 6, oy + 5, 4, 2, shade(dc, 1.25)); // a little window in the door
+  if (h && h.wreath) { F(g, ox + 6, oy + 8, 4, 4, '#2f6e2f'); F(g, ox + 7, oy + 9, 2, 2, dc); F(g, ox + 8, oy + 11, 1, 1, '#d23a3a'); }
 };
 function stoneTile(g, ox, oy, tx, ty) {
   F(g, ox, oy, 16, 16, '#7f818a');
@@ -299,6 +347,15 @@ OP[T.JDOOR] = (g, ox, oy, tx, ty) => {
   for (const [x, y] of [[5, 6], [10, 6], [5, 12], [10, 12]]) F(g, ox + x, oy + y, 1, 1, '#a0a0aa');
   F(g, ox + 10, oy + 9, 1, 2, '#c9a04a');
 };
+OP[T.FENCEV] = (g, ox, oy) => { F(g, ox + 6, oy, 4, 16, '#8a5a2b'); F(g, ox + 7, oy, 1, 16, '#b98b52'); F(g, ox + 5, oy + 3, 6, 2, '#a0703a'); F(g, ox + 5, oy + 11, 6, 2, '#a0703a'); F(g, ox + 4, oy + 15, 8, 1, 'rgba(0,0,0,0.2)'); };
+OP[T.DOGHOUSE] = (g, ox, oy) => {
+  F(g, ox + 1, oy + 14, 14, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 2, oy + 6, 12, 9, '#a0703a'); F(g, ox + 2, oy + 6, 12, 1, '#c99a5c');
+  for (let i = 0; i < 7; i++) F(g, ox + 1 + i, oy + 6 - i, 14 - i * 2, 1, i % 2 ? '#a83232' : '#8e2a2a');
+  F(g, ox + 6, oy + 9, 4, 6, '#2a1a10'); F(g, ox + 6, oy + 8, 4, 1, '#2a1a10'); F(g, ox + 4, oy + 12, 1, 1, '#e8c45a');
+};
+OP[T.SACK] = (g, ox, oy) => { F(g, ox + 3, oy + 14, 10, 2, 'rgba(0,0,0,0.22)'); blob(g, ox + 8, oy + 10, 5, '#c9b07a'); F(g, ox + 6, oy + 4, 4, 3, '#b39a64'); F(g, ox + 6, oy + 6, 4, 1, '#7a5a30'); F(g, ox + 5, oy + 9, 1, 3, '#d9c48e'); };
+OP[T.PLANTER] = (g, ox, oy) => { F(g, ox + 2, oy + 14, 12, 2, 'rgba(0,0,0,0.22)'); F(g, ox + 2, oy + 9, 12, 6, '#8a5a33'); F(g, ox + 2, oy + 9, 12, 1, '#a3703f'); blob(g, ox + 8, oy + 7, 5, '#3f8a3a'); for (const [x, y, c] of [[5, 5, '#f07fa8'], [9, 4, '#f2d14b'], [11, 7, '#e04040'], [7, 8, '#ffffff']]) F(g, ox + x, oy + y, 2, 2, c); };
+OP[T.SIGNPOST] = (g, ox, oy) => { F(g, ox + 7, oy + 4, 2, 12, '#6b4423'); F(g, ox + 2, oy + 3, 11, 4, '#a0703a'); F(g, ox + 12, oy + 4, 2, 2, '#a0703a'); F(g, ox + 3, oy + 8, 10, 3, '#8a5a2b'); F(g, ox + 2, oy + 9, 1, 1, '#8a5a2b'); F(g, ox + 4, oy + 4, 7, 1, '#4a2e17'); F(g, ox + 5, oy + 9, 6, 1, '#4a2e17'); };
 OP[T.FENCE] = (g, ox, oy) => { F(g, ox, oy + 6, 16, 2, '#a0703a'); F(g, ox, oy + 11, 16, 2, '#a0703a'); F(g, ox + 1, oy + 4, 2, 11, '#8a5a2b'); F(g, ox + 12, oy + 4, 2, 11, '#8a5a2b'); F(g, ox + 1, oy + 4, 2, 1, '#b98b52'); F(g, ox + 12, oy + 4, 2, 1, '#b98b52'); };
 OP[T.BUSH] = (g, ox, oy, tx, ty) => {
   F(g, ox + 2, oy + 13, 12, 2, 'rgba(0,0,0,0.2)'); blob(g, ox + 8, oy + 9, 6, '#2f6e2f'); blob(g, ox + 7, oy + 8, 4, '#3f8a3a'); F(g, ox + 5, oy + 6, 2, 1, '#5aa64c');
@@ -756,12 +813,33 @@ function genTown() {
       const v = R() / dens; if (v < 0.07) setO(x, y, T.TREE); else if (v < 0.1) setO(x, y, T.BUSH); else if (v < 0.11) hay(x, y);
     }
   };
+  // A fenced front yard: the house is set back, a picket fence runs in front with a gate on the path,
+  // and often there's a dog house with a dog on guard. The gate is locked at night.
+  function makeYard(h, fenceRow) {
+    const x0 = h.x, x1 = h.x + h.w - 1, dx = h.door.x;
+    const Y = { kind: 'yard', h, x0: x0 + 1, x1: x1 - 1, y0: fenceRow - 2, y1: fenceRow - 1, gate: { x: dx, y: fenceRow }, shut: true, alert: 0 };
+    for (let y = fenceRow - 2; y <= fenceRow; y++) for (const x of [x0, x1]) { setG(x, y, T.GRASS); setO(x, y, y === fenceRow ? T.FENCE : T.FENCEV); }
+    for (let x = x0 + 1; x < x1; x++) { setG(x, fenceRow, T.GRASS); if (x !== dx) setO(x, fenceRow, T.FENCE); }
+    for (let y = Y.y0; y <= Y.y1; y++) for (let x = x0 + 1; x < x1; x++) setG(x, y, x === dx ? T.PATH : R() < 0.35 ? T.FLOWER : T.GRASS);
+    setG(dx, fenceRow, T.PATH); setO(dx, fenceRow, T.GATE); gateTiles.set(fenceRow * W + dx, Y);
+    if (isGrass(dx, fenceRow + 1)) setG(dx, fenceRow + 1, T.PATH);
+    if (R() < 0.6) { const kx = dx - x0 > x1 - dx ? x0 + 1 : x1 - 1; if (kx !== dx) { setO(kx, Y.y0, T.DOGHOUSE); Y.kennel = { x: kx, y: Y.y0 }; Y.wantsDog = true; } }
+    else if (x1 - x0 > 4) setO(dx === x0 + 2 ? x1 - 1 : x0 + 1, Y.y0, T.PLANTER);
+    h.yard = Y; yards.push(Y); return Y;
+  }
   function placeHouse(type, hx, hy, w, shop) {
     const D = HOUSE_TYPES[type], i = houses.length, hh = D.h, rr = D.roofRows, dx = hx + Math.floor(w / 2), S = shop && SHOPS[shop];
     const h = { idx: i, type, shop, shopName: S ? S.name : null, x: hx, y: hy, w, h: hh, roofRows: rr, door: { x: dx, y: hy + hh - 1 }, approach: { x: dx, y: hy + hh },
       roof: S ? S.roof : Math.floor(R() * ROOFS.length), family: S ? S.family : SURNAMES[i % SURNAMES.length], wealth: ri(D.wealth[0], D.wealth[1]),
       cooldown: 0, discoverT: 0, doorOpenT: 0, visitStolen: 0, key: 'h' + i, sus: 0, wake: 0, alarmT: 0, residents: [] };
     houses.push(h);
+    { const st = R(), pal = ['#e8d7ae', '#cfe0ea', '#e9d0d4', '#dfe8c8', '#f0e2b0'];
+      h.style = S || ['bank', 'school'].includes(type) ? (type === 'bank' ? 'stone' : 'brick') : type === 'cottage' ? (st < 0.45 ? 'log' : st < 0.8 ? 'timber' : 'plaster') : type === 'mansion' || type === 'estate' ? (st < 0.5 ? 'stone' : 'brick') : ['timber', 'brick', 'plaster', 'stone', 'timber', 'plaster'][Math.floor(st * 6)];
+      if (S && type === 'shop') h.style = ['timber', 'brick', 'plaster'][i % 3];
+      h.wallC = pal[Math.floor(R() * pal.length)]; h.doorC = ['#8a5a2b', '#3a6ea8', '#a83232', '#3f7a3a', '#5a3a6a', '#2f2f36', '#c97a2a'][Math.floor(R() * 7)];
+      h.shutters = R() < 0.55; h.shutter = ['#3a6ea8', '#3f7a3a', '#a83232', '#2f2f36', '#6a4a8a'][Math.floor(R() * 5)];
+      h.flowers = R() < 0.6; h.ivy = R() < 0.2; h.lamp = R() < 0.45; h.wreath = R() < 0.25;
+      h.thatch = type === 'cottage' && R() < 0.65; h.chimney = R() < 0.8; h.chimX = hx + 1 + Math.floor(R() * Math.max(1, w - 2)); }
     for (let yy = 0; yy < hh; yy++) for (let xx = 0; xx < w; xx++) {
       const x = hx + xx, y = hy + yy; m.owner[y * W + x] = i;
       let t = yy < rr ? T.ROOF : T.WALL;
@@ -771,6 +849,7 @@ function genTown() {
       setO(x, y, t); if (t === T.WINDOW) windows.push({ x, y });
     }
     setG(dx, hy + hh, T.PATH);
+    if (h.lamp) wallLamps.push({ x: dx - 1, y: hy + hh - 2 });
     return h;
   }
   for (let bj = 0; bj < ROWB.length; bj++) for (let bi = 0; bi < COLB.length; bi++) {
@@ -813,15 +892,16 @@ function genTown() {
       continue;
     }
     // a row of houses whose doors sit on doorRow, spaced out with yards between them
-    const band = (doorRow, maxH) => {
+    const band = (doorRow, maxH, yardTop) => {
       let x = x0 + 2, top = doorRow;
       while (true) {
         const rem = x1 - 1 - x;
         const opts = DISTRICT[bj].filter(t => HOUSE_TYPES[t].w[0] <= rem && HOUSE_TYPES[t].h <= maxH);
         if (!opts.length) break;
         const type = bj === 0 && x === x0 + 2 && opts.includes('mansion') ? 'mansion' : opts[Math.floor(R() * opts.length)], D = HOUSE_TYPES[type], w = Math.min(rem, ri(D.w[0], D.w[1]));
-        placeHouse(type, x, doorRow - D.h + 1, w);
-        top = Math.min(top, doorRow - D.h + 1);
+        const yd = yardTop !== undefined && type !== 'mansion' && doorRow - D.h - 2 >= yardTop && R() < 0.45 ? 3 : 0; // some houses sit back behind a front yard
+        const hh0 = placeHouse(type, x, doorRow - D.h + 1 - yd, w); if (yd) makeYard(hh0, doorRow);
+        top = Math.min(top, doorRow - D.h + 1 - yd);
         const gapW = 2 + (R() < 0.5 ? 1 : 0);
         if (x + w + 1 < x1 - 1 && R() < 0.3) hay(x + w + 1, doorRow - D.h + 1); // tucked in the yard
         x += w + gapW;
@@ -830,7 +910,7 @@ function genTown() {
     };
     const shopRow = bj === 1 && (bi === 2 || bi === 3), innBlock = bj === 2 && bi === 1;
     if (bj === 0) {
-      const top = band(y1 - 1, y1 - y0 - 1);
+      const top = band(y1 - 1, y1 - y0 - 1, y0 + 2);
       sprinkle(x0 + 1, x1 - 1, y0 + 1, top - 2);
     } else {
       // deep block: a row of houses up top, a lane, gardens, then a second row facing the road
@@ -844,7 +924,7 @@ function genTown() {
       } else if (innBlock) {
         placeHouse('inn', x0 + 2, y1 - 8, 16, 'inn');
         for (const [x, y, t] of [[x0 + 1, y1 - 1, T.BARREL], [x0 + 1, y1 - 2, T.BARREL], [x1 - 1, y1 - 1, T.CRATE]]) setO(x, y, t);
-      } else band(y1 - 1, 5);
+      } else band(y1 - 1, 5, y0 + 7);
     }
   }
   // South of the farms: the river, with bridges where the streets cross it, and a whole new quarter beyond.
@@ -858,13 +938,14 @@ function genTown() {
     for (const y of [90, 91]) for (const x of [10, 11]) { setG(x, y, T.BRIDGE); m.tiles[y * W + x] = T.BRIDGE; }
     setO(13, 89, T.BOAT); setO(26, 90, T.BOAT); setO(10, 96, T.BARREL); setO(11, 96, T.CRATE); setO(13, 95, T.HAY); hays.push({ x: 13, y: 95 });
     for (let x = 6; x <= 11; x++) setG(x, 93, T.PATH); setG(6, 99, T.PATH); }
-  const southBand = (x0, x1, doorRow, types) => {
+  const southBand = (x0, x1, doorRow, types, yardTop) => {
     let x = x0 + 2;
     while (true) {
       const rem = x1 - 1 - x, opts = types.filter(t => HOUSE_TYPES[t].w[0] <= rem);
       if (!opts.length) break;
       const type = opts[Math.floor(R() * opts.length)], D = HOUSE_TYPES[type], w = Math.min(rem, ri(D.w[0], D.w[1]));
-      placeHouse(type, x, doorRow - D.h + 1, w); x += w + 2 + (R() < 0.5 ? 1 : 0);
+      const yd = yardTop !== undefined && doorRow - D.h - 2 >= yardTop && R() < 0.45 ? 3 : 0;
+      const hh0 = placeHouse(type, x, doorRow - D.h + 1 - yd, w); if (yd) makeYard(hh0, doorRow); x += w + 2 + (R() < 0.5 ? 1 : 0);
     }
   };
   COLB.forEach(([x0, x1], bi) => {
@@ -876,10 +957,10 @@ function genTown() {
     } else if (bi === 2) { // the Bank: stone-faced, with guards inside day and night
       const bk = placeHouse('bank', x0, 95, 20, 'bank');
       for (let yy = bk.roofRows; yy < bk.h; yy++) for (let xx = 0; xx < bk.w; xx++) { const i = (bk.y + yy) * W + bk.x + xx; if (m.tiles[i] === T.WALL) m.tiles[i] = T.STONE; }
-    } else { southBand(x0, x1, 102, ['house', 'cottage', 'large']); for (let x = x0; x <= x1; x++) if (isGrass(x, 103)) setG(x, 103, T.GRASS); }
+    } else { southBand(x0, x1, 102, ['house', 'cottage', 'large'], 95); for (let x = x0; x <= x1; x++) if (isGrass(x, 103)) setG(x, 103, T.GRASS); }
     // the far row: a lane, two rows of houses, gardens
     for (let x = x0; x <= x1; x++) { setG(x, 112, T.PATH); setG(x, 121, T.PATH); }
-    southBand(x0, x1, 111, ['cottage', 'house', 'house', 'large']); southBand(x0, x1, 120, ['cottage', 'cottage', 'house']);
+    southBand(x0, x1, 111, ['cottage', 'house', 'house', 'large']); southBand(x0, x1, 120, ['cottage', 'cottage', 'house'], 113);
     sprinkle(x0 + 1, x1 - 1, 113, 114, null, 0.7);
   });
   // East of town: thick forest, one road through it, and two walled estates facing each other across it.
@@ -895,7 +976,7 @@ function genTown() {
     for (const x of [145, 146]) { setG(x, gateY, T.PATH); setO(x, gateY, T.GATE); E.gate.push({ x, y: gateY }); gateTiles.set(gateY * W + x, E); }
     const h = placeHouse('estate', 136, houseY, 20); h.family = family; h.estate = E; E.house = h; h.roof = name === 'Ashcombe Hall' ? 1 : 4;
     // the servants' door on the side wall
-    const bx = backSide > 0 ? 155 : 136, by = houseY + 8; setO(bx, by, T.DOOR); h.back = { side: backSide, x: bx, y: by, ax: bx + backSide, ay: by }; setG(bx + backSide, by, T.PATH);
+    const bx = backSide > 0 ? 155 : 136, by = houseY + 8; setO(bx, by, T.DOOR); h.lamp = false; h.back = { side: backSide, x: bx, y: by, ax: bx + backSide, ay: by }; setG(bx + backSide, by, T.PATH);
     estates.push(E); return E;
   };
   // Ashcombe Hall, north of the road: the drive runs straight from the gate to the front door
@@ -914,6 +995,17 @@ function genTown() {
   for (const [x, y] of [[126, 55], [164, 55], [126, 82], [164, 70]]) setO(x, y, T.TREE);
   V.routes = [[[128, 56], [162, 56], [162, 81], [128, 81]], [[162, 81], [128, 81], [128, 56], [162, 56]], [[135, 60], [160, 60], [160, 79], [135, 80]], [[140, 79], [158, 74]]];
   for (const hy of HROADS) for (const vx of VROADS) for (const [x, y] of [[vx - 1, hy - 1], [vx + 2, hy + 2]]) if (isGrass(x, y)) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+  // the streets around the market are cobbled
+  for (let y = 32; y <= 51; y++) for (let x = 38; x <= 61; x++) if (m.ground[y * W + x] === T.PATH) setG(x, y, T.COBBLE);
+  // signposts at crossroads, and barrels, crates, sacks and planters along the verges
+  for (const hy of HROADS) for (const vx of VROADS) if (isGrass(vx + 2, hy - 1)) setO(vx + 2, hy - 1, T.SIGNPOST);
+  const nearDoor = (x, y) => houses.some(h => Math.abs(h.approach.x - x) <= 2 && Math.abs(h.approach.y - y) <= 2) || yards.some(Y => x >= Y.x0 - 1 && x <= Y.x1 + 1 && y >= Y.y0 - 1 && y <= Y.gate.y + 1);
+  const roadside = (x, y) => [[0, 1], [0, -1], [1, 0], [-1, 0]].some(([dx, dy]) => { const g = m.ground[(y + dy) * W + x + dx]; return g === T.PATH || g === T.COBBLE; });
+  for (let y = 3; y < H - 3; y++) for (let x = 3; x < 117; x++) {
+    if (!isGrass(x, y) || !roadside(x, y) || nearDoor(x, y) || hash(x, y, 77) > 0.035) continue;
+    const kind = hash(x, y, 78), cluster = kind < 0.35 ? [T.BARREL, T.BARREL] : kind < 0.6 ? [T.CRATE, T.SACK] : kind < 0.8 ? [T.PLANTER] : [T.SACK, T.BARREL];
+    cluster.forEach((t, k) => { const cx = x + (roadside(x + k, y) ? k : 0), cy = y; if (isGrass(cx, cy) && !nearDoor(cx, cy)) setO(cx, cy, t); });
+  }
 }
 
 const BLANKETS = ['#a83232', '#3a6ea8', '#3f8a3a', '#7a4ea8', '#c97a2a'];
@@ -1463,11 +1555,12 @@ let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, cu
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
-  player = { cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
+  player = { bones: 0, cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
   up = { sack: false, boots: false, tongue: false, picks: false }; rep = 0; job = null; bankBal = 0; evidence = []; heist = null; exiled = false; nightNotified = -1; bounty = 0; forceT = 0; curDay = 1; msgs = []; clouds = []; trail = []; menu = null; paused = false; whistleCD = 0; escort = null; alertPing = null;
   guards = []; for (let i = 0; i < BOUNTY_FORCE[0]; i++) makeUnit('guard', i, true);
+  setupYardDogs(); for (const Y of yards) { Y.shut = true; Y.alert = 0; Y.wokeT = 0; if (Y.dog) { const d = Y.dog; d.calmDay = -1; d.friend = 0; d.x = Y.kennel.x * TS + 8; d.y = (Y.kennel.y + 1) * TS + 12; } }
   makePosts(); makeExtraPosts(); for (const E of estates) { E.shut = true; E.invited = false; E.banned = false; }
   for (const h of houses) {
     h.cooldown = 0; h.discoverT = 0; h.visitStolen = 0; h.sus = 0; h.wake = 0; h.alarmT = 0; h.lead = null;
@@ -1576,6 +1669,9 @@ function dayInfo() {
 }
 const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'], START_DAY = 4; // the game opens on a Friday
 const isNight = () => dayInfo().dark > 0.35;
+// Some nights it rains: the Watch can't see as far and the patter covers your footsteps.
+const isRaining = () => { const d = dayInfo(); return d.name !== 'Day' && hash(d.day, 7, 3) < 0.35; };
+const rainHush = () => isRaining() ? 0.6 : 1;
 const isMarketDay = () => { const d = dayInfo(); return d.weekday === 'Saturday' && d.t < 0.6; };
 
 // =====================================================================
@@ -1661,7 +1757,7 @@ function canSee(e, t, range, cosHalf) {
   if (inSmoke(e.map, ex, ey)) return false;
   return losClear(e.map, ex, ey, tx, ty);
 }
-const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? 100 - dayInfo().dark * 55 : 110; };
+const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110; };
 const peppered = () => player.pepperDay === dayInfo().day;
 const guardSees = g => g.unit === 'dog' ? !peppered() && canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
 function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
@@ -1710,6 +1806,14 @@ function makePosts() {
   }));
 }
 // Posts other than the estates: the school's night hall monitors, the bank's guards, the Watch House night watch.
+function setupYardDogs() {
+  for (const Y of yards) if (Y.wantsDog && !Y.dog) {
+    const name = PET_NAMES[(Y.h.idx * 7) % PET_NAMES.length];
+    Y.dog = { kind: 'pet', yardDog: true, name: `${name} (${Y.h.family}s' yard dog)`, house: Y.h, map: 'town', x: Y.kennel.x * TS + 8, y: (Y.kennel.y + 1) * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PET_SHEETS[Y.h.idx % PET_SHEETS.length],
+      animT: 0, bubble: null, barkCD: 0, wait: 0, wt: null, calmDay: -1, friend: 0 };
+    yardDogs.push(Y.dog);
+  }
+}
 function setupPosts() {
   const school = houses.find(h => h.type === 'school'), bank = houses.find(h => h.type === 'bank');
   extraPosts.push({ name: 'the school', house: school, nightOnly: true, welcome: () => !isNight(),
@@ -1731,6 +1835,36 @@ function makeExtraPosts() {
 const inYard = (E, e) => !!E.yard && e.map === 'town' && e.x >= E.yard.x0 * TS && e.x < (E.yard.x1 + 1) * TS && e.y >= E.yard.y0 * TS && e.y < (E.yard.y1 + 1) * TS + 6;
 const onGrounds = E => inYard(E, player) || (E.house && maps[player.map].house === E.house) || (E.map && player.map === E.map);
 const welcomeAt = E => E.welcome ? E.welcome() : E.invited && !isNight() && E.house.alarmT <= 0;
+function updateYards(dt) {
+  const p = player, day = dayInfo().day, night = isNight();
+  for (const Y of yards) {
+    const gx = Y.gate.x * TS + 8, gy = Y.gate.y * TS + 8, inside = p.map === 'town' && p.x >= Y.x0 * TS && p.x < (Y.x1 + 1) * TS && p.y >= Y.y0 * TS && p.y < (Y.y1 + 1) * TS + 4;
+    if (!Y.shut && !inside && (p.map !== 'town' || Math.hypot(p.x - gx, p.y - gy) > 60)) Y.shut = true; // the gate swings shut behind you
+    Y.alert = Math.max(0, Y.alert - 10 * dt); Y.wokeT = Math.max(0, (Y.wokeT || 0) - dt);
+    const d = Y.dog; if (!d) continue;
+    d.moving = false; d.barkCD = Math.max(0, d.barkCD - dt);
+    const calm = d.calmDay === day || (d.friend || 0) >= 40, near = p.map === 'town' && Math.hypot(p.x - d.x, p.y - d.y) < 110;
+    const sees = near && !calm && p.state !== 'hidden' && (inside || night) && canSee(d, p, inside ? 120 : 70 * (isRaining() ? 0.7 : 1), -2);
+    if (sees) {
+      d.fa = Math.atan2(p.y - d.y, p.x - d.x);
+      if (d.barkCD <= 0) { d.barkCD = 1.2; say(d, pick(['WOOF! WOOF!', 'ARF ARF ARF!', 'GRRR... WOOF!']), 1); SFX.bark(); }
+      if (night) Y.alert += (p.sneak ? 22 : 45) * dt;
+      if (Y.alert >= 100 && !Y.wokeT) { // the house is up, and a watchman wanders over to see what the fuss is
+        Y.wokeT = 90; Y.alert = 0; msg(`The ${Y.h.family}s' dog has woken the whole house!`, '#ffb36b');
+        const r = Y.h.residents.find(isHome); if (r) doorBubble = { x: Y.h.door.x * TS + 8, y: Y.h.door.y * TS + 6, text: 'Who\'s out there?!', t: 3 };
+        const g = guards.filter(g => g.unit === 'guard' && !g.post && ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => roughDist(a, d) - roughDist(b, d))[0];
+        if (g) { g.state = 'respond'; g.target = { map: 'town', x: Y.gate.x, y: Y.gate.y + 1 }; g.path = null; say(g, 'What\'s that racket?'); }
+      }
+      continue;
+    }
+    if (d.wait > 0) { d.wait -= dt; continue; }
+    if (!d.wt) { const k = Y.kennel; d.wt = Math.random() < 0.35 || !night ? { x: k.x, y: k.y + 1 } : { x: Y.x0 + Math.floor(Math.random() * (Y.x1 - Y.x0 + 1)), y: Y.y0 + Math.floor(Math.random() * 2) }; if (isSolid(town, d.wt.x, d.wt.y)) d.wt = null; continue; }
+    const tx = d.wt.x * TS + 8, ty = d.wt.y * TS + 12, dx = tx - d.x, dy = ty - d.y, dd = Math.hypot(dx, dy);
+    if (dd < 2) { d.wt = null; d.wait = night ? rnd(1, 4) : rnd(4, 10); continue; }
+    const before = d.x + d.y; moveEntity(d, dx / dd * 22 * dt, dy / dd * 22 * dt); d.fa = Math.atan2(dy, dx); d.dir = dirFromAngle(d.fa);
+    if (d.x + d.y !== before) { d.moving = true; d.animT += dt; } else d.wt = null;
+  }
+}
 function openGate(E, guest) {
   E.shut = false; SFX.door();
   msg(guest ? `The groundsmen swing the gate open. "Welcome to ${E.name}!"` : `The gate lock clicks. ${E.name} is open...`, guest ? '#9df0a0' : '#9ab0ff');
@@ -1949,6 +2083,7 @@ function burgle(h, back) {
     h.visitStolen = 0; h.wake = 0; if (h.estate) unlock('estate_in');
     const home = h.residents.filter(isHome);
     for (const r of home) putToBed(r);
+    if (h.yard && h.yard.wokeT > 0 && home.length) { h.wake = 100; msg('The dog woke them - they\'re still up!', '#ff8a6b'); }
     if (home.length) msg(`You slip into the ${h.family} house. ${home.length} asleep... don't make a sound.`, '#9ab0ff');
     else msg(`The ${h.family}s are out. Be quick - they could come home any minute.`, '#9ab0ff');
   });
@@ -1960,7 +2095,7 @@ function wakeUp(r) {
   say(r, r.child ? pick(['Mummy? Is that you?', '*sniff* ...monsters?']) : pick(["Who's there?!", 'Hello...? Is someone there?', 'Wha-? What was that?']), 2.2); SFX.deny();
 }
 const TALK = {
-  thief: ['The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
+  thief: ['Yard dogs? Toss \'em a meaty bone from the bakery. Quiet as lambs.', 'Chimney smoke means somebody\'s home.', 'Rainy nights are the best nights. The Watch can\'t see a thing.', 'The fences hand out the big jobs. Estates, with a partner. Don\'t botch one - they\'ll throw you out.', 'Bank\'s got pressure plates. Sneak [C] over \'em or the bells ring.', 'The vault gate opens from a lever, way off down the east wing.', 'Hall monitors walk the school at night.', 'They keep confiscated loot in the Watch House evidence locker.', 'Quiet night for it.', 'Watch out for the sergeants.', "Mags pays better than Rook. Don't tell him I said that.", 'I nearly got pinched last night.', 'Sewer smells better than jail.', 'You new? Mind your fingers.'],
   resident: ['Good day to you.', 'Lovely weather, isn\'t it?', 'Have you tried the baker\'s pies?', 'Mind the Watch, they\'re grumpy today.', 'Can\'t stop, I\'m late!', 'Do I know you?', 'Busy, busy, busy...'],
   kid: ['Wanna play tag?', 'I found a frog!', 'My dad is the strongest!', 'Are you a pirate?', 'I\'m not allowed to talk to strangers.'],
   market: ['The cabbages are huge this week!', 'Saturday is the best day.', 'Have you seen the honey stall?', 'Everyone\'s here today!'],
@@ -1999,7 +2134,7 @@ function snapshot() {
   const p = player, d = dayInfo();
   return { v: 3, savedAt: Date.now(), label: `${d.weekday} ${d.name}, day ${d.day}`, gameTime, gold, totalEarned, bounty, arrests, won, nightNotified, up: Object.assign({}, up),
     est: estates.map(E => [E.invited ? 1 : 0, E.banned ? 1 : 0]), rep, job, bankBal, evidence, heist, exiled,
-    player: { map: p.map, x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks, cakes: p.cakes, rings: p.rings, room: p.room },
+    player: { map: p.map, x: p.x, y: p.y, loot: p.loot, smoke: p.smoke, picks: p.picks, cakes: p.cakes, rings: p.rings, room: p.room, bones: p.bones },
     houses: houses.map(h => ({ c: h.cooldown, r: h.residents.map(r => [r.friend || 0, r.sawYou ? 1 : 0]), pet: h.pet ? (h.pet.friend || 0) : null,
       loot: h.floors.map(f => [...f.loot.values()].map(e => e.taken ? [1, Math.round(e.t)] : [0, e.item.name, e.item.value])) })) };
 }
@@ -2017,7 +2152,7 @@ function loadSlot(n) {
   gameTime = d.gameTime; gold = d.gold; totalEarned = d.totalEarned; bounty = d.bounty; arrests = d.arrests; won = d.won; nightNotified = d.nightNotified; Object.assign(up, d.up);
   const p = player; p.map = d.player.map || 'town'; p.x = d.player.x; p.y = d.player.y; p.loot = d.player.loot; p.smoke = d.player.smoke; p.picks = d.player.picks;
   (d.est || []).forEach(([inv, ban], i) => { if (estates[i]) { estates[i].invited = !!inv; estates[i].banned = !!ban; } });
-  p.cakes = d.player.cakes || 0; p.rings = d.player.rings || 0; p.room = d.player.room || null;
+  p.cakes = d.player.cakes || 0; p.bones = d.player.bones || 0; p.rings = d.player.rings || 0; p.room = d.player.room || null;
   d.houses.forEach((hs, i) => {
     const h = houses[i]; if (!h) return; h.cooldown = hs.c;
     hs.r.forEach(([f, saw], j) => { const r = h.residents[j]; if (r) { r.friend = f; r.sawYou = !!saw; } });
@@ -2105,6 +2240,7 @@ function bother(t, n) {
 // What each shop sells. `can` greys an item out (owned, or you're carrying the most you can).
 const CATALOG = {
   bakery: [
+    ['Meaty bone', 'Toss it to a guard dog or yard dog and they\'ll stay quiet all night', 4, () => (player.bones || 0) < 5, () => { player.bones = (player.bones || 0) + 1; }],
     ['Loaf of bread', 'Restores all your stamina', 3, () => true, () => { player.stamina = 100; player.tired = false; }],
     ['Meat pie', 'Well fed: stamina drains at half speed for 2 minutes', 8, () => true, () => { player.stamina = 100; player.fedT = 120; }],
     ['Honey cake', 'A gift. Hand it over in a chat for a big friendship boost', 6, () => player.cakes < 5, () => { player.cakes++; }],
@@ -2327,6 +2463,7 @@ function nearbyChars() {
   for (const g of guards) if (g.map === player.map) out.push(g);
   for (const h of houses) for (const r of h.residents) if (r.map === player.map) out.push(r);
   for (const d of pets) if (d.map === player.map) out.push(d);
+  if (player.map === 'town') out.push(...yardDogs);
   out.push(...fences.filter(f => f.map === player.map), ...thieves.filter(t => t.map === player.map));
   if (player.map === 'town' && isMarketDay()) out.push(...vendors);
   if (player.map === 'jail') out.push(...jailNPCs);
@@ -2354,7 +2491,7 @@ function finishSteal() {
   if (isMarketDay()) unlock('market_steal');
   if (h.tourT > 0) unlock('tour_steal');
   if (h.floors.every(f => [...f.loot.values()].every(x => x.taken))) unlock('clean_house');
-  if (h.residents.some(r => r.state === 'sleep')) h.wake += rnd(10, 30) * (up.picks ? 0.75 : 1) * (up.oil ? 0.5 : 1) * (p.sneak ? 0.6 : 1);
+  if (h.residents.some(r => r.state === 'sleep')) h.wake += rnd(10, 30) * (up.picks ? 0.75 : 1) * (up.oil ? 0.5 : 1) * (p.sneak ? 0.6 : 1) * rainHush();
 }
 function useSmoke() {
   const p = player; if (p.smoke <= 0) { msg('No smoke bombs left.', '#aaa'); SFX.deny(); return false; }
@@ -2592,6 +2729,16 @@ function findInteraction() {
       if (!open && h.alarmT <= 0) p.inter2 = { label: 'Pick lock', act: () => startPick(h) };
       return;
     }
+    for (const Y of yards) {
+      const d = Y.dog;
+      if (d && p.bones > 0 && d.calmDay !== dayInfo().day && Math.hypot(p.x - d.x, p.y - d.y) < 40) { p.inter = { label: `Toss ${d.name.split(' (')[0]} a bone`, act: () => { p.bones--; d.calmDay = dayInfo().day; Y.alert = 0; say(d, '*crunch crunch* *wags tail*', 2.5); SFX.buy(); msg(`${d.name.split(' (')[0]} is busy with the bone. Not a peep from them tonight.`, '#9df0a0'); stat('bones'); } }; return; }
+      const gx = Y.gate.x * TS + 8, gy = Y.gate.y * TS + 10;
+      if (Y.shut && Math.hypot(p.x - gx, p.y - 4 - gy) < 20) {
+        if (!isNight()) p.inter = { label: `Open the ${Y.h.family}s' gate`, act: () => { Y.shut = false; SFX.door(); } };
+        else { p.inter = { label: `${Y.h.family}s' gate (locked)`, act: () => say(p, 'Locked for the night.', 1.2) }; p.inter2 = { label: 'Pick the gate lock', act: () => startPick(Y.h, () => { Y.shut = false; SFX.door(); }, 3, `The ${Y.h.family}s' gate`) }; }
+        return;
+      }
+    }
     for (const E of estates) {
       const h = E.house, b = h.back, away = houseEmpty(h);
       if (Math.hypot(p.x - (b.ax * TS + 8), p.y - (b.ay * TS + 12)) < 13) {
@@ -2648,6 +2795,7 @@ function findInteraction() {
   })()) {
   }
   if (!p.inter && m.kind === 'house') {
+    const pet = m.house.pet; if (pet && pet.map === p.map && p.bones > 0 && (pet.friend || 0) < 40 && dist(pet, p) < 30) { p.inter = { label: `Give ${pet.name.split(' (')[0]} a bone`, act: () => { p.bones--; pet.friend = 100; say(pet, '*crunch* *wags tail*', 2.5); SFX.buy(); stat('bones'); } }; return; }
     if (m.guestsOnly && !p.room && Math.hypot(p.x - (m.stairs.x * TS + 8), p.y - 4 - (m.stairs.y * TS + 12)) < 30) { p.inter = { label: 'Upstairs (locked)', act: () => say(p, 'Guests only. I\'d need to rent a room.', 2) }; return; }
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
@@ -3000,7 +3148,7 @@ function houseTick(h, dt) {
     const sl = h.residents.filter(r => r.state === 'sleep');
     if (sl.length) {
       const f = sl.some(r => r.map === p.map) ? 1 : 0.25, quiet = up.boots ? 0.7 : 1;
-      if (p.running) h.wake += 34 * f * quiet * dt; else if (p.moving && !p.sneak) h.wake += 1.5 * f * quiet * dt; else h.wake -= 4 * dt;
+      if (p.running) h.wake += 34 * f * quiet * rainHush() * dt; else if (p.moving && !p.sneak) h.wake += 1.5 * f * quiet * rainHush() * dt; else h.wake -= 4 * dt;
       h.wake = Math.max(0, h.wake);
       if (h.wake >= 100) { const near = sl.filter(r => r.map === p.map); (near.length ? near : sl).slice(0, 2).forEach(wakeUp); h.wake = 35; }
     }
@@ -3032,6 +3180,7 @@ function updateWorld(dt) {
   else if (heist && gameTime > heist.until) failHeist('Dawn came and the job wasn\'t done.');
   if (exiled && !thieves.some(t => t.state === 'topside')) { const g = thieves.find(t => !['jailed', 'caught', 'partner'].includes(t.state)); if (g) { dropClaim(g); g.state = 'topside'; g.path = null; } }
   for (const t of thieves) updateThief(t, dt);
+  updateYards(dt);
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
   if (wanted) {
     if (guards.some(g => g.state === 'chase' && g.lostT === 0)) lastSeenT = gameTime;
@@ -3053,6 +3202,7 @@ function updateWorld(dt) {
     if (di.day !== curDay) { curDay = di.day; msg(di.weekday === 'Saturday' ? "It's Saturday - FARMER'S MARKET day! Everyone is heading to the square. Their houses are empty..." : `${di.weekday} morning.`, di.weekday === 'Saturday' ? '#f7d774' : '#ffe9a8'); }
     if (isNight() && nightNotified !== di.day) {
       nightNotified = di.day; msg('Night falls. Press [F] at a door to pick the lock.', '#9ab0ff');
+      if (isRaining()) msg('Rain tonight. The Watch can\'t see as far, and the rain covers your footsteps.', '#9ab0ff');
       if (bounty > 0 && !wanted) { bounty--; msg(`Under cover of night, your bounty fades to ${bounty}.`, '#9df0a0'); syncForce(); }
     } }
   if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
@@ -3064,7 +3214,7 @@ function updateWorld(dt) {
   for (const mm of msgs) mm.t -= dt; msgs = msgs.filter(mm => mm.t > 0);
   if (wonT > 0) wonT -= dt;
 }
-function allChars() { return [player, ...guards, ...fences, ...jailNPCs, ...vendors, ...pets, ...thieves, ...allResidents()]; }
+function allChars() { return [player, ...guards, ...fences, ...jailNPCs, ...vendors, ...pets, ...yardDogs, ...thieves, ...allResidents()]; }
 
 // =====================================================================
 //  RENDER
@@ -3132,12 +3282,25 @@ function render(dt) {
       }
       F(ctx, E.gate[0].x * TS + 13, E.gate[0].y * TS + 6, 6, 5, '#d4a24c');
     }
+    for (const Y of yards) {
+      const { x, y } = Y.gate, ox = x * TS, oy = y * TS, open = !Y.shut || allResidents().some(e => e.map === 'town' && Math.abs(e.x - ox - 8) < 18 && Math.abs(e.y - oy - 10) < 18);
+      F(ctx, ox, oy + 4, 2, 11, '#6b4423'); F(ctx, ox + 14, oy + 4, 2, 11, '#6b4423');
+      if (open) { F(ctx, ox + 1, oy + 5, 2, 9, '#a0703a'); continue; }
+      for (let k = 2; k < 14; k += 3) { F(ctx, ox + k, oy + 4, 2, 10, '#c99a5c'); F(ctx, ox + k, oy + 3, 2, 1, '#e0b878'); }
+      F(ctx, ox + 2, oy + 7, 12, 1, '#8a5a2b'); F(ctx, ox + 2, oy + 11, 12, 1, '#8a5a2b'); if (isNight()) F(ctx, ox + 7, oy + 8, 2, 3, '#d4a24c');
+    }
     for (const h of houses) if (h.doorOpenT > 0) { F(ctx, h.door.x * TS + 4, h.door.y * TS + 4, 8, 12, '#1a120b'); F(ctx, h.door.x * TS + 5, h.door.y * TS + 12, 6, 4, '#f3c47a'); }
     const mk = town.market; if (isMarketDay()) for (const yy of [(mk.y0 + 1) * TS + 4, (mk.y0 + 7) * TS + 4, (mk.y0 + 13) * TS + 4]) {
       F(ctx, mk.x0 * TS, yy - 1, (mk.x1 - mk.x0 + 1) * TS, 1, '#6b4a2b');
       for (let x = mk.x0 * TS + 2, k = 0; x < (mk.x1 + 1) * TS; x += 7, k++) { const c = ['#e04040', '#f2d14b', '#3a8ad8', '#5ac05a'][k % 4]; F(ctx, x, yy, 5, 1, c); F(ctx, x + 1, yy + 1, 3, 1, c); F(ctx, x + 2, yy + 2, 1, 1, c); }
     }
     if (di.dark > 0.1) for (const w of windows) F(ctx, w.x * TS + 4, w.y * TS + 3, 8, 8, `rgba(255,200,90,${di.dark * 0.9})`);
+    // chimney smoke: a sure sign somebody's home
+    for (const h of houses) {
+      if (!h.chimney || Math.abs(h.chimX * TS - cx - VW / 2) > VW || Math.abs(h.y * TS - cy - VH / 2) > VH || houseEmpty(h)) continue;
+      for (let k = 0; k < 4; k++) { const ph = (gameTime * 0.5 + k / 4 + h.idx * 0.13) % 1, sx = h.chimX * TS + 8 + Math.sin(ph * 5 + h.idx) * 3 + ph * 6, sy = h.y * TS - 2 - ph * 22;
+        ctx.fillStyle = `rgba(220,220,225,${0.45 * (1 - ph)})`; ctx.beginPath(); ctx.arc(sx, sy, 2 + ph * 4, 0, 7); ctx.fill(); }
+    }
   } else {
     for (const e of m.loot.values()) if (e.taken) EMPTY[m.tiles[e.y * m.w + e.x]](ctx, e.x * TS, e.y * TS);
       else if ((e.hint || e.contract) && Math.floor(gameTime * 4) % 2) { F(ctx, e.x * TS + 7, e.y * TS - 3, 2, 6, '#fff6b0'); F(ctx, e.x * TS + 5, e.y * TS - 1, 6, 2, '#fff6b0'); }
@@ -3159,6 +3322,7 @@ function render(dt) {
   if (!titleish) for (const g of guards) if (g.map === camMap) list.push(g);
   for (const f of fences) if (f.map === camMap) list.push(f);
   if (!titleish) for (const t of thieves) if (t.map === camMap) list.push(t);
+  if (camMap === 'town') list.push(...yardDogs);
   if (camMap === 'jail') list.push(...jailNPCs);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
   for (const d of pets) if (d.map === camMap) list.push(d);
@@ -3182,6 +3346,11 @@ function render(dt) {
   }
   // lighting
   if (m.kind === 'town' && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  if (m.kind === 'town' && !titleish && isRaining()) { // rain streaks and puddle splashes
+    ctx.setTransform(S, 0, 0, S, 0, 0); F(ctx, 0, 0, VW, VH, 'rgba(30,40,70,0.18)'); ctx.strokeStyle = 'rgba(170,190,230,0.45)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let i = 0; i < 90; i++) { const x = (hash(i, 1, 90) * VW + gameTime * 60) % (VW + 20) - 10, y = (hash(i, 2, 91) * VH + gameTime * (260 + i % 5 * 30)) % (VH + 20) - 10; ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 7); }
+    ctx.stroke(); for (let i = 0; i < 14; i++) { const ph = (gameTime * 2 + hash(i, 3, 92)) % 1; F(ctx, (hash(i, Math.floor(gameTime * 2 + hash(i, 3, 92)), 93) * VW), (hash(i, Math.floor(gameTime * 2 + hash(i, 3, 92)), 94) * VH), 2 + ph * 3, 1, `rgba(200,215,240,${0.5 * (1 - ph)})`); }
+  }
   else if (m.kind === 'house' && di.dark > 0.2) drawLighting(di.dark * 0.85, cx, cy, m);
   else if (m.kind === 'sewer') drawLighting(0.45, cx, cy, m);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
@@ -3243,6 +3412,7 @@ function drawLighting(dark, cx, cy, m) {
   };
   if (m.kind === 'town') {
     for (const l of lamps) light(l.x * TS + 8, l.y * TS + 4, 50, 1);
+    for (const l of wallLamps) light(l.x * TS + 13, l.y * TS + 8, 26, 0.85);
     for (const w of windows) light(w.x * TS + 8, w.y * TS + 10, 22, 0.75);
     for (const f of fences) if (f.map === 'town') light(f.x, f.y - 8, 22, 0.7);
   } else {
@@ -3360,7 +3530,7 @@ function drawHUD(di) {
   sackIcon(60, 8); txt(`${p.loot.length}/${sackCap()}`, 70, 9, 6, p.loot.length >= sackCap() ? '#ff8a6b' : '#fff');
   txt(`loot ~${lootValue()}g`, 9, 19, 5, '#cfc6b0');
   F(ctx, 9, 28, 62, 4, '#222'); F(ctx, 10, 29, Math.round(60 * p.stamina / 100), 2, p.tired ? '#c0504a' : '#6ad0e0'); txt('STAM', 75, 28, 4, '#9ab');
-  txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc');
+  txt(`smoke x${p.smoke}`, 9, 37, 5, '#ccc'); if (p.bones) txt(`bones x${p.bones}`, 70, 37, 5, '#e8d8b0');
   txt(exiled ? 'REP Exiled from crew' : `REP ${rankName()}`, 9, 66, 5, exiled ? '#ff6b6b' : rep ? '#c9a0ff' : '#888');
   if (heist) { const E = estates[heist.estate], ht = `HEIST: ${E.name} with ${thieves[heist.partner].name} ${Math.min(heist.got, HEIST_NEED)}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - back to the sewers!' : ' - before dawn'}`; panel(4, 102, Math.min(VW - 8, 10 + ht.length * 4), 11, 0.8); txt(ht, 9, 105, 4, '#f7d774'); }
   if (job) { const jt = `${job.redeem ? 'PROVE YOURSELF' : 'JOB'}: ${job.name} (${job.family}s)${job.got ? ' - deliver!' : ''}`; panel(4, 90, Math.min(VW - 8, 10 + jt.length * 4), 11, 0.8); txt(jt, 9, 93, 4, '#c9a0ff'); }
@@ -3548,7 +3718,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
