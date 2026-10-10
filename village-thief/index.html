@@ -155,6 +155,7 @@ let moverIsPlayer = false; // estate gates stop you, but the people who live the
 function isSolid(m, x, y) {
   const t = tileAt(m, x, y); if (t < 0) return true;
   if (t === T.GATE) return moverIsPlayer && gateAt(x, y).shut;
+  if (t === T.STAIRS_UP && m.guestsOnly && moverIsPlayer && !player.room) return true; // the inn's rooms are for paying guests
   if (t === T.CELLDOOR) return !(m.cellOpen && x === m.cell.x && y === m.cell.y);
   return SOLID.has(t);
 }
@@ -927,7 +928,7 @@ function innFloors(h, r) {
   // ground floor: the tavern
   const w = 25, g = newMap(h.key, w, 14, 'house'), gs = room(g, w, 14);
   g.exit = { x: 12, y: 13 }; gs(12, 13, T.EXIT); g.entry = { x: 12, y: 12 };
-  gs(23, 2, T.STAIRS_UP); g.stairs = { x: 23, y: 2 }; g.arrive = { x: 23, y: 3 };
+  gs(23, 2, T.STAIRS_UP); g.stairs = { x: 23, y: 2 }; g.arrive = { x: 23, y: 3 }; g.guestsOnly = true;
   gs(6, 1, T.FIRE); gs(18, 1, T.FIRE);
   for (let x = 1; x <= 9; x++) gs(x, 4, T.TABLE); // the long bar
   for (const x of [1, 2, 8, 9]) gs(x, 2, T.IBARREL);
@@ -2315,6 +2316,7 @@ function findInteraction() {
     for (const mh of manholes) if (Math.hypot(p.x - (mh.ladder.x * TS + 8), p.y - 4 - (mh.ladder.y * TS + 12)) < 18) { p.inter = { label: 'Climb up to town', act: () => climbUp(mh) }; return; }
     for (const f of fences) if (f.map === 'sewer' && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => openFence(f) }; return; }
   } else if (m.kind === 'house') {
+    if (m.guestsOnly && !p.room && Math.hypot(p.x - (m.stairs.x * TS + 8), p.y - 4 - (m.stairs.y * TS + 12)) < 30) { p.inter = { label: 'Upstairs (locked)', act: () => say(p, 'Guests only. I\'d need to rent a room.', 2) }; return; }
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
     if (p.room && p.map === p.room.map && Math.hypot(p.x - (p.room.bed.x * TS + 8), p.y - 4 - (p.room.bed.y * TS + 16)) < 24) { p.inter = { label: 'Sleep until morning', act: sleepInRoom }; return; }
@@ -2574,7 +2576,7 @@ function updateResident(r, dt) {
       if (sees && p.state === 'stealing') {
         h.seenSteal = true; h.caught = true; r.sawYou = true;
         if (!r.caughtSay) { r.caughtSay = true; r.mode = 'watch'; r.modeT = 4; say(r, r.child ? 'MUM! DAD! They took something!' : 'Hey!! What are you doing?!', 2); }
-      } else if (sees && p.running) h.sus += 5 * (up.tongue ? 0.6 : 1) * dt;
+      } else if (sees && p.running && !h.shop) h.sus += 5 * (up.tongue ? 0.6 : 1) * dt;
       break;
     }
     case 'sleep': if (!isNight() && !here) { const t = bedSide(r.bed); r.map = r.bed.map; r.x = t.x * TS + 8; r.y = t.y * TS + 12; r.state = 'idle'; } break;
@@ -2654,6 +2656,7 @@ function houseTick(h, dt) {
       else h.sus += (100 / 120) * tongue * pal * dt; // a guest wears out their welcome in 2 minutes
       if (seen) h.sus += 100 * dt;  // caught red-handed: full in 1 second, however many are watching
       if (h.lead && h.lead.map !== p.map && h.tourT <= 0 && !(h.type === 'inn' && p.room)) h.sus += 2 * tongue * dt; // wandering off to other floors is rude
+      if (h.shop && !h.caught) h.sus = 0; // shopkeepers don't mind browsers - only thieves caught in the act
       if (h.sus >= 60 && !h.warned && h.lead) { h.warned = true; say(h.lead, pick(["Hmm... shouldn't you be going?", "It's getting late, isn't it?", 'I have chores to do, you know.']), 3); }
       if (h.sus >= 100) raiseAlarm(h, h.caught);
     }
@@ -3028,7 +3031,7 @@ function drawHUD(di) {
   // visit meters
   { const hm = maps[p.map]; if (hm.kind === 'house' && hm.house.alarmT <= 0) {
     const h = hm.house, hosting = h.residents.some(r => r.state === 'host'), sleeping = h.residents.some(r => r.state === 'sleep');
-    if (hosting || sleeping) {
+    if ((hosting && !(h.shop && !h.caught)) || (sleeping && !hosting)) {
       const v = hosting ? h.sus : h.wake, label = hosting ? 'SUSPICION' : 'NOISE', y = wanted ? 30 : 4;
       panel(VW / 2 - 50, y, 100, 16, 0.8); txt(label, VW / 2, y + 2, 5, hosting ? '#f0c040' : '#9ab0ff', 'center');
       F(ctx, VW / 2 - 44, y + 10, 88, 4, '#222'); F(ctx, VW / 2 - 43, y + 11, Math.round(86 * clamp(v, 0, 100) / 100), 2, v < 50 ? (hosting ? '#8bd46a' : '#7a8ad8') : v < 80 ? '#f0c040' : '#f05040');
