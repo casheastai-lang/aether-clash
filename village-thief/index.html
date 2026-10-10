@@ -457,7 +457,53 @@ function makeSheet(sp, dress) {
 const SKINS = ['#f1c27d', '#e0ac69', '#c68642', '#8d5524', '#ffdbac'];
 const HAIRS = ['#2b1d14', '#5a3b22', '#b8860b', '#d9d9d9', '#7a2e1c', '#111111'];
 const SHIRTS = ['#a83232', '#3a6ea8', '#3f8a3a', '#c97a2a', '#7a4ea8', '#2a8a8a', '#b84a7a', '#6a6a2a'];
-const PLAYER_SHEET = makeSheet({ skin: '#f1c27d', hair: '#3a2a1c', hairStyle: 'short', hat: 'hood', hatC: '#3b3b4a', shirt: '#4a4a5c', pants: '#2e2e38', mask: '#22222a', sack: true, belt: '#6b4a2b' });
+// The thief: teal hooded cloak, crimson scarf, leather tunic and a loot sack. `bound` ties the hands behind the back.
+function drawThief(dir, f, bound) {
+  const c = mk(16, 22), g = c.getContext('2d'), ox = 2, oy = 6;
+  const r = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(ox + x, oy + y, w, h); };
+  const H = '#2f4a5c', Hh = '#4a6a80', Hd = '#1d2e3a', C = '#27394a', Cd = '#18242f', TU = '#6b4a2b', BE = '#3a2416', GO = '#e0b840',
+    SK = '#f1c27d', SKd = '#c99a5e', SC = '#a82e2e', SCh = '#d24646', P = '#25252e', BT = '#4a2e17', BTh = '#7a5030', GL = '#22180f',
+    SA = '#a07c4a', SAh = '#c39d63', SAd = '#7a5a34', RO = '#d8b878', EYE = '#111111';
+  const a = f === 1 ? 1 : 0, b = f === 2 ? 1 : 0;
+  if (dir === 'down' || dir === 'up') {
+    // boots and legs
+    r(3, 12, 2, 2 - a, P); r(3, 14 - a, 2, 2, BT); r(3, 14 - a, 2, 1, BTh);
+    r(7, 12, 2, 2 - b, P); r(7, 14 - b, 2, 2, BT); r(7, 14 - b, 2, 1, BTh);
+    // cloak
+    r(2, 6, 8, 6, C); r(1, 8, 1, 4, Cd); r(10, 8, 1, 4, Cd); r(1, 11, 10, 1, Cd);
+    if (dir === 'down') {
+      r(5, 7, 2, 4, TU); r(4, 10, 4, 1, BE); r(5, 10, 1, 1, GO);
+      if (bound) r(3, 9, 6, 1, RO); else { r(1, 7 + a, 1, 3, C); r(1, 10 + a, 1, 1, GL); r(10, 7 + b, 1, 3, C); r(10, 10 + b, 1, 1, GL); }
+      // hood, face and scarf
+      r(2, 0, 8, 6, H); r(3, -1, 6, 1, H); r(4, -2, 4, 1, H); r(3, 0, 2, 1, Hh); r(2, 1, 1, 3, Hh);
+      r(4, 2, 4, 3, SK); r(4, 2, 4, 1, SKd); r(4, 3, 1, 1, EYE); r(7, 3, 1, 1, EYE);
+      r(4, 4, 4, 1, SC); r(3, 5, 6, 1, SC); r(4, 4, 3, 1, SCh); r(8, 6, 2, 2 + a, SC);
+      r(1, 5, 10, 2, H); r(1, 6, 10, 1, Hd); r(2, 5, 2, 1, Hh);
+    } else {
+      r(3, 6, 6, 6, SA); r(3, 6, 6, 1, SAh); r(4, 9, 2, 2, SAd); r(5, 5, 2, 1, BE);
+      if (bound) { r(4, 10, 1, 1, GL); r(7, 10, 1, 1, GL); r(4, 10, 4, 1, RO); }
+      else { r(1, 7 + a, 1, 3, C); r(1, 10 + a, 1, 1, GL); r(10, 7 + b, 1, 3, C); r(10, 10 + b, 1, 1, GL); }
+      r(2, -1, 8, 7, H); r(4, -2, 4, 1, H); r(3, 0, 1, 4, Hh); r(8, 1, 1, 4, Hd);
+      r(7, 5, 2, 3 + b, SC); r(1, 5, 10, 2, H); r(1, 6, 10, 1, Hd);
+    }
+  } else { // left (right is mirrored)
+    if (f === 1) { r(2, 12, 2, 2, P); r(1, 14, 3, 2, BT); r(1, 14, 3, 1, BTh); r(7, 12, 2, 2, P); r(7, 14, 3, 2, BT); r(7, 14, 3, 1, BTh); }
+    else if (f === 2) { r(4, 12, 2, 2, P); r(5, 12, 2, 2, P); r(3, 14, 5, 2, BT); r(3, 14, 5, 1, BTh); }
+    else { r(4, 12, 3, 2, P); r(3, 14, 4, 2, BT); r(3, 14, 4, 1, BTh); }
+    r(3, 6, 6, 6, C); r(3, 11, 7, 1, Cd); r(9, 8, 1, 4, Cd);
+    r(8, 6, 3, 5, SA); r(8, 6, 3, 1, SAh); r(9, 9, 2, 1, SAd);
+    r(3, 7, 2, 4, TU); r(3, 10, 5, 1, BE); r(3, 10, 1, 1, GO);
+    const ao = f === 1 ? -1 : f === 2 ? 1 : 0;
+    if (bound) { r(6, 8, 2, 2, C); r(6, 10, 2, 1, RO); } else { r(5 + ao, 7, 2, 3, C); r(5 + ao, 10, 2, 1, GL); }
+    r(3, -1, 7, 7, H); r(6, -2, 3, 1, H); r(4, 0, 3, 1, Hh); r(8, 1, 1, 4, Hd);
+    r(2, 2, 3, 3, SK); r(2, 2, 3, 1, SKd); r(1, 3, 1, 1, SK); r(3, 3, 1, 1, EYE);
+    r(1, 4, 4, 2, SC); r(1, 4, 3, 1, SCh); r(9, 4 + a, 2, 2, SC);
+    r(3, 5, 7, 2, H); r(3, 6, 7, 1, Hd);
+  }
+  return c;
+}
+function thiefSheet(bound) { const s = {}; for (const d of ['down', 'up', 'left']) s[d] = [0, 1, 2].map(f => drawThief(d, f, bound)); s.right = s.left.map(cn => { const m = mk(16, 22), g = m.getContext('2d'); g.translate(16, 0); g.scale(-1, 1); g.drawImage(cn, 0, 0); return m; }); return s; }
+const PLAYER_SHEET = thiefSheet(false), PLAYER_BOUND = thiefSheet(true);
 function guardSheet(i) { return makeSheet({ skin: SKINS[i % 5], hair: HAIRS[i % 6], hairStyle: 'short', hat: 'helmet', shirt: '#2f4f9e', pants: '#3a3a46', emblem: '#e0b43a', belt: '#e0b43a', spear: true, beard: i % 3 === 1 }); }
 const FENCE_SHEETS = [
   makeSheet({ skin: '#e0ac69', hair: '#7a2e1c', hairStyle: 'long', hat: 'hood', hatC: '#5b2d6e', shirt: '#4a2357', pants: '#2a1a30', dress: true }),
@@ -1554,10 +1600,9 @@ function startEscort() {
   const p = player, { A, B } = escort; if (escort.dog) { escort.dog.state = 'return'; escort.dog.path = null; escort.dog = null; } A.state = 'escort_lead'; A.path = null; maps.jail.cellOpen = true;
   if (B) B.state = 'escort_follow';
   p.state = 'escorted'; trail = [];
-  const from = B || p;
-  for (let i = 0; i <= 10; i++) trail.push({ map: p.map, x: from.x + (p.x - from.x) * i / 10, y: from.y + (p.y - from.y) * i / 10 });
-  for (let i = 1; i <= 10; i++) trail.push({ map: p.map, x: p.x + (A.x - p.x) * i / 10, y: p.y + (A.y - p.y) * i / 10 });
-  escort.t = 0; say(A, pick(['Move along.', 'Off to the cells with you.', 'Walk. Slowly.']));
+  // an invisible walker leads the way; the prisoner walks on it with a watchman gripping each arm
+  escort.nav = { map: p.map, x: p.x, y: p.y, fa: p.fa, path: null, repath: 0, moving: false };
+  escort.t = 0; escort.done = false; say(A, pick(['Move along.', 'Off to the cells with you.', 'Walk. Slowly.']));
   msg('Two watchmen march you to the Watch House jail...', '#ffb36b');
 }
 // Each arrest lands you in a random empty cell.
@@ -1818,14 +1863,7 @@ function updateGuard(g, dt) {
       }
       break;
     }
-    case 'escort_lead': {
-      escort.t += dt;
-      if (navTo(g, 'jail', maps.jail.escortSpot.x, maps.jail.escortSpot.y, spd, dt) || escort.t > 150) { g.state = 'hold'; finishEscort(); }
-      const last = trail[trail.length - 1];
-      if (!last || last.map !== g.map || Math.hypot(last.x - g.x, last.y - g.y) >= 2) trail.push({ map: g.map, x: g.x, y: g.y });
-      if (trail.length > 600) trail.splice(0, 100);
-      break;
-    }
+    case 'escort_lead': break; // positioned by updateEscort
   }
   if (g.moving) g.animT += dt;
   g.dir = dirFromAngle(g.fa);
@@ -1837,6 +1875,23 @@ function startChase(g) {
   if (whistleCD <= 0) { g.unit === 'dog' ? SFX.bark() : SFX.whistle(); whistleCD = 2.5; }
   let room = HUNTERS[bounty] - guards.filter(o => o.unit === 'guard' && HUNT_STATES.includes(o.state)).length;
   for (const o of guards) if (room > 0 && o !== g && o.unit === 'guard' && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220 && room--) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
+}
+function updateEscort(dt) {
+  const e = escort, n = e.nav, p = player, j = maps.jail, before = n.map;
+  e.t += dt; n.moving = false;
+  if ((navTo(n, 'jail', j.escortSpot.x, j.escortSpot.y, 34, dt) || e.t > 150) && !e.done) { e.done = true; finishEscort(); }
+  if (n.map !== before) { fade.a = 1; fade.dir = -1; }
+  // walking up or down: a watchman on each side. Walking sideways: one just ahead and one just behind, staggered so the prisoner stays visible.
+  const fa = n.fa, d = dirFromAngle(fa), sideways = d === 'left' || d === 'right', hx = d === 'left' ? -1 : 1, m = maps[n.map];
+  const slot = side => sideways ? [hx * 9 * side, -4 * side] : [11 * side, 0];
+  const walk = ent => { ent.map = n.map; ent.fa = fa; ent.dir = dirFromAngle(fa); ent.moving = n.moving; if (n.moving) ent.animT += dt; };
+  walk(p); p.x = n.x; p.y = n.y;
+  for (const [g, side] of [[e.A, 1], [e.B, -1]]) {
+    if (!g) continue;
+    let [ox, oy] = slot(side), k = 1;
+    while (k > 0.3 && !boxFree(m, n.x + ox * k, n.y + oy * k)) k -= 0.1; // squeeze in through doorways
+    walk(g); g.x = n.x + ox * k; g.y = n.y + oy * k;
+  }
 }
 function placeFollower(e, c, dt) {
   if (!c) return;
@@ -2030,10 +2085,7 @@ function updateWorld(dt) {
   updatePlayer(dt);
   for (const g of guards) updateGuard(g, dt);
   if (guards.some(g => g.dead)) guards = guards.filter(g => !g.dead);
-  if (player.state === 'escorted' && escort) {
-    placeFollower(player, trail[Math.max(0, trail.length - 1 - 9)], dt);
-    if (escort.B) placeFollower(escort.B, trail[Math.max(0, trail.length - 1 - 18)], dt);
-  }
+  if (player.state === 'escorted' && escort && escort.nav) updateEscort(dt);
   for (const h of houses) { for (const r of h.residents) updateResident(r, dt); houseTick(h, dt); }
   for (const d of pets) updatePet(d, dt);
   for (const c of clouds) c.t -= dt; clouds = clouds.filter(c => c.t > 0);
@@ -2081,7 +2133,8 @@ function drawEntity(e) {
   let sx = Math.round(e.x), sy = Math.round(e.y);
   if (e.shake > 0 || (e.kind === 'resident' && e.state === 'alarm')) sx += Math.random() < 0.5 ? -1 : 1;
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
-  ctx.drawImage(e.sheet[e.dir][fr], sx - 8, sy - 22);
+  const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e.sheet;
+  ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22);
 }
 function drawCone(e, range, half, color) {
   const ex = e.x, ey = e.y - 8, m = maps[e.map], N = 16;
@@ -2153,7 +2206,10 @@ function render(dt) {
   }
   list.sort((a, b) => a.y - b.y);
   for (const e of list) drawEntity(e);
-  if (p.state === 'escorted' && escort && escort.A.map === p.map) { ctx.strokeStyle = '#8a6a3a'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x + 0.5, p.y - 10); ctx.lineTo(escort.A.x + 0.5, escort.A.y - 10); ctx.stroke(); }
+  if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
+    const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
+    ctx.strokeStyle = '#2f4f9e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(tx, ty); ctx.stroke(); F(ctx, tx - 1, ty - 1, 2, 2, '#f1c27d');
+  }
   if (p.state === 'hidden' && p.map === camMap) { const hx = p.hay.x * TS, hy = p.hay.y * TS; if (Math.floor(gameTime * 3) % 4 === 0) F(ctx, hx + 6, hy + 2, 1, 2, '#a8852c'); F(ctx, hx + 9, hy + 5, 2, 1, '#2a2a33'); }
   // smoke
   for (const c of clouds) if (c.map === camMap) {
@@ -2177,7 +2233,7 @@ function render(dt) {
   { const z = Math.floor(gameTime * 1.5) % 3, done = {}; for (const r of resHere) if (r.state === 'sleep' && !done[r.bed.x]) { done[r.bed.x] = 1; txt('z'.repeat(z + 1), r.bed.x * TS + 10, r.bed.y * TS - 4 - z * 2, 5, '#cfd8ff'); } }
   for (const r of resHere) if (['woke', 'prowl'].includes(r.state) && !r.bubble) txt('?', r.x - 2, r.y - 34, 8, '#ffb040');
   // name tags for anyone close by
-  if (state === 'play') for (const e of list.filter(e => e !== p && e.name && !e.bubble && Math.hypot(e.x - p.x, e.y - p.y) < 40).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 3)) {
+  if (state === 'play' && p.state === 'free') for (const e of list.filter(e => e !== p && e.name && !e.bubble && Math.hypot(e.x - p.x, e.y - p.y) < 40).sort((a, b) => dist(a, p) - dist(b, p)).slice(0, 3)) {
     ctx.font = '4px ' + FONT; const w = Math.ceil(ctx.measureText(e.name).width) + 4, x = Math.round(e.x - w / 2), y = Math.round(e.y - 31);
     F(ctx, x, y, w, 7, 'rgba(10,10,20,0.7)'); txt(e.name, x + 2, y + 2, 4, e.kind === 'guard' ? '#9ab8ff' : e === p.talk ? '#f7d774' : '#ffffff', 'left', null);
   }
