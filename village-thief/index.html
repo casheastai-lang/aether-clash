@@ -667,7 +667,7 @@ const MEN = ['Tom', 'Will', 'Hugh', 'Edmund', 'Walter', 'Giles', 'Robin', 'Simon
 const WOMEN = ['Mary', 'Agnes', 'Joan', 'Matilda', 'Edith', 'Alice', 'Maud', 'Beatrice', 'Rose', 'Isolde', 'Margery', 'Elinor', 'Hilda', 'Rowena', 'Constance', 'Wynn', 'Ada', 'Lettice'];
 const KIDS = ['Pip', 'Tilly', 'Kit', 'Nell', 'Robin', 'Bess', 'Toby', 'Wren', 'Ned', 'Poppy', 'Jory', 'Millie', 'Hob', 'Ivy'];
 const ITEMS = [['Silver Spoon', 8, 1], ['Wine Bottle', 10, 1], ['Silk Scarf', 12, 1], ['Candlestick', 16, 1], ['Coin Purse', 22, 1], ['Old Painting', 30, 2], ['Pocket Watch', 35, 2], ['Pearl Necklace', 45, 2], ['Jeweled Ring', 55, 3], ['Gold Goblet', 70, 3], ['Ruby Brooch', 90, 3],
-  ['Silver Tea Set', 120, 4], ['Gold Candelabra', 150, 4], ['Master Painting', 180, 4], ['Ruby Necklace', 210, 4], ['Diamond Tiara', 260, 4], ['Jeweled Egg', 320, 4]];
+  ['Silver Tea Set', 40, 4], ['Gold Candelabra', 50, 4], ['Master Painting', 60, 4], ['Ruby Necklace', 70, 4], ['Diamond Tiara', 85, 4], ['Jeweled Egg', 100, 4]];
 function rollItem(w, rng = Math.random) {
   const pool = ITEMS.filter(i => i[2] <= w && (w < 4 || i[2] >= 3)), ws = pool.map(i => 1 / Math.sqrt(i[1]));
   let s = ws.reduce((a, b) => a + b, 0), r = rng() * s;
@@ -966,7 +966,7 @@ function clearWay(m) {
 }
 // The estates: four floors joined by staircases, a servants' door at the side, and very fine things everywhere.
 function estateFloors(h, r) {
-  const w = 22, plan = [{ exit: true, stairs: 'up', beds: 0, loot: 8 }, { down: true, stairs: 'up', beds: 4, loot: 8 }, { down: true, stairs: 'up', beds: 3, loot: 9 }, { down: true, beds: 2, loot: 10 }];
+  const w = 22, plan = [{ exit: true, stairs: 'up', beds: 0, loot: 2 }, { down: true, stairs: 'up', beds: 4, loot: 2 }, { down: true, stairs: 'up', beds: 3, loot: 3 }, { down: true, beds: 2, loot: 3 }];
   const fl = plan.map((o, k) => { const m = buildFloor(h, k ? `${h.key}_${k}` : h.key, w, k ? 12 : 13, o, r); if (k) m.upstairs = true; m.floorN = k; m.blanket = '#6a2d7a'; return m; });
   for (let k = 0; k < 3; k++) {
     const a = fl[k], b = fl[k + 1];
