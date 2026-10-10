@@ -4,7 +4,7 @@
 - Run: `npm start` → http://localhost:8080. Never add a framework or bundler unless asked.
 - Rendering: integer pixel scale, everything drawn with canvas rects. Tile painters `GP[]` (ground) and `OP[]` (objects);
   maps are cached canvases built by `renderMap`.
-- World: maps `town` (380×124 tiles), house interiors (`h<n>` keys), `jail`, `sewer`. NPCs move with `navTo`.
+- World: maps `town` (560×124 tiles: big town x<170, Deepwood, Mudford x 296-377, walled Kingsbridge x 392-557; generated west-to-east, new areas appended at the end of genTown so old houses keep their indexes), house interiors (`h<n>` keys), `jail`, `sewer`. NPCs move with `navTo`.
   World generation is seeded (`mulberry32`, `hash`), so every player gets the same town.
 - Main loop: `frame()` → `updateWorld(dt)` → `render(dt)`. Game states: `title`, `play`, `chat`, `shop`, `menu`, `saves`, ...
 - Saves: `localStorage` (version 3 snapshot); the profile (achievements, skins, chosen world) is separate.
