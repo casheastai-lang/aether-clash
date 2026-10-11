@@ -1727,7 +1727,7 @@ function followPlayer(t, dt) {
   if (t.map !== player.map || dist(t, player) > 30) navTo(t, player.map, pt.x, pt.y, t.map === player.map && dist(t, player) < 90 ? P_WALK : 70, dt, true);
 }
 function updateThief(t, dt) {
-  if (career.type === 'watch' && t.map === player.map && ['out', 'rob'].includes(t.state) && dist(t, player) < 70 && player.state === 'free') { dropClaim(t); t.state = 'flee'; t.fleeSpd = 46; t.path = null; say(t, pick(['The Watch! Scarper!', 'Leg it!', 'Copper!']), 1.6); }
+  if (career.type === 'watch' && t.map === player.map && ['out', 'rob'].includes(t.state) && dist(t, player) < 120 && player.state === 'free') { dropClaim(t); t.state = 'flee'; t.fleeSpd = rnd(70, 76); t.path = null; say(t, pick(['The Watch! Scarper!', 'Leg it!', 'Copper!']), 1.6); }
   t.moving = false; t.metT = Math.max(0, (t.metT || 0) - dt);
   const night = isNight(), day = dayInfo().day, before = { x: t.x, y: t.y, map: t.map };
   if (t.smokeDay !== day) { t.smokeDay = day; t.smoke = 1; } // a fresh smoke bomb every day
@@ -1749,7 +1749,7 @@ function updateThief(t, dt) {
     case 'out': {
       const h = t.mark;
       if ((!night && !t.dayRob) || h.alarmT > 0 || (t.dayRob && !houseEmpty(h))) { t.state = 'home'; t.path = null; break; }
-      if (navTo(t, h.key, h.map.entry.x, h.map.entry.y, 38, dt)) { t.state = 'rob'; t.grabs = Math.random() < 0.5 ? 2 : 1; t.path = null; }
+      if (navTo(t, h.key, h.map.entry.x, h.map.entry.y, 48, dt)) { t.state = 'rob'; t.grabs = Math.random() < 0.5 ? 2 : 1; t.path = null; }
       else if (t.stuckT > 6) { t.state = 'home'; t.path = null; }
       break;
     }
@@ -1770,6 +1770,11 @@ function updateThief(t, dt) {
     }
     case 'home': case 'flee': {
       const [x, y] = DEN_SPOTS[t.i];
+      if (t.state === 'flee' && isWatch() && t.map === player.map && dist(t, player) < 30 && !(t.dodgeT > gameTime)) { // you're on their heels
+        t.dodgeT = gameTime + rnd(4, 7);
+        if ((t.smoke || 0) > 0 && Math.random() < 0.5) { t.smoke--; clouds.push({ map: t.map, x: t.x, y: t.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke(); say(t, pick(['Eat smoke!', 'Bye bye!']), 1.4); if (dist(t, player) < 40) { player.stunT = 1.2; say(player, '*cough*', 1.2); } }
+        else { t.fleeSpd = Math.min(84, (t.fleeSpd || 72) + 6); say(t, pick(['Can\'t catch me!', 'Too slow, copper!', 'Hah!']), 1.2); } // a burst of speed
+      }
       if (navTo(t, 'sewer', x, y, t.state === 'flee' ? t.fleeSpd : 38, dt) || t.map === 'sewer') {
         if (t.state === 'flee') { for (const g of guards) if (g.prey === t) { g.state = 'return'; g.prey = null; g.path = null; } if (nearPlayer(t, 320) || player.map === 'sewer') msg(`${t.name} slipped away into the sewers!`, '#cfe8ff'); }
         t.state = 'den'; t.mark = null; t.wait = rnd(1, 4); t.path = null; t.dayRob = false; t.crate = false;
@@ -1840,8 +1845,8 @@ function updateThief(t, dt) {
     case 'ambush': { // going for the supply wagon
       if (!wagon) { t.state = 'home'; t.path = null; break; }
       const dw = dist(t, wagon);
-      if (dw > 14) navTo(t, 'town', Math.floor(wagon.x / TS), Math.floor(wagon.y / TS), 44, dt, true); // keep pace with the wagon
-      if (dw < 34) { t.work = (t.work || 0) + dt; t.fa = Math.atan2(wagon.y - t.y, wagon.x - t.x); if (t.work > 2.5 && wagon.crates > 0) { wagon.crates--; t.crate = true; t.state = 'flee'; t.fleeSpd = 44; t.path = null; t.work = 0; say(t, pick(['Got a crate!', 'Mine now!', 'Ha! Too slow!']), 1.8); msg(`${t.name} grabbed a crate off the wagon (${wagon.crates}/6 left)! Catch them to get it back.`, '#ff9a6b'); } }
+      if (dw > 14) navTo(t, 'town', Math.floor(wagon.x / TS), Math.floor(wagon.y / TS), 56, dt, true); // keep pace with the wagon
+      if (dw < 34) { t.work = (t.work || 0) + dt; t.fa = Math.atan2(wagon.y - t.y, wagon.x - t.x); if (t.work > 2.5 && wagon.crates > 0) { wagon.crates--; t.crate = true; t.state = 'flee'; t.fleeSpd = rnd(70, 76); t.path = null; t.work = 0; say(t, pick(['Got a crate!', 'Mine now!', 'Ha! Too slow!']), 1.8); msg(`${t.name} grabbed a crate off the wagon (${wagon.crates}/6 left)! Catch them to get it back.`, '#ff9a6b'); } }
       else if (t.stuckT > 5) { t.state = 'home'; t.path = null; }
       break;
     }
@@ -3073,13 +3078,13 @@ function robberSlips(t, how) {
   const p = player; if (career.escort === t.i) career.escort = null;
   if (how === 'smoke') { t.smoke--; clouds.push({ map: t.map, x: t.x, y: t.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke(); say(t, pick(['Catch me if you can!', 'Smell ya later, copper!']), 1.8); p.state = 'free'; p.stunT = 1.6; say(p, '*cough cough*', 1.6); msg(`${t.name} threw a smoke bomb and got away! After them!`, '#ffb36b'); }
   else { SFX.free(); say(t, pick(['Not today!', 'Slippery as an eel!']), 1.6); msg(`${t.name} wriggled out of your grip! After them!`, '#ffb36b'); }
-  t.state = 'flee'; t.fleeSpd = 52; t.path = null; t.slipT = gameTime;
+  t.state = 'flee'; t.fleeSpd = rnd(66, 72); t.path = null; t.slipT = gameTime;
 }
 function arrestRobber(t) {
   if (t.crate && wagon) { wagon.crates++; t.crate = false; msg('You snatch the stolen crate back!', '#9df0a0'); }
   if (t.slipT && gameTime - t.slipT < 1.5) return; // still shaking off the last grab
-  if ((t.smoke || 0) > 0 && Math.random() < 0.45) { robberSlips(t, 'smoke'); return; }
-  if (Math.random() < 0.2) { robberSlips(t, 'wriggle'); return; }
+  if ((t.smoke || 0) > 0 && Math.random() < 0.55) { robberSlips(t, 'smoke'); return; }
+  if (Math.random() < (t.state === 'flee' ? 0.4 : 0.3)) { robberSlips(t, 'wriggle'); return; } // a running robber is slippery
   if (career.escort != null && thieves[career.escort] && thieves[career.escort].state === 'escorted') { msg('You already have a prisoner in tow. Take them to the Watch House first.', '#ffb36b'); SFX.deny(); return; }
   dropClaim(t); t.state = 'escorted'; t.path = null; t.captor = null; career.escort = t.i; SFX.pick();
   say(t, pick(['Alright, alright! I\'ll come quietly.', 'You got me, copper.', 'Not the cells...']), 2);
@@ -3087,10 +3092,10 @@ function arrestRobber(t) {
 }
 function updateEscorted(t, dt) {
   const p = player;
-  if (!isWatch() || career.escort !== t.i || wanted) { if (career.escort === t.i) career.escort = null; t.state = 'flee'; t.fleeSpd = 50; t.path = null; say(t, 'So long, sucker!', 1.6); return; }
+  if (!isWatch() || career.escort !== t.i || wanted) { if (career.escort === t.i) career.escort = null; t.state = 'flee'; t.fleeSpd = 76; t.path = null; say(t, 'So long, sucker!', 1.6); return; }
   if (p.map === 'jail' && t.map === 'jail') { say(jailNPCs[1] || p, 'In you go.', 1.5); jailRobber(t); return; }
   if (t.map !== p.map || dist(t, p) > 90) { t.map = p.map; t.x = p.x; t.y = p.y + 6; t.path = null; t.stuckT = 0; return; }
-  if ((t.smoke || 0) > 0 && p.map !== 'jail' && Math.random() < dt * 0.012) { robberSlips(t, 'smoke'); return; } // they'll try it on the way
+  if (p.map !== 'jail' && Math.random() < dt * 0.025) { robberSlips(t, (t.smoke || 0) > 0 && Math.random() < 0.6 ? 'smoke' : 'wriggle'); return; } // they'll try it on the way
   if (dist(t, p) > 18) { const pt = tileOfE(p); navTo(t, p.map, pt.x, pt.y, 62, dt, true); if (t.stuckT > 2) { t.x = p.x; t.y = p.y + 6; t.stuckT = 0; } }
 }
 function jailRobber(t) {
