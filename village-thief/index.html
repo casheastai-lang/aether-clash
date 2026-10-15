@@ -1846,6 +1846,7 @@ function updateThief(t, dt) {
     case 'escorted': updateEscorted(t, dt); return;
     case 'ambush': { // going for the supply wagon
       if (!wagon) { t.state = 'home'; t.path = null; break; }
+      { const gd = (wagon.guards || []).find(g => g.state === 'convoy' && dist(g, t) < 40); if (gd && Math.random() < dt * 0.6) { say(gd, pick(['Clear off!', 'Hands off the wagon!', 'Thief!']), 1.5); say(t, pick(['Yikes!', 'Leg it!']), 1.2); t.state = 'flee'; t.fleeSpd = rnd(64, 70); t.path = null; break; } }
       const dw = dist(t, wagon);
       if (dw > 14) navTo(t, 'town', Math.floor(wagon.x / TS), Math.floor(wagon.y / TS), 56, dt, true); // keep pace with the wagon
       if (dw < 34) { t.work = (t.work || 0) + dt; t.fa = Math.atan2(wagon.y - t.y, wagon.x - t.x); if (t.work > 2.5 && wagon.crates > 0) { wagon.crates--; t.crate = true; t.state = 'flee'; t.fleeSpd = rnd(70, 76); t.path = null; t.work = 0; say(t, pick(['Got a crate!', 'Mine now!', 'Ha! Too slow!']), 1.8); msg(`${t.name} grabbed a crate off the wagon (${wagon.crates}/6 left)! Catch them to get it back.`, '#ff9a6b'); } }
@@ -1962,6 +1963,7 @@ const INMATES = [['Dobbs', 0, 'top', ['Got any bread?', 'I was framed, I tell ya
   ['Bess the Knife', 2, 'bottom', ['Don\'t look at me.', 'What are YOU in for?']], ['Crumb', 4, 'bottom', ['I only took ONE pie.', 'Is it dinner yet?']], ['Mad Wat', 6, 'bottom', ['The rats talk to me.', 'Heh heh heh.']]];
 const jailNPCs = [
   { kind: 'decor', name: 'Jailer Grubb', map: 'jail', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
+  { kind: 'decor', name: 'Captain Harlow', map: 'jail', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(2), animT: 0, bubble: null, lines: ['Wagons don\'t guard themselves.', 'Keep your boots polished.', 'The roads are crawling with thieves.'] },
   { kind: 'decor', name: 'Turnkey Bolt', map: 'jail', x: 7 * TS + 8, y: 7 * TS + 12, dir: 'down', sheet: guardSheet(8), animT: 0, bubble: null, lines: ['No talking.', 'Back from the bars.', 'Lights out soon.'] },
   { kind: 'decor', name: 'Turnkey Hask', map: 'jail', x: 22 * TS + 8, y: 7 * TS + 12, dir: 'down', sheet: guardSheet(9), animT: 0, bubble: null, lines: ['Quiet in the cells!', 'I\'ve got my eye on you.', 'Behave.'] },
   ...INMATES.map(([name, k, row, lines], i) => ({ kind: 'decor', name: 'Prisoner ' + name, map: 'jail', x: (2 + 4 * k) * TS + 8, y: (row === 'top' ? 3 : 11) * TS + 12,
@@ -2011,7 +2013,7 @@ const lootValue = () => player.loot.reduce((a, b) => a + b.value, 0);
 const REP_RANKS = [[0, 'Nobody'], [1, 'Pickpocket'], [3, 'Footpad'], [6, 'Prowler'], [10, 'Cat Burglar'], [15, 'Master Thief'], [25, 'King of the Sewers']];
 const rankIdx = () => { let k = 0; REP_RANKS.forEach(([n], i) => { if (rep >= n) k = i; }); return k; };
 const rankName = () => REP_RANKS[rankIdx()][1];
-const fenceBonus = () => 1; // fences pay 5% more per rank
+const fenceBonus = () => up.favour ? 1.15 : 1; // a fence who likes you pays more
 const saleValue = () => Math.round(player.loot.filter(i => !i.job).reduce((a, b) => a + b.value, 0) * fenceBonus());
 const jobEntry = j => houses[j.h].floors[j.f].loot.get(j.key);
 function offerJob(t) {
@@ -2209,14 +2211,14 @@ const coverNear = () => { const t = tileOfE(player), m = maps[player.map]; for (
 function canSee(e, t, range, cosHalf) {
   if (e.map !== t.map || t.state === 'hidden') return false;
   const ex = e.x, ey = e.y - 8, tx = t.x, ty = t.y - 6, dx = tx - ex, dy = ty - ey, d = Math.hypot(dx, dy);
-  if (t === player && player.sneak && d > 20) range *= e.unit === 'dog' || e.kind === 'pet' ? 0.85 : 0.6; // crouched low, you're much harder to spot
+  if (t === player && player.sneak && d > 20) range *= e.unit === 'dog' || e.kind === 'pet' ? 0.85 : up.soles ? 0.45 : 0.6; // crouched low, you're much harder to spot
   if (d > range) return false;
   if (d > 14 && (dx * Math.cos(e.fa) + dy * Math.sin(e.fa)) / d < cosHalf) return false;
   if (inSmoke(e.map, ex, ey)) return false;
   if (t === player && player.sneak && behindCover(e.map, ex, ey, tx, ty)) return false;
   return losClear(e.map, ex, ey, tx, ty);
 }
-const guardRange = () => { const map = maps[player.map]; return map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110; };
+const guardRange = () => { const map = maps[player.map]; return (map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110) * (up.cloak && isNight() ? 0.85 : 1); };
 const peppered = () => player.pepperDay === dayInfo().day;
 const guardSees = g => g.unit === 'dog' ? !peppered() && canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
 function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
@@ -2897,10 +2899,20 @@ function joinWatch(town, shift) {
   msg(`You're sworn in to the Watch of ${TOWN_NAMES[town]}: ${shift} shift, ${WATCH_PAY[town]}g a shift. Stand your POST, and arrest any robbers you catch (+20g each).`, '#9ab0ff');
 }
 var wagon = null; // a supply wagon you're escorting between towns
-function startWagon(from) {
-  const others = [0, 1, 2].filter(i => i !== from), to = pick(others), c = town.coaches[from];
-  wagon = { kind: 'wagon', map: 'town', x: c.ax * TS + 8, y: (c.ay + 1) * TS + 12, from, to, crates: 6, path: null, repath: 0, stuckT: 0, fa: 0, dir: 'down', animT: 0, raidT: gameTime + rnd(20, 35), raids: 0, farT: 0, moving: false };
-  msg(`Escort the supply wagon from ${TOWN_NAMES[from]} to ${TOWN_NAMES[to]}! It only rolls while you're close. Robbers will try to steal the crates - arrest them. Pay: 25g + 5g a crate delivered.`, '#9ab0ff'); SFX.buy();
+// Escort jobs come from Captain Harlow in the Watch House. Every escort has two guards: you and a Watch partner,
+// or you and another player who comes to the Captain and joins. The wagon leaves from the big town's carriage stand.
+function startWagon(from, mode) {
+  from = from == null ? 0 : from;
+  const to = pick([0, 1, 2].filter(i => i !== from)), c = town.coaches[from];
+  wagon = { kind: 'wagon', map: 'town', x: c.ax * TS + 8, y: (c.ay + 1) * TS + 12, from, to, crates: 6, path: null, repath: 0, stuckT: 0, fa: 0, dir: 'down', animT: 0, raidT: gameTime + rnd(40, 60), raids: 0, farT: 0, moving: false, guards: [], partner: null, open: mode === 'wait', waitUntil: gameTime + 60, started: false };
+  if (mode !== 'wait') wagonNpcPartner();
+  msg(`Escort the supply wagon from ${TOWN_NAMES[from]} to ${TOWN_NAMES[to]} (it's at the carriage stand). ${mode === 'wait' ? 'Waiting up to a minute for another watchman to join at the Captain - after that you get a Watch partner.' : `${wagon.partner.label} rides guard with you.`} Robbers will go for the crates. Pay: 25g + 5g a crate delivered.`, '#9ab0ff'); SFX.buy();
+}
+function wagonNpcPartner() {
+  const w = wagon; w.open = false;
+  const g = guards.filter(g => g.unit === 'guard' && !g.post && g.map === 'town' && ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => Math.hypot(a.x - w.x, a.y - w.y) - Math.hypot(b.x - w.x, b.y - w.y))[0];
+  if (!g) { w.partner = { label: 'nobody' }; return; }
+  g.state = 'convoy'; g.path = null; g.convoySide = -1; g.x = w.x - 38; g.y = w.y; g.map = 'town'; w.guards = [g]; w.partner = { npc: g, label: g.name };
 }
 // Now and then by day the Watch sends a supply wagon down the road with two watchmen guarding it - a juicy target for a thief.
 function startNpcWagon() {
@@ -2913,7 +2925,9 @@ function startNpcWagon() {
 }
 function endWagon(ok) {
   const w = wagon; wagon = null; if (!w) return;
-  if (w.npc) { for (const g of w.guards) if (g.state === 'convoy') { g.state = 'return'; g.path = null; } return; }
+  for (const g of w.guards || []) if (g.state === 'convoy') { g.state = 'return'; g.path = null; }
+  if (w.npc) return;
+  if (w.partner && w.partner.peer) sendEv(ok ? { k: 'paid', to: w.partner.peer, nm: String(25 + 5 * w.crates) } : { k: 'wfail', to: w.partner.peer });
   for (const t of thieves) if (t.state === 'ambush') { t.state = 'home'; t.path = null; }
   if (ok) { const pay = 25 + 5 * w.crates; gold += pay; totalEarned += pay; SFX.coins(); stat('wagons'); msg(`Wagon delivered to ${TOWN_NAMES[w.to]} with ${w.crates}/6 crates. Paid ${pay}g!`, '#9df0a0'); goodWork(w.crates >= 4 ? 1 : 0.5); }
   else msg(ok === false ? 'The supply wagon has been picked clean. Escort failed.' : 'You left the supply wagon behind. Escort failed.', '#ff8a6b');
@@ -2933,7 +2947,10 @@ function wagonRoute(w) {
 function updateWagon(dt) {
   const w = wagon, p = player, c = town.coaches[w.to]; w.moving = false;
   if (!w.npc && (!isWatch() || wanted)) { endWagon(null); return; }
-  const near = w.npc ? !w.guards.some(g => g.state === 'convoy' && dist(g, w) > 5 * TS) : p.map === 'town' && dist(w, p) < 7 * TS; // the convoy waits for its guards
+  if (w.open && !w.partner) { if (gameTime > w.waitUntil) { wagonNpcPartner(); msg(`Nobody came - ${w.partner.label} will ride guard with you instead.`, '#9ab0ff'); } return; } // waiting at the stand for a second guard
+  const mate = w.partner && w.partner.peer ? online.ghosts.get(w.partner.peer) : null;
+  const near = w.npc ? !w.guards.some(g => g.state === 'convoy' && dist(g, w) > 5 * TS) : (p.map === 'town' && dist(w, p) < 7 * TS) || !!(mate && mate.map === 'town' && dist(mate, w) < 7 * TS); // rolls while a guard is with it
+  if (near) w.started = true;
   if (near && w.route === undefined) w.route = wagonRoute(w), w.ri = 0;
   if (near && w.route) { // roll along the road
     w.farT = 0; const ox = w.x; let step = 30 * dt;
@@ -2941,7 +2958,7 @@ function updateWagon(dt) {
     if (w.ri >= w.route.length) { endWagon(true); return; }
     w.moving = true; w.animT += dt; if (Math.abs(w.x - ox) > 0.01) w.right = w.x > ox; w.dist = (w.dist || 0) + 30 * dt;
   } else if (near) { w.farT = 0; const ox = w.x; if (navTo(w, 'town', c.ax, c.ay, 30, dt)) { endWagon(true); return; } w.moving = true; w.animT += dt; if (Math.abs(w.x - ox) > 0.01) w.right = w.x > ox; w.dist = (w.dist || 0) + Math.hypot(w.x - ox, 0) + 0.5 * dt * 30; if (w.stuckT > 6) { w.path = null; w.stuckT = 0; } }
-  else { w.farT += dt; if (w.farT > 90) { endWagon(null); return; } }
+  else if (w.started) { w.farT += dt; if (w.farT > 90) { endWagon(null); return; } }
   if (w.crates <= 0) { endWagon(false); return; }
   if (gameTime > w.raidT && w.raids < 4) { // robbers jump out at the wagon
     w.raidT = gameTime + rnd(30, 55);
@@ -3036,6 +3053,7 @@ function segDist(px, py, a, b) { const ax = a.x * TS + 8, ay = a.y * TS + 8, bx 
 function onPost(P) {
   const p = player;
   if (wagon && p.map === 'town' && dist(wagon, p) < 8 * TS) return true; // escort duty counts
+  if (career.joinedWagon) { const g = online.ghosts.get(career.joinedWagon); if (g && g.wagon && p.map === 'town' && dist(g.wagon, p) < 8 * TS) return true; }
   if (P.kind === 'house') return houses[P.h].floors.some(f => f.key === p.map);
   if (P.kind === 'prison') return p.map === 'jail';
   if (p.map !== 'town') return false;
@@ -3268,7 +3286,7 @@ function chatOptions() {
     const town = townIdxAt(townPos(t).x);
     if (isWatch()) {
       add(`Switch to the ${career.shift === 'day' ? 'night' : 'day'} shift`, () => { career.shift = career.shift === 'day' ? 'night' : 'day'; career.post = null; career.shiftNo = -1; chat.reply = `${career.shift === 'day' ? 'Day' : 'Night'} shift it is.`; });
-      if (!wagon) add('Escort a supply wagon to another town (25g + 5g a crate)', () => { startWagon(career.town); chat.reply = 'Wagon\'s at the carriage stand. Don\'t let those sewer rats near it.'; });
+      add('Any escort work?', () => { chat.reply = 'Wagon escorts come from Captain Harlow, in the Watch House in the big town.'; });
       add('How am I doing?', () => { chat.reply = howAmIDoing(); });
       add('Hand in your badge (quit the Watch)', () => { quitCareer('You hand in your badge. Just a citizen again.'); chat.reply = 'Shame. You had the look.'; });
     } else {
@@ -3288,6 +3306,16 @@ function chatOptions() {
   } else if (t.kind === 'fisher') {
     add('Buy a smoked fish (3g)', () => { chatClose(); buyFish(t); }, 3);
     add('Any tips?', () => { chat.reply = pick(['The Watch walks the quay at night. Mind yourself.', 'Carriage east goes to Mudford, and on to Kingsbridge.', 'Silas the smuggler comes out after dark.']); });
+  } else if (t.name === 'Captain Harlow') {
+    if (!isWatch()) add('Any work?', () => { chat.reply = 'Only for the Watch, citizen. Ask any guard on the street about joining up.'; });
+    else if (wagon && !wagon.npc) add('About my escort...', () => { chat.reply = wagon.partner ? `Get that wagon to ${TOWN_NAMES[wagon.to]}. ${wagon.partner.label} is with you.` : 'Still waiting on a partner. Give it a moment.'; });
+    else if (career.joinedWagon) add('About my escort...', () => { chat.reply = 'Stick with that wagon till it\'s delivered.'; });
+    else {
+      add('Take a wagon escort with a Watch partner (25g + 5g a crate)', () => { if (wagon) endWagon(undefined); startWagon(0, 'npc'); chat.reply = `Good. ${wagon.partner.label} goes with you. Wagon's at the carriage stand.`; });
+      if (multi() && online.room) add('Take a wagon escort, wait for another player to join', () => { if (wagon) endWagon(undefined); startWagon(0, 'wait'); chat.reply = 'I\'ll send the next watchman who comes in. If nobody does in a minute, you get one of mine.'; });
+      if (multi()) for (const g of online.ghosts.values()) if (g.wagon && g.wagon.open && g.cr === 'w') add(`Join ${g.label}'s wagon escort`, () => { sendEv({ k: 'join', to: g.peer }); chat.reply = `Right - report to ${g.label} at the carriage stand.`; });
+    }
+    add('How am I doing?', () => { chat.reply = isWatch() ? howAmIDoing() : 'You\'re not one of mine.'; });
   } else if (t.name === 'Jailer Grubb') {
     if ((bounty > 0 || halfBounty) && !wanted) add(`Pay off your bounty (${bounty * 60 + (halfBounty ? 30 : 0)}g)`, () => { if (!pay(bounty * 60 + (halfBounty ? 30 : 0))) return; halfBounty = false; bounty = 0; syncForce(); chat.reply = 'Paid in full. Your slate is clean... for now.'; msg('Bounty cleared!', '#9df0a0'); }, bounty * 60 + (halfBounty ? 30 : 0));
     add('Who\'s locked up?', () => { const j = thieves.filter(o => o.state === 'jailed' && o.cell).map(o => o.name); chat.reply = j.length ? `Got ${j.join(' and ')} in the cells. Thieves, the lot of 'em.` : 'Just the usual drunks and layabouts.'; });
@@ -3443,13 +3471,22 @@ function sellAll() {
   say(menu.fence, pick(['Pleasure doing business.', 'Ill-gotten gains... my favourite.', "I'll find a buyer. Eventually."]));
 }
 function buy(kind, cost) {
+  if (kind === 'pardon' || kind === 'bones') {
+    if (kind === 'pardon' && !bounty && !halfBounty) { say(menu.fence, 'You\'re not wanted for anything. Save your coin.'); SFX.deny(); return; }
+    if (kind === 'bones' && (player.bones || 0) >= 5) { say(menu.fence, 'Your pockets already stink of bones.'); SFX.deny(); return; }
+    if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
+    gold -= cost; SFX.buy();
+    if (kind === 'pardon') { if (halfBounty) halfBounty = false; else bounty--; syncForce(); msg('A forged pardon, signed and sealed. Your bounty drops.', '#9df0a0'); }
+    else { player.bones = Math.min(5, (player.bones || 0) + 2); msg('Two meaty bones. Toss one to a dog and it stays quiet.', '#9df0a0'); }
+    return;
+  }
   if (kind !== 'smoke' && kind !== 'lockpicks' && up[kind]) return;
   if (kind === 'smoke' && player.smoke >= 3) { say(menu.fence, "You can't carry more than 3."); SFX.deny(); return; }
   if (kind === 'lockpicks' && player.picks >= 20) { say(menu.fence, "That's plenty of picks."); SFX.deny(); return; }
   if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
   gold -= cost; SFX.buy();
   if (kind === 'smoke') player.smoke++; else if (kind === 'lockpicks') player.picks += 5; else up[kind] = true;
-  msg({ sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', picks: 'Bought a Lockpick Kit.', lockpicks: 'Bought 5 lockpicks.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
+  msg({ soles: 'Soft-soled shoes: crouched, you can creep much closer.', cloak: 'A dark cloak: harder to spot at night.', favour: 'The fences will pay you 15% more from now on.', sack: 'Bought a Bigger Sack (10 slots).', boots: 'Bought Swift Boots.', tongue: 'Learned the Silver Tongue.', picks: 'Bought a Lockpick Kit.', lockpicks: 'Bought 5 lockpicks.', smoke: 'Bought a smoke bomb.' }[kind], '#9df0a0');
 }
 
 // ---------- the catch ----------
@@ -3936,8 +3973,8 @@ function updatePlayer(dt) {
       if (!held('e') || mv.l > 0 || !W || dist(p, W) > 34) { p.state = 'free'; break; }
       p.workT += dt;
       if (owner) { // another player is guarding this wagon: are they looking your way?
-        const [fx, fy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[owner.dir] || [0, 1], dx = p.x - owner.x, dy = p.y - owner.y, d = Math.hypot(dx, dy) || 1;
-        const sees = owner.map === p.map && (d < 22 || (d < (p.sneak ? 60 : 100) && (dx * fx + dy * fy) / d > 0.35));
+        const looks = o => { if (!o) return false; const [fx, fy] = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[o.dir] || [0, 1], dx = p.x - o.x, dy = p.y - o.y, d = Math.hypot(dx, dy) || 1; return o.map === p.map && (d < 22 || (d < (p.sneak ? 60 : 100) && (dx * fx + dy * fy) / d > 0.35)); };
+        const sees = looks(owner) || looks(owner.wagonPartner ? online.ghosts.get(owner.wagonPartner) : null);
         p.spotT = sees ? (p.spotT || 0) + dt : Math.max(0, (p.spotT || 0) - dt * 0.5);
         if (p.spotT > 0.8) { p.state = 'free'; bounty = Math.min(5, bounty + 1); say(p, 'Uh oh.', 1.2); msg(`${owner.label} saw you at the wagon! Bounty +1.`, '#ff9a6b'); sendEv({ k: 'spot', to: owner.peer }); break; }
         if (p.workT >= 2.4) { p.state = 'free'; W.crates--; const goods = pick([['Crate of tea', 45], ['Crate of spices', 60], ['Crate of wine', 50], ['Crate of tools', 35], ['Crate of cloth', 40], ['Crate of silver', 90]]); p.loot.push({ name: goods[0], value: goods[1], wagonCrate: true }); bounty = Math.min(5, bounty + 1); SFX.steal(); stat('wagonCrates'); sendEv({ k: 'crate', to: owner.peer }); msg(`You lifted a ${goods[0].toLowerCase()} (${goods[1]}g) off ${owner.label}'s wagon! They'll know - bounty +1.`, '#f7d774'); }
@@ -4028,7 +4065,7 @@ function updateGuard(g, dt) {
   if (g.post && ['chase', 'respond', 'search'].includes(g.state) && !onGrounds(g.post)) { g.state = 'return'; g.path = null; say(g, g.unit === 'dog' ? 'WOOF! WOOF!' : pick(['And STAY out!', 'Off our lordship\'s land!'])); }
   switch (g.state) {
     case 'convoy': { // walking beside the supply wagon
-      if (!wagon || !wagon.npc) { g.state = 'return'; g.path = null; break; }
+      if (!wagon || !wagon.guards || !wagon.guards.includes(g)) { g.state = 'return'; g.path = null; break; }
       const fwd = wagon.right === false ? -1 : 1, ox = g.convoySide > 0 ? 48 * fwd : -38 * fwd, tx = Math.floor((wagon.x + ox) / TS), ty = Math.floor((wagon.y - 2) / TS); // one walks ahead of the horse, one behind the cart
       if (Math.hypot(g.x - (tx * TS + 8), g.y - (ty * TS + 12)) > 10) navTo(g, 'town', tx, ty, 40, dt, true); else g.fa = Math.atan2(wagon.y - g.y, wagon.x - g.x) + Math.PI + Math.sin(gameTime * 0.7 + g.convoySide * 2) * 2.35; // looking about, now and then back at the wagon
       if (g.stuckT > 4) { g.x = wagon.x + ox; g.y = wagon.y; g.stuckT = 0; g.path = null; }
@@ -4859,7 +4896,7 @@ function drawTouch() {
   else txt('drag to move', 30, VH - 20, 4, 'rgba(255,255,255,0.4)', 'center', null);
 }
 function drawMenu() {
-  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 164, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
+  const f = menu.fence, pw = Math.min(250, VW - 12), ph = 46 + 12 * 13, px = Math.round(VW / 2 - pw / 2), py = Math.round(VH / 2 - ph / 2);
   menu.px = px; menu.py = py; menu.pw = pw; menu.ph = ph; menu.items = [];
   panel(px, py, pw, ph, 0.92); F(ctx, px, py, pw, 14, 'rgba(90,45,110,0.9)');
   txt(f.name + ' - Fence', px + 6, py + 4, 6, '#f7d774'); coinIcon(px + pw - 50, py + 4); txt(`${gold}g`, px + pw - 42, py + 4, 6, '#f7d774');
@@ -4873,9 +4910,14 @@ function drawMenu() {
     ['5', `Smoke Bomb (${player.smoke}/3)`, '50g', () => buy('smoke', 50), player.smoke < 3 && gold >= 50],
     ['6', `Lockpicks x5 (have ${player.picks})`, '20g', () => buy('lockpicks', 20), player.picks < 20 && gold >= 20],
     ['7', 'Lockpick Kit (easier, quieter)', up.picks ? 'OWNED' : '100g', () => buy('picks', 100), !up.picks && gold >= 100],
+    ['8', 'Soft-soled shoes (sneak much closer)', up.soles ? 'OWNED' : '90g', () => buy('soles', 90), !up.soles && gold >= 90],
+    ['9', 'Dark cloak (harder to spot at night)', up.cloak ? 'OWNED' : '110g', () => buy('cloak', 110), !up.cloak && gold >= 110],
+    ['0', `Forged pardon (bounty -1, have ${bounty}${halfBounty ? '.5' : ''})`, '70g', () => buy('pardon', 70), (bounty > 0 || halfBounty) && gold >= 70],
+    ['-', `Meaty bones x2 (quiet a dog, have ${player.bones || 0})`, '8g', () => buy('bones', 8), (player.bones || 0) < 5 && gold >= 8],
+    ['=', "Fence's favour (+15% when selling)", up.favour ? 'OWNED' : '200g', () => buy('favour', 200), !up.favour && gold >= 200],
   ];
   opts.forEach(([k, label, price, fn, ok], i) => {
-    const y = py + 30 + i * 16, item = { x: px + 4, y: y - 2, w: pw - 8, h: 14, fn }; menu.items.push(item);
+    const y = py + 30 + i * 13, item = { x: px + 4, y: y - 2, w: pw - 8, h: 12, fn }; menu.items.push(item);
     F(ctx, item.x, item.y, item.w, item.h, ok ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.03)');
     txt(touchMode ? '' : `[${k}]`, px + 8, y + 2, 5, '#f7d774'); txt(label, px + (touchMode ? 8 : 28), y + 2, 5, ok ? '#fff' : '#888'); txt(price, px + pw - 8, y + 2, 5, price === 'OWNED' ? '#9df0a0' : ok ? '#f7d774' : '#886', 'right');
   });
@@ -4966,7 +5008,7 @@ function onlinePeers(change) {
     g.moving = !!pz.mv; g.st = String(pz.s || 'free'); g.wanted = !!pz.w; g.bounty = +pz.b || 0; g.skin = String(pz.sk || 'teal');
     g.cr = String(pz.cr || 't');
     if (g.cr === 'w' && g.label.startsWith('Thief ')) g.label = 'Watchman ' + g.label.slice(6); else if (g.cr !== 'w' && g.label.startsWith('Watchman ')) g.label = 'Thief ' + g.label.slice(9);
-    if (Array.isArray(pz.wg) && pz.wg.length >= 5) { const W = g.wagon || (g.wagon = { kind: 'wagon', remote: pr.peer, x: +pz.wg[0] || 0, y: +pz.wg[1] || 0, animT: 0, dist: 0 }); W.tx = +pz.wg[0] || 0; W.ty = +pz.wg[1] || 0; W.crates = Math.max(0, Math.min(6, pz.wg[2] | 0)); W.right = !!pz.wg[3]; W.moving = !!pz.wg[4]; if (Math.hypot(W.x - W.tx, W.y - W.ty) > 80) { W.x = W.tx; W.y = W.ty; } } else g.wagon = null;
+    if (Array.isArray(pz.wg) && pz.wg.length >= 5) { const W = g.wagon || (g.wagon = { kind: 'wagon', remote: pr.peer, x: +pz.wg[0] || 0, y: +pz.wg[1] || 0, animT: 0, dist: 0 }); W.tx = +pz.wg[0] || 0; W.ty = +pz.wg[1] || 0; W.crates = Math.max(0, Math.min(6, pz.wg[2] | 0)); W.right = !!pz.wg[3]; W.moving = !!pz.wg[4]; W.open = !!pz.wg[5]; g.wagonPartner = typeof pz.wp === 'string' && pz.wp ? pz.wp : null; if (Math.hypot(W.x - W.tx, W.y - W.ty) > 80) { W.x = W.tx; W.y = W.ty; } } else g.wagon = null;
     g.sheet = g.cr === 'w' ? WATCH_SHEET : ghostSheet(g.skin, false); g.boundSheet = ghostSheet(g.skin, true); g.crouchSheet = ghostSheet(g.skin, 'crouch'); g.running = !!pz.rn;
   }
   for (const [k, g] of online.ghosts) if (!seen.has(k)) { online.ghosts.delete(k); if (state === 'play' && multi()) msg(`${g.label} left town.`, '#9aa8b8'); }
@@ -4983,6 +5025,11 @@ function onlineEv(m) {
     grab(G); msg(`The Watch (${who}) has grabbed you! Wriggle free (arrows in order) or Q for a smoke bomb!`, '#ff6b6b');
   } else if (d.k === 'free') { say(p, 'Oof!', 1.2); p.stunT = 1.2; msg(`${who} wriggled out of your grip!`, '#ffb36b'); }
   else if (d.k === 'smoke') { clouds.push({ map: p.map, x: g ? g.x : p.x, y: (g ? g.y : p.y) - 6, r: 32, t: 5, max: 5 }); SFX.smoke(); say(p, '*cough cough*', 1.6); p.stunT = 1.6; msg(`${who} threw a smoke bomb and got away!`, '#ffb36b'); }
+  else if (d.k === 'join') { if (wagon && !wagon.npc && wagon.open && !wagon.partner) { wagon.partner = { peer: m.peer, label: who }; wagon.open = false; sendEv({ k: 'joined', to: m.peer }); SFX.buy(); msg(`${who} has joined your escort! The wagon rolls when either of you is with it.`, '#9df0a0'); } else sendEv({ k: 'full', to: m.peer }); }
+  else if (d.k === 'joined') { career.joinedWagon = m.peer; SFX.buy(); msg(`You're riding guard on ${who}'s supply wagon. Stay with it (WAGON marker) - you're paid when it arrives.`, '#9df0a0'); }
+  else if (d.k === 'full') msg(`${who}'s escort already has two guards.`, '#ffb36b');
+  else if (d.k === 'paid') { const pay = Math.max(0, Math.min(60, +d.nm || 0)); career.joinedWagon = null; gold += pay; totalEarned += pay; SFX.coins(); goodWork(1); msg(`The wagon you guarded with ${who} arrived! Paid ${pay}g.`, '#9df0a0'); }
+  else if (d.k === 'wfail') { career.joinedWagon = null; msg(`The escort with ${who} failed.`, '#ff8a6b'); }
   else if (d.k === 'crate') { if (wagon && !wagon.npc) { wagon.crates = Math.max(0, wagon.crates - 1); } SFX.deny(); msg(`${who} stole a crate off your wagon! Grab them to get it back.`, '#ff9a6b'); }
   else if (d.k === 'spot') { say(p, 'Oi! Get away from that wagon!', 2); msg(`You caught ${who} sneaking at your wagon!`, '#9ab0ff'); }
   else if (d.k === 'jailed' || d.k === 'jailedc') { if (d.k === 'jailedc' && wagon && !wagon.npc) { wagon.crates = Math.min(6, wagon.crates + 1); msg('You got the stolen crate back onto the wagon!', '#9df0a0'); } gold += 30; totalEarned += 30; career.arrests = (career.arrests || 0) + 1; SFX.coins(); msg(`You hauled ${who} off to the cells! Reward: 30g.`, '#9df0a0'); }
@@ -5031,7 +5078,7 @@ function updateOnline(dt) {
   online.sendT -= dt;
   if (online.sendT <= 0) {
     online.sendT = 0.1; const p = player, play = state !== 'title' && state !== 'wardrobe' && state !== 'achievements';
-    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, b: bounty || 0, cr: career.type === 'watch' ? 'w' : career.type === 'worker' ? 'j' : 't', wg: wagon && !wagon.npc && p.map === 'town' ? [Math.round(wagon.x), Math.round(wagon.y), wagon.crates, wagon.right === false ? 0 : 1, wagon.moving ? 1 : 0] : 0, rn: p.running && p.moving ? 1 : 0 } : { g: null };
+    const pz = play && multi() ? { g: 'lf1', m: p.map, x: Math.round(p.x), y: Math.round(p.y), d: p.dir, mv: p.moving ? 1 : 0, sk: profile.skin, s: p.state === 'free' && p.sneak ? 'sneak' : p.state, w: wanted ? 1 : 0, b: bounty || 0, cr: career.type === 'watch' ? 'w' : career.type === 'worker' ? 'j' : 't', wg: wagon && !wagon.npc ? [Math.round(wagon.x), Math.round(wagon.y), wagon.crates, wagon.right === false ? 0 : 1, wagon.moving ? 1 : 0, wagon.open && !wagon.partner ? 1 : 0] : 0, wp: wagon && wagon.partner && wagon.partner.peer ? wagon.partner.peer : '', rn: p.running && p.moving ? 1 : 0 } : { g: null };
     const key = JSON.stringify(pz);
     if (key !== online.last) { online.last = key; room.presence(pz).catch(() => { }); }
   }
@@ -5056,6 +5103,7 @@ function questTargets() {
   }
   if (treasure) T0.push({ x: treasure.x, y: treasure.y, col: '#ff5a4a', label: 'X' });
   if (typeof career !== 'undefined' && isWorker() && shiftWindow() && career.done < career.need) { const sp = career.spots[career.done]; if (sp) { if (sp.map === 'town') T0.push({ x: sp.x, y: sp.y, col: '#7af0a0', label: 'WORK' }); else if (p.map !== sp.map) { const d = maps[sp.map].house.door; T0.push({ x: d.x, y: d.y, col: '#7af0a0', label: 'WORK' }); } } }
+  if (typeof career !== 'undefined' && career.joinedWagon) { const g = online.ghosts.get(career.joinedWagon); if (g && g.wagon && (player.map !== 'town' || dist(g.wagon, player) > 7 * TS)) T0.push({ x: Math.floor(g.wagon.x / TS), y: Math.floor(g.wagon.y / TS), col: '#f7d774', label: 'WAGON' }); }
   if (typeof wagon !== 'undefined' && wagon && wagon.npc) { if (career.type === 'thief' && (player.map !== 'town' || dist(wagon, player) > 7 * TS)) T0.push({ x: Math.floor(wagon.x / TS), y: Math.floor(wagon.y / TS), col: '#f7d774', label: 'WAGON' }); }
   else if (typeof wagon !== 'undefined' && wagon) { const c = town.coaches[wagon.to]; if (player.map !== 'town' || dist(wagon, player) > 7 * TS) T0.push({ x: Math.floor(wagon.x / TS), y: Math.floor(wagon.y / TS), col: '#f7d774', label: 'WAGON' }); T0.push({ x: c.x, y: c.y, col: '#f7d774', label: 'DROP-OFF' }); }
   if (typeof career !== 'undefined' && isWatch() && career.escort != null && player.map !== 'jail') T0.push({ x: town.jail.approach.x, y: town.jail.approach.y - 1, col: '#9ab0ff', label: 'JAIL' });
@@ -5289,7 +5337,7 @@ function frame(now) {
     for (let i = 1; i <= 9; i++) if (hit(String(i))) { shopBuy(i - 1); break; }
     if (state === 'shop' && (hit('escape') || hit('e'))) closeShop();
   } else if (state === 'menu') {
-    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('lockpicks', 20); if (hit('7')) buy('picks', 100);
+    if (hit('1')) sellAll(); if (hit('2')) buy('sack', 120); if (hit('3')) buy('boots', 150); if (hit('4')) buy('tongue', 130); if (hit('5')) buy('smoke', 50); if (hit('6')) buy('lockpicks', 20); if (hit('7')) buy('picks', 100); if (hit('8')) buy('soles', 90); if (hit('9')) buy('cloak', 110); if (hit('0')) buy('pardon', 70); if (hit('-')) buy('bones', 8); if (hit('=')) buy('favour', 200);
     if (hit('escape') || hit('e')) closeMenu();
     for (const f of fences) if (f.bubble) { f.bubble.t -= dt; if (f.bubble.t <= 0) f.bubble = null; }
     for (const mm of msgs) mm.t -= dt * 0.3;
@@ -5319,7 +5367,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
