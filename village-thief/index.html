@@ -2299,6 +2299,7 @@ function sendToIsland() {
     for (const L of m.locks.values()) L.shut = true; m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x).shut = isNight();
     for (const g of guards) if (g.map === 'island') { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
     msg(`With a 5-star bounty, there\'s no Watch House for you: the prison ship carries you out to PRISON ISLAND. Sentence: ${island.weeks} week${island.weeks > 1 ? 's' : ''}${islandCount > 1 ? ` (trip number ${islandCount})` : ''}.`, '#ff6b6b');
+    msg('Tip: the loose stone by your bed - hold F there to dig a tunnel, a little at a time.', '#cfe8ff');
     msg('25 warders and 5 dogs, always on alert. By day you may use the cell block, the mess hall and the yard; at night, only your cell. Serve your time - or find a way off this rock. The other prisoners know a few tricks.', '#ffb36b');
     SFX.jail(); stat('islandSent');
   });
@@ -4416,7 +4417,7 @@ function findInteraction() {
     const near = (x, y, r = 20) => Math.hypot(p.x - (x * TS + 8), p.y - 4 - (y * TS + 8)) < r, t = tileOfE(p), inCell = inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1);
     const cell = m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x), gate = m.locks.get(ISL.gate.y * m.w + ISL.gate.x);
     if (inCell && near(ISL.cell.bed.x, ISL.cell.bed.y + 1, 22)) { p.inter = { label: `Sleep (${Math.max(0, Math.ceil((island.end - gameTime) / DAY_LEN))} days of your sentence left)`, act: () => { if (!isNight()) { say(p, 'Can\'t sleep in broad daylight.', 1.5); return; } transition(() => { const d = dayInfo(); gameTime = d.day * DAY_LEN + 1; p.stamina = 100; msg('Morning. The cell doors clank open.', '#cfd8ff'); }); } };
-      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold E, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.x = ISL.tunnelOut.x * TS + 8; p.y = ISL.tunnelOut.y * TS + 12; msg('You squeeze up out of the tunnel - outside the south wall!', '#9df0a0'); }); } else { p.state = 'digging'; } } }; return; }
+      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold F, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.x = ISL.tunnelOut.x * TS + 8; p.y = ISL.tunnelOut.y * TS + 12; msg('You squeeze up out of the tunnel - outside the south wall!', '#9df0a0'); }); } else { p.state = 'digging'; } } }; return; }
     if (inCell && cell.shut && near(cell.x, cell.y, 22)) { p.inter = { label: 'Pick your cell lock (hard)', act: () => startPick(null, () => { cell.shut = false; cell.picked = true; msg('Click. Your cell door swings open. Quietly now...', '#9df0a0'); }, 7, 'Cell door') }; return; }
     if (gate.shut && near(gate.x, gate.y - 1, 22)) { p.inter = islandItem('keys') ? { label: 'Unlock the main gate (warden\'s keys)', act: () => { gate.shut = false; SFX.unlock(); msg('The main gate swings open!', '#9df0a0'); } } : { label: 'Pick the main gate lock (very hard)', act: () => startPick(null, () => { gate.shut = false; msg('The main gate swings open!', '#9df0a0'); }, 8, 'Main gate') }; return; }
     if (near(ISL.drain.x, ISL.drain.y)) { p.inter = island.drainOpen ? { label: 'Climb down the drain', act: () => transition(() => { p.x = ISL.drainOut.x * TS + 8; p.y = ISL.drainOut.y * TS + 12; msg('You crawl through the stinking drain and out onto the rocks, east of the wall!', '#9df0a0'); }) } : { label: 'Pick the drain grate', act: () => startPick(null, () => { island.drainOpen = true; msg('The grate lifts. The drain runs under the wall...', '#9df0a0'); }, 7, 'Drain grate') }; return; }
@@ -4540,12 +4541,12 @@ function updatePlayer(dt) {
       p.workT += dt; if (p.workT >= 2.5) { p.state = 'free'; const h = maps[p.map].house; if (recentRobbery(h)) openCase(h, pick(['Muddy bootprints by the window, and a scrap of cloth on the latch.', 'A dropped lockpick, and a sewer smell.', 'Scratches on the lock and a familiar calling card.'])); }
       return;
     }
-    case 'digging': { // scraping a tunnel behind the loose stone in your cell
+    case 'digging': { // scraping a tunnel behind the loose stone in your cell: hold F
       const mv = readMove();
-      if (!held('e') || mv.l > 0 || !island) { p.state = 'free'; break; }
+      if (!held('f') || mv.l > 0 || !island) { p.state = 'free'; break; }
       island.dig += dt; if (Math.random() < dt * 2) SFX.struggle && SFX.struggle();
       for (const g of guards) if (g.map === 'island' && guardSees(g)) { p.state = 'free'; say(g, 'Digging, are we?! GUARDS!', 2); island.dig = Math.max(0, island.dig - 20); setWanted('Caught digging an escape tunnel!'); startChase(g); break; }
-      if (island.dig >= 45) { p.state = 'free'; msg('You break through! The tunnel runs under the south wall. (Use your bed spot again to crawl in.)', '#9df0a0'); }
+      if (island.dig >= 45) { p.state = 'free'; msg('You break through! The tunnel runs under the south wall. Press F by the loose stone to crawl in.', '#9df0a0'); }
       return;
     }
     case 'crating': { // lifting a crate off the supply wagon
