@@ -142,16 +142,17 @@ const SFX = {
 // =====================================================================
 const T = {
   GRASS: 0, FLOWER: 1, PATH: 2, COBBLE: 3, TREE: 4, ROOF: 5, WALL: 6, WINDOW: 7, DOOR: 8, STONE: 9, JROOF: 10, JDOOR: 11,
-  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59, FENCEV: 60, DOGHOUSE: 61, SACK: 62, PLANTER: 63, SIGNPOST: 64, COACH: 65, HORSE: 66, ROCK: 67, CAVEFLOOR: 68, CAVEMOUTH: 69, CAMPFIRE: 70, STUMP: 71, LOGPILE: 72, SHROOM: 73, WARDROBE: 74, OCEAN: 80, DECK: 81, RAIL: 82, MAST: 83, CABWALL: 84, HELM: 85,
+  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59, FENCEV: 60, DOGHOUSE: 61, SACK: 62, PLANTER: 63, SIGNPOST: 64, COACH: 65, HORSE: 66, ROCK: 67, CAVEFLOOR: 68, CAVEMOUTH: 69, CAMPFIRE: 70, STUMP: 71, LOGPILE: 72, SHROOM: 73, WARDROBE: 74, FOUNTAIN: 86, LIGHTHOUSE: 87, OCEAN: 80, DECK: 81, RAIL: 82, MAST: 83, CABWALL: 84, HELM: 85,
   FLOOR: 30, IWALL: 31, IEDGE: 32, EXIT: 34, BED: 35, TABLE: 36, CHAIR: 37, CHEST: 38, SHELF: 39, DRESSER: 40, POT: 41,
   IBARREL: 42, FIRE: 43, PLANT: 44, SFLOOR: 45, SWALL: 46, BARS: 47, CELLDOOR: 48, DESK: 49, BENCH: 50, BED2: 51, SEDGE: 52, STAIRS_UP: 53, STAIRS_DN: 54,
 };
 const SOLID = new Set([T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.FENCE, T.BUSH, T.BARREL, T.CRATE,
   T.LAMP, T.WELL, T.STALL, T.HAY, T.IWALL, T.IEDGE, T.BED, T.BED2, T.TABLE, T.CHAIR, T.CHEST, T.SHELF, T.DRESSER, T.POT, T.IBARREL,
-  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT, T.FENCEV, T.DOGHOUSE, T.SACK, T.PLANTER, T.SIGNPOST, T.COACH, T.HORSE, T.ROCK, T.CAVEMOUTH, T.CAMPFIRE, T.STUMP, T.LOGPILE, T.WARDROBE, T.OCEAN, T.RAIL, T.MAST, T.CABWALL, T.HELM]);
+  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT, T.FENCEV, T.DOGHOUSE, T.SACK, T.PLANTER, T.SIGNPOST, T.COACH, T.HORSE, T.ROCK, T.CAVEMOUTH, T.CAMPFIRE, T.STUMP, T.LOGPILE, T.WARDROBE, T.OCEAN, T.RAIL, T.MAST, T.CABWALL, T.HELM, T.FOUNTAIN, T.LIGHTHOUSE]);
 const OPAQUE = new Set([T.ROCK, T.VDOOR, T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.BUSH, T.STALL, T.HAY,
   T.IWALL, T.IEDGE, T.FIRE, T.SWALL, T.SEDGE, T.SHELF, T.TORCH]);
 const LOOT = new Set([T.CHEST, T.SHELF, T.DRESSER, T.POT]);
+const PORT_ROOFS = [['#2f7f8f', '#1f5f6c', '#4fa3b3'], ['#3a5f9e', '#2a4677', '#5b7cc0'], ['#e8e4dc', '#bcb6a8', '#ffffff'], ['#2a8a7a', '#1c6a5c', '#4ab09e'], ['#7aa8c8', '#5a88a8', '#a0c8e0']];
 const ROOFS = [['#b5473a', '#8e3328', '#cf6a55'], ['#3f5f9e', '#2f4777', '#5b7cc0'], ['#7a5236', '#5c3c26', '#97694a'], ['#4f7f45', '#3b6134', '#6a9c5d'], ['#8a4f8a', '#6a3a6a', '#a96aa9']];
 
 const maps = {};
@@ -292,7 +293,7 @@ OP[T.HELM] = (g, ox, oy, tx, ty, m) => { GP[T.DECK](g, ox, oy, tx, ty, m); F(g, 
 function houseOf(m, tx, ty) { return houses[m.owner[ty * m.w + tx]]; }
 const THATCH = ['#c9a24a', '#a8822f', '#e0bd68'];
 OP[T.ROOF] = (g, ox, oy, tx, ty, m) => {
-  const h = houseOf(m, tx, ty), [c, d, l] = h.thatch ? THATCH : ROOFS[h.roof], row = ty - h.y;
+  const h = houseOf(m, tx, ty), [c, d, l] = h.thatch ? THATCH : h.portRoof ? PORT_ROOFS[h.roof % PORT_ROOFS.length] : ROOFS[h.roof], row = ty - h.y;
   F(g, ox, oy, 16, 16, c);
   if (h.thatch) { // straw, combed in uneven strands
     for (let k = 0; k < 16; k += 2) { const n = hash(tx * 16 + k, ty, 31); F(g, ox + k, oy + Math.floor(n * 4), 1, 6 + Math.floor(n * 6), d); F(g, ox + k + 1, oy + 2 + Math.floor(n * 5), 1, 5, l); }
@@ -442,6 +443,22 @@ OP[T.WELL] = (g, ox, oy) => {
   blob(g, ox + 8, oy + 10, 6, '#8a8680'); blob(g, ox + 8, oy + 10, 3, '#1d3550'); F(g, ox + 6, oy + 9, 2, 1, '#3d6590');
   F(g, ox + 2, oy + 2, 1, 9, '#6b4a2b'); F(g, ox + 13, oy + 2, 1, 9, '#6b4a2b'); F(g, ox + 1, oy, 14, 3, '#8e3328'); F(g, ox + 1, oy + 2, 14, 1, '#6e2219'); F(g, ox + 3, oy + 4, 10, 1, '#6b4a2b');
 };
+OP[T.FOUNTAIN] = (g, ox, oy) => {
+  blob(g, ox + 8, oy + 9, 7, '#b8b4ac'); blob(g, ox + 8, oy + 9, 5, '#2a6a9a'); F(g, ox + 5, oy + 8, 3, 1, '#5a9ac8'); F(g, ox + 7, oy + 2, 2, 7, '#c8c4bc'); F(g, ox + 6, oy + 1, 4, 2, '#e0dcd4');
+};
+OP[T.LIGHTHOUSE] = (g, ox, oy) => { // the harbour light, standing tall over the quay
+  F(g, ox + 2, oy + 10, 12, 6, '#8a8680'); F(g, ox + 2, oy + 10, 12, 1, '#a8a49c');
+}; // the tower itself is drawn live over the water (drawLighthouse)
+function drawLighthouse(m) {
+  const L = m.lighthouse; if (!L) return; const ox = L.x * TS, oy = L.y * TS;
+  for (let k = 0; k < 6; k++) { F(ctx, ox + 4, oy + 4 - k * 6, 8, 6, k % 2 ? '#c03030' : '#f0ece4'); F(ctx, ox + 10, oy + 4 - k * 6, 2, 6, k % 2 ? '#902020' : '#c8c4bc'); }
+  F(ctx, ox + 3, oy - 34, 10, 4, '#2a2a30'); F(ctx, ox + 5, oy - 40, 6, 6, Math.floor(gameTime * 2) % 2 && isNight() ? '#fff8c0' : '#ffe8a0'); F(ctx, ox + 4, oy - 42, 8, 2, '#2a2a30'); F(ctx, ox + 7, oy - 45, 2, 3, '#2a2a30');
+}
+function drawLighthouseBeam(m) {
+  const L = m.lighthouse; if (!L || !isNight()) return; const x = L.x * TS + 8, y = L.y * TS - 37, a = gameTime * 1.3;
+  ctx.fillStyle = 'rgba(255,240,170,0.22)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, 190, a - 0.16, a + 0.16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(255,248,200,0.5)'; ctx.beginPath(); ctx.arc(x, y, 7, 0, 7); ctx.fill();
+}
 OP[T.STALL] = (g, ox, oy, tx, ty) => {
   const cols = [['#c0392b', '#f4e9d8'], ['#2e6db4', '#f4e9d8'], ['#d68910', '#f4e9d8'], ['#3f8a3a', '#f4e9d8']][(Math.floor(tx / 3) + ty) % 4];
   F(g, ox + 1, oy + 9, 14, 6, '#8a5a2b'); F(g, ox + 1, oy + 9, 14, 1, '#a8743c'); F(g, ox + 1, oy + 6, 1, 4, '#6b4423'); F(g, ox + 14, oy + 6, 1, 4, '#6b4423');
@@ -1321,17 +1338,21 @@ function genTown() {
     for (const y of [103, 106]) { setO(561, y, T.LAMP); lamps.push({ x: 561, y }); }
     // cobbled avenues and bridges, lanes, and a long quay on the south bank of the river
     for (const hy of CH) for (let x = C.x0; x <= C.x1; x++) { setG(x, hy, T.COBBLE); setG(x, hy + 1, T.COBBLE); }
-    for (const vx of CV) for (let y = 2; y <= H - 3; y++) { const b = y >= 86 && y <= 92; setG(vx, y, b ? T.BRIDGE : T.COBBLE); setG(vx + 1, y, b ? T.BRIDGE : T.COBBLE); }
     for (let x = C.x0; x <= C.x1; x++) { setG(x, 112, T.PATH); setG(x, 121, T.PATH); setG(x, 93, T.COBBLE); setG(x, 94, T.COBBLE); }
+    for (const vx of CV) for (let y = 2; y <= H - 3; y++) { // canals: Silverwater's streets of water
+      const river = y >= 86 && y <= 92, street = CH.some(hy => y === hy || y === hy + 1) || [93, 94, 104, 105, 112, 121].includes(y);
+      for (const x of [vx, vx + 1]) { if (river) continue; if (street) setG(x, y, T.BRIDGE); else { setG(x, y, T.GRASS); setO(x, y, T.RIVER); } }
+      for (const x of [vx - 1, vx + 2]) setG(x, y, river ? T.BRIDGE : T.COBBLE);
+    }
     const cols = CV.map((vx, i) => [vx + 2, i + 1 < CV.length ? CV[i + 1] - 1 : C.x1]);
     const rows = [[2, 13], [16, 31], [34, 49], [52, 67], [70, 85]];
     const DIST = [['mansion', 'mansion', 'large'], ['mansion', 'large'], ['large', 'mansion', 'large'], ['large', 'large', 'house'], ['large', 'house', 'large']];
     rows.forEach(([y0, y1], r0) => cols.forEach(([x0, x1], ci) => {
       if (r0 === 2 && ci === 2) { // Harbour Plaza
         for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) setG(x, y, T.COBBLE);
-        const cx = Math.floor((x0 + x1) / 2), cy = Math.floor((y0 + y1) / 2); setO(cx, cy, T.WELL);
+        const cx = Math.floor((x0 + x1) / 2), cy = Math.floor((y0 + y1) / 2); setO(cx, cy, T.FOUNTAIN); m.fountains = [{ x: cx, y: cy }];
         for (const sx of [x0 + 3, x0 + 7, x1 - 7, x1 - 3]) for (const sy of [y0 + 3, y1 - 3]) setO(sx, sy, T.STALL);
-        for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+        for (const [x, y] of [[x0 + 1, y0 + 1], [x1 - 1, y0 + 1], [x0 + 1, y1 - 1], [x1 - 1, y1 - 1]]) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
         return;
       }
       if (r0 === 1 && ci === 4) { // the Silverwater Bank
@@ -1375,9 +1396,16 @@ function genTown() {
       if (!CV.some(v => x === v || x === v + 1) && m.tiles[94 * W + x] === T.COBBLE && hash(x, 94, 411) < 0.07) setO(x, 94, [T.CRATE, T.BARREL, T.SACK][Math.floor(hash(x, 94, 412) * 3)]);
     }
     m.portDock = { x: CV[2] + 6, y: 93 };
-    for (let i = portStart; i < houses.length; i++) { const h = houses[i]; h.port = true; if (!['bank', 'nest'].includes(h.type)) h.wealth = Math.min(5, h.wealth + 2); }
-    for (const hy of [...CH, 104]) for (const vx of CV) for (const [x, y] of [[vx - 1, hy - 1], [vx + 2, hy + 2]]) if (isGrass(x, y)) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
-    for (const hy of CH) for (const vx of CV) if (isGrass(vx + 2, hy - 1)) setO(vx + 2, hy - 1, T.SIGNPOST);
+    for (const vx of CV) for (let y = 3; y < 84; y++) if (m.tiles[y * W + vx] === T.RIVER && hash(vx, y, 415) < 0.04) setO(vx + (hash(vx, y, 416) < 0.5 ? 0 : 1), y, T.BOAT); // little boats moored in the canals
+    setO(C.x1, 94, T.LIGHTHOUSE); m.lighthouse = { x: C.x1, y: 94 };
+    for (let i = portStart; i < houses.length; i++) { // whitewashed walls under sea-blue and teal roofs
+      const h = houses[i]; h.port = true; if (['bank', 'nest'].includes(h.type)) continue;
+      h.wealth = Math.min(5, h.wealth + 2); h.portRoof = true; h.thatch = false; h.roof = Math.floor(hash(h.idx, 1, 500) * PORT_ROOFS.length);
+      if (h.type !== 'mansion') h.style = 'plaster'; h.wallC = ['#f4f2ec', '#e4eef4', '#eaf2f0', '#d8e6ee', '#f0ece2'][Math.floor(hash(h.idx, 2, 501) * 5)];
+      h.doorC = ['#2f7f8f', '#3a6ea8', '#1e2a4a', '#2a8a7a'][Math.floor(hash(h.idx, 3, 502) * 4)]; h.shutters = true; h.shutter = ['#2f7f8f', '#3a6ea8', '#4fa3b3'][Math.floor(hash(h.idx, 4, 503) * 3)];
+    }
+    for (const hy of [...CH, 104]) for (const vx of CV) for (const [x, y] of [[vx - 2, hy - 1], [vx + 3, hy + 2]]) if (isGrass(x, y)) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+    for (const hy of CH) for (const vx of CV) if (isGrass(vx + 3, hy - 1)) setO(vx + 3, hy - 1, T.SIGNPOST);
     for (let y = 3; y < H - 3; y++) for (let x = C.x0; x < C.x1; x++) {
       if (!isGrass(x, y) || !roadside(x, y) || nearDoor(x, y) || hash(x, y, 413) > 0.03) continue;
       setO(x, y, [T.BARREL, T.CRATE, T.PLANTER, T.PLANTER][Math.floor(hash(x, y, 414) * 4)]);
@@ -2676,9 +2704,9 @@ function setupPosts() {
       ['guard', 'Watchman Crane', CITYWATCH_SHEETS[0], [[394, 32], [556, 32]]], ['guard', 'Watchman Bess', CITYWATCH_SHEETS[1], [[394, 68], [556, 68]]], ['guard', 'Watchman Fenn', CITYWATCH_SHEETS[2], [[536, 14], [536, 112], [400, 112]]],
       ['dog', 'Brutus', DOG_SHEET, [[464, 50], [512, 50], [512, 14], [464, 14]]]] });
   extraPosts.push({ name: 'Silverwater', map: 'town', inArea: inPort, welcome: () => true,
-    staff: [['guard', 'Sergeant Marlow', PORTWATCH_SHEETS[0], [[564, 104], [735, 104]]], ['guard', 'Watchman Quell', PORTWATCH_SHEETS[1], [[566, 14], [566, 104]]], ['guard', 'Watchman Ivo', PORTWATCH_SHEETS[2], [[618, 14], [618, 120]]],
-      ['guard', 'Watchman Dara', PORTWATCH_SHEETS[0], [[670, 14], [670, 112]]], ['guard', 'Watchman Penn', PORTWATCH_SHEETS[1], [[566, 32], [735, 32]]], ['guard', 'Watchman Sorrel', PORTWATCH_SHEETS[2], [[566, 68], [735, 68]]],
-      ['guard', 'Watchman Tibb', PORTWATCH_SHEETS[0], [[566, 93], [735, 93]]], ['dog', 'Salt', DOG_SHEET, [[644, 50], [696, 50], [696, 14], [644, 14]]]] });
+    staff: [['guard', 'Sergeant Marlow', PORTWATCH_SHEETS[0], [[564, 104], [735, 104]]], ['guard', 'Watchman Quell', PORTWATCH_SHEETS[1], [[565, 14], [565, 104]]], ['guard', 'Watchman Ivo', PORTWATCH_SHEETS[2], [[617, 14], [617, 120]]],
+      ['guard', 'Watchman Dara', PORTWATCH_SHEETS[0], [[669, 14], [669, 112]]], ['guard', 'Watchman Penn', PORTWATCH_SHEETS[1], [[566, 32], [735, 32]]], ['guard', 'Watchman Sorrel', PORTWATCH_SHEETS[2], [[566, 68], [735, 68]]],
+      ['guard', 'Watchman Tibb', PORTWATCH_SHEETS[0], [[566, 93], [735, 93]]], ['dog', 'Salt', DOG_SHEET, [[643, 50], [695, 50], [695, 14], [643, 14]]]] });
   { const pb = houses.find(h => h.portBank); if (pb) extraPosts.push({ name: 'the Silverwater Bank', house: pb, welcome: () => !isNight() && player.y >= 22 * TS,
     staff: [['guard', 'Bank Guard Wren', BANKGUARD_SHEETS[0], [[3, 19], [32, 19]]], ['guard', 'Bank Guard Lowe', BANKGUARD_SHEETS[1], [[2, 13], [2, 3], [16, 3], [2, 3]]], ['guard', 'Bank Guard Ash', BANKGUARD_SHEETS[2], [[33, 3], [33, 13]]], ['guard', 'Vault Sentry Hale', BANKGUARD_SHEETS[1], [[20, 2]], true]] }); }
   extraPosts.push({ name: 'the Silverwater Watch House', map: 'jail2', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
@@ -5183,6 +5211,17 @@ function drawShoreOld(m, cx) {
     }
   }
 }
+function drawPortLife(m, cx, cy) {
+  if (cx + VW < (PORT.x0 - 10) * TS) return;
+  const t = gameTime;
+  for (const f of m.fountains || []) { const x = f.x * TS + 8, y = f.y * TS + 2; for (let k = 0; k < 8; k++) { const a = (t * 2.2 + k / 8) % 1, dx = Math.round(Math.cos(k * 0.785) * a * 6), dy = Math.round(-Math.sin(a * Math.PI) * 6 + a * 6); F(ctx, x + dx, y + dy, 1, 1, a < 0.5 ? '#e8f8ff' : '#9ad0f0'); } }
+  drawLighthouse(m);
+  for (let k = 0; k < 6; k++) { // gulls wheeling over the water
+    const bx = (PORT.x0 + 20) * TS + ((t * (22 + k * 3) + k * 211) % ((PORT.x1 - PORT.x0 - 20) * TS)), by = (80 + (k % 3) * 6) * TS + Math.sin(t * 0.7 + k * 1.7) * 60 - k * 30, flap = Math.floor(t * 6 + k) % 2;
+    if (bx < cx - 10 || bx > cx + VW + 10 || by < cy - 10 || by > cy + VH + 10) continue;
+    F(ctx, Math.round(bx) - 3, Math.round(by) - flap, 3, 1, '#f4f4f4'); F(ctx, Math.round(bx) + 1, Math.round(by) - flap, 3, 1, '#f4f4f4'); F(ctx, Math.round(bx), Math.round(by), 1, 1, '#c8c8c8'); F(ctx, Math.round(bx) - 3, Math.round(by) - flap, 1, 1, '#3a3a3a');
+  }
+}
 function drawShipTop(m) {
   const p = player;
   for (const L of m.torches) { const x = L.x * TS + 8, y = L.y * TS + 4; F(ctx, x - 2, y - 3, 4, 5, '#3a2a1a'); F(ctx, x - 1, y - 2, 2, 3, Math.floor(gameTime * 6 + L.x) % 3 ? '#ffd27a' : '#ffb84a'); }
@@ -5283,6 +5322,7 @@ function render(dt) {
   drawDust(camMap, dt);
   for (const e of list) drawEntity(e);
   if (isShipMap(camMap)) drawShipTop(m);
+  if (camMap === 'town') drawPortLife(m, cx, cy);
   if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
     const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
     ctx.strokeStyle = '#2f4f9e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(tx, ty); ctx.stroke(); F(ctx, tx - 1, ty - 1, 2, 2, '#f1c27d');
@@ -5295,6 +5335,7 @@ function render(dt) {
   }
   // lighting
   if ((m.kind === 'town' || m.key === 'ship') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  if (m.kind === 'town' && !titleish && cx + VW > (PORT.x0 - 10) * TS && isNight()) { ctx.save(); ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S); drawLighthouseBeam(m); ctx.restore(); } // the harbour light sweeps the dark
   else if (m.key === 'shipbelow') drawLighting(0.45 + di.dark * 0.3, cx, cy, m);
   if (m.kind === 'town' && !titleish && isRaining()) { // rain streaks and puddle splashes
     ctx.setTransform(S, 0, 0, S, 0, 0); F(ctx, 0, 0, VW, VH, 'rgba(30,40,70,0.18)'); ctx.strokeStyle = 'rgba(170,190,230,0.45)'; ctx.lineWidth = 1; ctx.beginPath();
@@ -5371,6 +5412,7 @@ function drawLighting(dark, cx, cy, m) {
   };
   if (m.kind === 'town') {
     for (const l of lamps) light(l.x * TS + 8, l.y * TS + 4, 50, 1);
+    if (m.lighthouse) light(m.lighthouse.x * TS + 8, m.lighthouse.y * TS - 37, 70, 1);
     for (const l of wallLamps) light(l.x * TS + 13, l.y * TS + 8, 26, 0.85);
     for (const w of windows) light(w.x * TS + 8, w.y * TS + 10, 22, 0.75);
     for (const f of fences) if (f.map === 'town') light(f.x, f.y - 8, 22, 0.7);
