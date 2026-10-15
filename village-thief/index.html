@@ -159,6 +159,7 @@ const houses = [];
 const yards = [], yardDogs = [], wallLamps = [], shrooms = [], woodsSpots = [];
 const WOODS = { x0: 172, x1: 294, y0: 3, y1: 85 };
 const inWoods = () => player.map === 'town' && player.x >= WOODS.x0 * TS && player.x < (WOODS.x1 + 1) * TS && player.y >= WOODS.y0 * TS && player.y < (WOODS.y1 + 1) * TS;
+const DOCKS = { gil: { x: 10, y: 93, name: 'Old Gil\'s dock' } };
 const DOCK_GOODS = [['Bolt of Silk', 30], ['Crate of Spices', 25], ['Cask of Brandy', 35], ['Tea Chest', 20], ['Ivory Figurine', 55], ['Ship\'s Sextant', 45], ['Crate of Rum', 28], ['Bale of Fine Wool', 22]];
 const estates = [], gateTiles = new Map();
 const gateAt = (x, y) => gateTiles.get(y * town.w + x);
@@ -928,7 +929,7 @@ function rollItem(w, rng = Math.random) {
 const HROADS = [14, 32, 50, 68, 104], VROADS = [16, 38, 60, 82, 104];
 const COLB = [[2, 15], [18, 37], [40, 59], [62, 81], [84, 103], [106, 117]];
 const ROWB = [[2, 13], [16, 31], [34, 49], [52, 67], [70, 85]];
-const town = newMap('town', 560, 124, 'town'); // x 0-379 as before (big town, Deepwood, Mudford); x 380-557: the road on and the walled city of Kingsbridge
+const town = newMap('town', 740, 124, 'town'); // x 560-739: the river city of Silverwater // x 0-379 as before (big town, Deepwood, Mudford); x 380-557: the road on and the walled city of Kingsbridge
 const OLD_W = 380; // everything west of here is generated exactly as it always was, so saved games still line up // x 0-169: the big town, its forest, estates and docks; then a long road east to Mudford // the old town is x 0-119; the forest and the two estates lie east of it
 const lamps = [], windows = [], hays = [], marketTiles = [], stallSpots = [], pets = [];
 const HOUSE_TYPES = {
@@ -1232,8 +1233,79 @@ function genTown() {
     cluster.forEach((t, k) => { const cx = x + (roadside(x + k, y) ? k : 0), cy = y; if (isGrass(cx, cy) && !nearDoor(cx, cy)) setO(cx, cy, t); });
   }
   genCity();
+  genPort();
   for (const c of m.coaches) { setO(c.x - 1, c.y, T.HORSE); setO(c.x, c.y, T.COACH); }
   // ---------------------------------------------------------------- Kingsbridge
+  function genPort() {
+    const C = PORT, CV = [566, 592, 618, 644, 670, 696, 722], CH = [14, 32, 50, 68], portStart = houses.length;
+    // Kingsbridge gets an east wall, with a gate where the road runs on to Silverwater
+    for (let y = 2; y <= H - 3; y++) if ((y < 86 || y > 92) && y !== 104 && y !== 105) for (const x of [558, 559]) { setG(x, y, T.GRASS); setO(x, y, T.STONE); }
+    for (let x = 558; x <= C.x1; x++) for (const y of [104, 105]) setG(x, y, T.PATH);
+    for (const y of [103, 106]) { setO(561, y, T.LAMP); lamps.push({ x: 561, y }); }
+    // cobbled avenues and bridges, lanes, and a long quay on the south bank of the river
+    for (const hy of CH) for (let x = C.x0; x <= C.x1; x++) { setG(x, hy, T.COBBLE); setG(x, hy + 1, T.COBBLE); }
+    for (const vx of CV) for (let y = 2; y <= H - 3; y++) { const b = y >= 86 && y <= 92; setG(vx, y, b ? T.BRIDGE : T.COBBLE); setG(vx + 1, y, b ? T.BRIDGE : T.COBBLE); }
+    for (let x = C.x0; x <= C.x1; x++) { setG(x, 112, T.PATH); setG(x, 121, T.PATH); setG(x, 93, T.COBBLE); setG(x, 94, T.COBBLE); }
+    const cols = CV.map((vx, i) => [vx + 2, i + 1 < CV.length ? CV[i + 1] - 1 : C.x1]);
+    const rows = [[2, 13], [16, 31], [34, 49], [52, 67], [70, 85]];
+    const DIST = [['mansion', 'mansion', 'large'], ['mansion', 'large'], ['large', 'mansion', 'large'], ['large', 'large', 'house'], ['large', 'house', 'large']];
+    rows.forEach(([y0, y1], r0) => cols.forEach(([x0, x1], ci) => {
+      if (r0 === 2 && ci === 2) { // Harbour Plaza
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) setG(x, y, T.COBBLE);
+        const cx = Math.floor((x0 + x1) / 2), cy = Math.floor((y0 + y1) / 2); setO(cx, cy, T.WELL);
+        for (const sx of [x0 + 3, x0 + 7, x1 - 7, x1 - 3]) for (const sy of [y0 + 3, y1 - 3]) setO(sx, sy, T.STALL);
+        for (const [x, y] of [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+        return;
+      }
+      if (r0 === 1 && ci === 4) { // the Silverwater Bank
+        const bk = placeHouse('bank', x0 + 1, y1 - 8, 20, 'bank'); bk.family = 'Silverwater'; bk.portBank = true;
+        for (let yy = bk.roofRows; yy < bk.h; yy++) for (let xx = 0; xx < bk.w; xx++) { const i = (bk.y + yy) * W + bk.x + xx; if (m.tiles[i] === T.WALL) m.tiles[i] = T.STONE; }
+        return;
+      }
+      if (r0 === 3 && ci === 1) { // the Silverwater Watch House, with its own cells
+        for (let y = y0 + 1; y <= y0 + 5; y++) for (let x = x0 + 1; x <= x1 - 1; x++) setG(x, y, T.COBBLE);
+        const j = m.jail2 = { x: x0 + 5, y: y1 - 8, w: 14, h: 9, roofRows: 4, door: { x: x0 + 12, y: y1 }, approach: { x: x0 + 12, y: y1 + 1 } };
+        for (let yy = 0; yy < j.h; yy++) for (let xx = 0; xx < j.w; xx++) {
+          const x = j.x + xx, y = j.y + yy; let t = yy < j.roofRows ? T.JROOF : T.STONE;
+          if ((yy === j.roofRows + 1 || yy === j.roofRows + 3) && xx % 2 === 1 && xx < j.w - 1) t = T.JWIN;
+          if (x === j.door.x && y === j.door.y) t = T.JDOOR;
+          setO(x, y, t);
+        }
+        return;
+      }
+      if (r0 === 3 && ci === 5) { // the Smugglers' Cellar: Silverwater's own thieves hole up here
+        sprinkle(x0 + 1, x1 - 1, y0 + 1, y1 - 6, null, 0.7);
+        const den = placeHouse('nest', x0 + 9, y1 - 4, 6); den.family = 'Smugglers\' Cellar'; den.portDen = true;
+        for (const [x, y, t] of [[x0 + 3, y1 - 1, T.CRATE], [x0 + 4, y1 - 1, T.BARREL], [x1 - 3, y1 - 1, T.SACK]]) setO(x, y, t);
+        return;
+      }
+      if (y1 - y0 >= 15) { // a back lane through the block, with a second row of houses on it
+        const lane = y0 + 8, front = y1 + 1 >= 86 ? y1 - 1 : y1; for (let x = x0; x <= x1; x++) setG(x, lane, T.PATH);
+        if (front !== y1) for (let x = x0; x <= x1; x++) setG(x, y1, T.PATH);
+        southBand(x0, x1, lane - 1, DIST[r0]); southBand(x0, x1, front, DIST[r0].filter(t => HOUSE_TYPES[t].h <= front - lane), lane + 1);
+      } else southBand(x0, x1, y1, DIST[r0], y0 + 1);
+    }));
+    // south of the river: fine townhouses, the coach yard, and the harbour
+    cols.forEach(([x0, x1], ci) => {
+      if (ci === 0) { for (let y = 106; y <= 110; y++) for (let x = x0; x <= x1; x++) setG(x, y, T.COBBLE); return; }
+      southBand(x0, x1, 102, ['large', 'house', 'large'], 96);
+      southBand(x0, x1, 111, ['house', 'large', 'house']); southBand(x0, x1, 120, ['house', 'cottage', 'house'], 113);
+    });
+    southBand(cols[0][0], cols[0][1], 102, ['house', 'large'], 96); southBand(cols[0][0], cols[0][1], 120, ['cottage', 'house'], 113);
+    m.coaches.push({ x: cols[0][0] + 4, y: 107, ax: cols[0][0] + 4, ay: 108, at: 'Silverwater' });
+    for (let x = C.x0; x <= C.x1; x++) { // boats tied up along the quay, cargo stacked on it
+      if (m.tiles[92 * W + x] === T.RIVER && hash(x, 92, 410) < 0.12) setO(x, 92, T.BOAT);
+      if (!CV.some(v => x === v || x === v + 1) && m.tiles[94 * W + x] === T.COBBLE && hash(x, 94, 411) < 0.07) setO(x, 94, [T.CRATE, T.BARREL, T.SACK][Math.floor(hash(x, 94, 412) * 3)]);
+    }
+    m.portDock = { x: CV[2] + 6, y: 93 };
+    for (let i = portStart; i < houses.length; i++) { const h = houses[i]; h.port = true; if (!['bank', 'nest'].includes(h.type)) h.wealth = Math.min(5, h.wealth + 2); }
+    for (const hy of [...CH, 104]) for (const vx of CV) for (const [x, y] of [[vx - 1, hy - 1], [vx + 2, hy + 2]]) if (isGrass(x, y)) { setO(x, y, T.LAMP); lamps.push({ x, y }); }
+    for (const hy of CH) for (const vx of CV) if (isGrass(vx + 2, hy - 1)) setO(vx + 2, hy - 1, T.SIGNPOST);
+    for (let y = 3; y < H - 3; y++) for (let x = C.x0; x < C.x1; x++) {
+      if (!isGrass(x, y) || !roadside(x, y) || nearDoor(x, y) || hash(x, y, 413) > 0.03) continue;
+      setO(x, y, [T.BARREL, T.CRATE, T.PLANTER, T.PLANTER][Math.floor(hash(x, y, 414) * 4)]);
+    }
+  }
   function genCity() {
     const C = CITY, CV = [392, 416, 440, 464, 488, 512, 536], CH = [14, 32, 50, 68];
     const cityStart = houses.length;
@@ -1402,7 +1474,8 @@ function innFloors(h, r) {
 // Safety pass: if furniture cuts off part of a room (or a bed, a chest, the stairs), shift the
 // nearest table, chair, plant or barrel out of the way until everything connects to the door.
 const MUD = { x0: 296, x1: 377, y0: 93, y1: 121 };
-const CITY = { x0: 392, x1: 557, y0: 2, y1: 121 }; // Kingsbridge, the huge walled royal city // Mudford, the poorer town at the end of the east road
+const CITY = { x0: 392, x1: 557, y0: 2, y1: 121 };
+const PORT = { x0: 562, x1: 735, y0: 2, y1: 121 }; // Silverwater, the rich river port east of Kingsbridge // Kingsbridge, the huge walled royal city // Mudford, the poorer town at the end of the east road
 const MOVABLE = new Set([T.TABLE, T.CHAIR, T.PLANT, T.IBARREL]);
 function clearWay(m) {
   const start = m.entry || m.arrive, N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], inb = (x, y) => x > 0 && y > 0 && x < m.w - 1 && y < m.h - 1;
@@ -1751,8 +1824,10 @@ function updateNell(dt) {
   ratSpots(n);
 }
 const CARRIAGE_FARE = 40; // a hefty fare for a long ride
-const inCity = () => player.map === 'town' ? player.x >= (CITY.x0 - 2) * TS && player.y < (CITY.y1 + 1) * TS : !!(maps[player.map].house && maps[player.map].house.city);
+const inPort = () => player.map === 'town' ? player.x >= (PORT.x0 - 2) * TS : !!(maps[player.map].house && maps[player.map].house.port);
+const inCity = () => player.map === 'town' ? player.x >= (CITY.x0 - 2) * TS && player.x < (CITY.x1 + 2) * TS && player.y < (CITY.y1 + 1) * TS : !!(maps[player.map].house && maps[player.map].house.city);
 function arriveIn(at) {
+  if (at === 'Silverwater' && !profile.sets.silverwater) { addToSet('silverwater', 1); msg('Silverwater: a rich river port. Fine homes, its own bank and Watch House, the harbour (the harbourmaster books the Sea Maiden) - and its own thieves in a smugglers\' cellar.', '#7ac8e8'); }
   if (at === 'Kingsbridge' && !profile.sets.kingsbridge) { addToSet('kingsbridge', 1); msg('Kingsbridge: a huge walled city with the richest homes of all - and the City Watch, who don\'t miss much. Silk Sal fences in Cutpurse Lane.', '#cfe8ff'); }
 }
 function rideCarriage(c, dest) {
@@ -1768,12 +1843,12 @@ function rideCarriage(c, dest) {
   });
 }
 function resetThieves() {
-  thieves.forEach((t, i) => { const [x, y] = DEN_SPOTS[i]; Object.assign(t, { smoke: 1, smokeDay: 1, map: 'sewer', x: x * TS + 8, y: y * TS + 12, state: 'den', path: null, wtarget: null, wait: rnd(1, 5), mark: null, loot: null, outDay: -1, captor: null, metT: 0 }); });
+  thieves.forEach((t, i) => { const D = denOf(t), x = D.x, y = D.y; Object.assign(t, { smoke: 1, smokeDay: 1, map: D.map, x: x * TS + 8, y: y * TS + 12, state: 'den', path: null, wtarget: null, wait: rnd(1, 5), mark: null, loot: null, outDay: -1, captor: null, metT: 0 }); });
 }
 const nearPlayer = (e, r) => player.map === e.map ? dist(e, player) < r : player.map === 'town' && Math.hypot(townPos(e).x - player.x, townPos(e).y - player.y) < r;
 function pickMark(t, day) {
   const busy = new Set(thieves.filter(o => o !== t && o.mark).map(o => o.mark));
-  const opts = houses.filter(h => (!day || houseEmpty(h)) && !h.playerHome && !h.estate && !h.shop && h.type !== 'cave' && h.type !== 'nest' && h.alarmT <= 0 && !busy.has(h) && [...h.map.loot.values()].some(e => !e.taken));
+  const opts = houses.filter(h => (!day || houseEmpty(h)) && !h.playerHome && !!h.port === !!t.port && !h.estate && !h.shop && h.type !== 'cave' && h.type !== 'nest' && h.alarmT <= 0 && !busy.has(h) && [...h.map.loot.values()].some(e => !e.taken));
   return opts.length ? pick(opts) : null;
 }
 function freeBeside(m, x, y) { for (const [dx, dy] of [[0, 1], [1, 0], [-1, 0], [0, -1], [1, 1], [-1, 1]]) if (!isSolid(m, x + dx, y + dy) && !m.links.some(l => l.x === x + dx && l.y === y + dy)) return { x: x + dx, y: y + dy }; return null; }
@@ -1799,6 +1874,7 @@ function robTake(t, m) {
 }
 function wanderDen(t, dt) {
   if (t.wait > 0) { t.wait -= dt; return; }
+  if (t.port) { if (!t.wtarget) t.wtarget = randFloor(maps[t.map]); if (navTo(t, t.map, t.wtarget.x, t.wtarget.y, 20, dt) || t.stuckT > 3) { t.wtarget = null; t.wait = rnd(2, 7); } return; }
   if (!t.wtarget) { const [x, y] = pick(DEN_SPOTS); t.wtarget = { x: x + Math.floor(rnd(-2, 3)), y: y + Math.floor(rnd(-1, 2)) }; if (isSolid(maps.sewer, t.wtarget.x, t.wtarget.y)) t.wtarget = { x, y }; }
   if (navTo(t, 'sewer', t.wtarget.x, t.wtarget.y, 22, dt) || t.stuckT > 3) { t.wtarget = null; t.wait = rnd(2, 7); if (player.map === 'sewer' && Math.random() < 0.3 && dist(t, player) < 120) say(t, pick(TALK.thief), 2.4); }
 }
@@ -1838,8 +1914,9 @@ function updateThief(t, dt) {
     case 'loiter': { // hanging about the streets by day
       t.loiterT -= dt; if (t.loiterT <= 0 || night) { t.state = 'home'; t.path = null; break; }
       if (t.map === 'sewer') { const mh = pick(manholes); t.map = 'town'; t.x = mh.ax * TS + 8; t.y = mh.ay * TS + 12; }
+      if (t.port && t.map !== 'town') { const a = maps[t.map].approach; t.map = 'town'; t.x = a.x * TS + 8; t.y = a.y * TS + 12; }
       if (t.wait > 0) { t.wait -= dt; break; }
-      if (!t.wtarget) { const rt = pick(localRoads(null)); t.wtarget = { x: rt.x, y: rt.y }; }
+      if (!t.wtarget) { const rt = pick(localRoads(t.port ? { port: true } : null)); t.wtarget = { x: rt.x, y: rt.y }; }
       if (navTo(t, 'town', t.wtarget.x, t.wtarget.y, 24, dt) || t.stuckT > 4) { t.wtarget = null; t.wait = rnd(3, 9); }
       break;
     }
@@ -1866,16 +1943,16 @@ function updateThief(t, dt) {
       break;
     }
     case 'home': case 'flee': {
-      const [x, y] = DEN_SPOTS[t.i];
+      const D = denOf(t), x = D.x, y = D.y;
       if (t.state === 'flee' && isWatch() && t.map === player.map && dist(t, player) < 30 && !(t.dodgeT > gameTime)) { // you're on their heels
         t.dodgeT = gameTime + rnd(4, 7);
         if ((t.smoke || 0) > 0 && Math.random() < 0.5) { t.smoke--; clouds.push({ map: t.map, x: t.x, y: t.y - 6, r: 32, t: 5, max: 5 }); SFX.smoke(); say(t, pick(['Eat smoke!', 'Bye bye!']), 1.4); if (dist(t, player) < 40) { player.stunT = 1.2; say(player, '*cough*', 1.2); } }
         else { t.fleeSpd = Math.min(84, (t.fleeSpd || 72) + 6); say(t, pick(['Can\'t catch me!', 'Too slow, copper!', 'Hah!']), 1.2); } // a burst of speed
       }
-      if (navTo(t, 'sewer', x, y, t.state === 'flee' ? t.fleeSpd : 38, dt) || t.map === 'sewer') {
+      if (navTo(t, D.map, x, y, t.state === 'flee' ? t.fleeSpd : 38, dt) || t.map === D.map) {
         if (t.state === 'flee') { for (const g of guards) if (g.prey === t) { g.state = 'return'; g.prey = null; g.path = null; } if (nearPlayer(t, 320) || player.map === 'sewer') msg(`${t.name} slipped away into the sewers!`, '#cfe8ff'); }
         t.state = 'den'; t.mark = null; t.wait = rnd(1, 4); t.path = null; t.dayRob = false; t.crate = false;
-      } else if (t.stuckT > 8) { t.map = 'sewer'; t.x = x * TS + 8; t.y = y * TS + 12; t.state = 'den'; }
+      } else if (t.stuckT > 8) { t.map = D.map; t.x = x * TS + 8; t.y = y * TS + 12; t.state = 'den'; }
       break;
     }
     case 'partner': { // tags along with you on the heist and lifts things too
@@ -1948,14 +2025,14 @@ function updateThief(t, dt) {
       else if (t.stuckT > 5) { t.state = 'home'; t.path = null; }
       break;
     }
-    case 'jailed': if (gameTime > t.freeAt) { const [x, y] = DEN_SPOTS[t.i]; Object.assign(t, { cell: null, state: 'den', map: 'sewer', x: x * TS + 8, y: y * TS + 12, path: null, wtarget: null }); } return;
+    case 'jailed': if (gameTime > t.freeAt) { const D = denOf(t), x = D.x, y = D.y; Object.assign(t, { cell: null, state: 'den', map: D.map, x: x * TS + 8, y: y * TS + 12, path: null, wtarget: null }); } return;
   }
   if (t.map === before.map && (t.x !== before.x || t.y !== before.y)) { t.moving = true; t.animT += dt; }
   t.dir = dirFromAngle(t.fa);
 }
 
-function genJail() {
-  const w = 31, h = 20, m = newMap('jail', w, h, 'jail');
+function genJail(key = 'jail', J = town.jail) {
+  const w = 31, h = 20, m = newMap(key, w, h, 'jail');
   for (let i = 0; i < w * h; i++) { m.ground[i] = T.SFLOOR; m.tiles[i] = T.SFLOOR; }
   const set = (x, y, t) => { m.tiles[y * w + x] = t; };
   for (let x = 0; x < w; x++) { set(x, 0, T.SEDGE); set(x, 1, T.SWALL); set(x, h - 1, T.SEDGE); }
@@ -1974,9 +2051,9 @@ function genJail() {
   set(1, 18, T.IBARREL); set(29, 18, T.IBARREL); set(29, 14, T.IBARREL); set(28, 14, T.CRATE); set(1, 14, T.CRATE); set(10, 17, T.TABLE); set(11, 17, T.TABLE); set(9, 17, T.CHAIR); set(12, 17, T.CHAIR);
   m.exit = { x: 15, y: h - 1 }; set(15, h - 1, T.EXIT); m.entry = { x: 15, y: h - 2 };
   set(6, 14, T.CHEST); m.locker = { x: 6, y: 14 }; // the evidence locker, where your confiscated loot ends up
-  m.approach = town.jail.approach; m.cell = { x: 14, y: 5 }; m.cellOpen = true; m.cellSpot = { x: 14, y: 3 }; m.escortSpot = { x: 14, y: 7 };
+  m.approach = J.approach; m.cell = { x: 14, y: 5 }; m.cellOpen = true; m.cellSpot = { x: 14, y: 3 }; m.escortSpot = { x: 14, y: 7 };
   m.links.push({ x: m.exit.x, y: m.exit.y, to: 'town', ax: m.approach.x, ay: m.approach.y, walk: true });
-  town.links.push({ x: m.approach.x, y: m.approach.y, to: 'jail', ax: m.entry.x, ay: m.entry.y });
+  town.links.push({ x: m.approach.x, y: m.approach.y, to: key, ax: m.entry.x, ay: m.entry.y });
 }
 function randFloor(m) {
   for (let i = 0; i < 200; i++) {
@@ -2026,10 +2103,19 @@ const roadTiles = [];
 let bigTownRoads = null, mudTownRoads = null;
 let woodRoads = null;
 let cityRoads = null;
-function localRoads(h) { if (!cityRoads) cityRoads = roadTiles.filter(t => t.x >= CITY.x0); if (h && h.city) return cityRoads; if (!bigTownRoads) { bigTownRoads = roadTiles.filter(t => t.x < 170); mudTownRoads = roadTiles.filter(t => t.x >= MUD.x0 && t.x < 380); woodRoads = roadTiles.filter(t => t.x >= 176 && t.x <= 206 && t.y >= 56 && t.y <= 80); } return h && h.mudford ? mudTownRoads : h && h.woods ? woodRoads : bigTownRoads; }
+let portRoads = null;
+function localRoads(h) { if (!cityRoads) { cityRoads = roadTiles.filter(t => t.x >= CITY.x0 && t.x <= CITY.x1); portRoads = roadTiles.filter(t => t.x >= PORT.x0); } if (h && h.port) return portRoads; if (h && h.city) return cityRoads; if (!bigTownRoads) { bigTownRoads = roadTiles.filter(t => t.x < 170); mudTownRoads = roadTiles.filter(t => t.x >= MUD.x0 && t.x < 380); woodRoads = roadTiles.filter(t => t.x >= 176 && t.x <= 206 && t.y >= 56 && t.y <= 80); } return h && h.mudford ? mudTownRoads : h && h.woods ? woodRoads : bigTownRoads; }
 for (let y = 0; y < town.h; y++) for (let x = 0; x < town.w; x++) { const t = town.tiles[y * town.w + x]; if (t === T.PATH || t === T.COBBLE) roadTiles.push({ x, y }); }
 houses.forEach(genInterior);
+const PORT_DEN = houses.find(h => h.portDen);
+[['Dockside Dez', { skin: '#c68642', hair: '#111111', hairStyle: 'short', hat: 'cap', hatC: '#1e2a3a', shirt: '#2a3a4a', pants: '#1a1a20', patch: true }], ['Silver Sue', { skin: '#ffdbac', hair: '#d9d9d9', hairStyle: 'long', hat: 'hood', hatC: '#3a4a5a', shirt: '#4a5a6a', pants: '#22262e', dress: true }], ['Barnacle Bram', { skin: '#e0ac69', hair: '#7a2e1c', hairStyle: 'short', shirt: '#3a4a3a', pants: '#2a2a20', beard: true }]]
+  .forEach(([name, look]) => thieves.push({ kind: 'thief', port: true, name, i: thieves.length, map: PORT_DEN.key, x: 0, y: 0, fa: Math.PI / 2, dir: 'down', sheet: makeSheet(look), animT: 0, bubble: null, state: 'den', path: null, repath: 0, wait: 0 }));
+function denOf(t) {
+  if (!t.port) { const [x, y] = DEN_SPOTS[t.i]; return { map: 'sewer', x, y }; }
+  const f = maps[PORT_DEN.key]; if (!t.denSpot) t.denSpot = randFloor(f); return { map: f.key, x: t.denSpot.x, y: t.denSpot.y };
+}
 genJail();
+genJail('jail2', town.jail2);
 genSewer();
 Object.values(maps).forEach(renderMap);
 // NEXT[a][b] = the first door/stair to take when walking from map a to map b
@@ -2074,6 +2160,7 @@ const MONITOR_SHEETS = [0, 1].map(i => makeSheet({ skin: SKINS[(i + 1) % 5], hai
 const BANKGUARD_SHEETS = [0, 1, 2].map(i => makeSheet({ skin: SKINS[(i + 2) % 5], hair: HAIRS[(i + 1) % 6], hairStyle: 'short', hat: 'helmet', shirt: '#2a2a30', pants: '#1a1a20', emblem: '#e8c45a', belt: '#e8c45a', spear: true, beard: i === 1 }));
 const BANDIT_SHEETS = [0, 1].map(i => makeSheet({ skin: SKINS[(i + 1) % 5], hair: HAIRS[(i + 4) % 6], hairStyle: i ? 'long' : 'short', hat: 'hood', hatC: i ? '#3a2a1a' : '#5a1a1a', shirt: i ? '#4a3a2a' : '#5a2a2a', pants: '#22201c', belt: '#8a6a3a', beard: !i, patch: !!i, spear: true }));
 const WOLF_SHEET = dogSheet(['#8a8a90', '#5a5a62', '#c8c8cc', '#3a3a40']), WOLF_SHEET2 = dogSheet(['#3a3a40', '#1e1e24', '#6a6a72', '#2a2a30']);
+const PORTWATCH_SHEETS = [0, 1, 2].map(i => makeSheet({ skin: SKINS[(i + 2) % 5], hair: HAIRS[(i + 1) % 6], hairStyle: 'short', hat: 'helmet', shirt: '#1f3f6a', pants: '#1a1e2a', emblem: '#c8d4e0', belt: '#c8d4e0', spear: true, beard: i === 2 }));
 const CITYWATCH_SHEETS = [0, 1, 2].map(i => makeSheet({ skin: SKINS[(i + 1) % 5], hair: HAIRS[(i + 3) % 6], hairStyle: 'short', hat: 'helmet', shirt: '#7a1f2a', pants: '#22222a', emblem: '#f0d060', belt: '#f0d060', spear: true, beard: i === 1 }));
 const CONSTABLE_SHEETS = [0, 1, 2].map(i => makeSheet({ skin: SKINS[(i + 4) % 5], hair: HAIRS[(i + 2) % 6], hairStyle: 'short', hat: 'cap', hatC: '#3a2a1a', shirt: '#6a4a2a', pants: '#2a2218', belt: '#c9a24a', emblem: '#c9a24a', spear: true, beard: i === 2 }));
 let guards = [];
@@ -2091,26 +2178,33 @@ const INMATE_SHEETS = PRISONER_LOOKS.map(([skin, hair, hairStyle, beard]) => mak
 const INMATES = [['Dobbs', 0, 'top', ['Got any bread?', 'I was framed, I tell ya!', 'Psst... nice sack.']], ['Lark', 1, 'top', ['Fourth time this week.', 'The food is awful.', 'Zzz...']],
   ['Old Nettle', 5, 'top', ['Forty years I\'ve been in here.', 'Back in my day we stole horses.']], ['Fingers McGee', 1, 'bottom', ['They never found the emeralds...', 'Tap tap tap. Hear that? Nothing.']],
   ['Bess the Knife', 2, 'bottom', ['Don\'t look at me.', 'What are YOU in for?']], ['Crumb', 4, 'bottom', ['I only took ONE pie.', 'Is it dinner yet?']], ['Mad Wat', 6, 'bottom', ['The rats talk to me.', 'Heh heh heh.']]];
+const jail2NPCs = [
+  { kind: 'decor', jailer: true, name: 'Jailer Moss', map: 'jail2', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Silverwater keeps its cells clean.', 'Name? Crime? Sign here.', 'Mind the wet floor.'] },
+  { kind: 'decor', escortCaptain: true, homeTown: 3, name: 'Captain Vane', map: 'jail2', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(3), animT: 0, bubble: null, lines: ['The harbour runs on trade.', 'Wagons out at all hours.', 'Smugglers in every cellar.'] },
+];
+const allJailNPCs = () => jailNPCs.concat(jail2NPCs);
 const shipNPCs = [
   { kind: 'decor', ship: true, captain: true, name: 'Captain Brine', map: 'ship', x: 17 * TS + 8, y: 14 * TS + 12, dir: 'right', fa: 0, sheet: makeSheet({ skin: '#e0ac69', hair: '#d9d9d9', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#1e2a4a', pants: '#2a2a30', beard: true, belt: '#c9a24a' }), animT: 0, bubble: null, path: null, repath: 0, stuckT: 0, lines: ['Steady as she goes.', 'Mind the rigging, landlubber.', 'Twenty years I\'ve sailed these waters.', 'Keep your hands off my cabin.'] },
   { kind: 'decor', ship: true, name: 'Bosun Tarr', map: 'ship', x: 24 * TS + 8, y: 13 * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: '#c68642', hair: '#2b1d14', hairStyle: 'short', hat: 'cap', hatC: '#7a2a2a', shirt: '#d8d0c0', pants: '#3a3a4a' }), animT: 0, bubble: null, lines: ['Haul away!', 'Don\'t stand on the ropes.', 'Fair wind today.', 'You get used to the rocking.'] },
   { kind: 'decor', ship: true, name: 'Deckhand Pip', map: 'ship', x: 34 * TS + 8, y: 10 * TS + 12, dir: 'left', fa: Math.PI, sheet: makeSheet({ skin: '#f1c27d', hair: '#a83232', hairStyle: 'short', shirt: '#4a6a8a', pants: '#3a3020' }), animT: 0, bubble: null, lines: ['*scrub scrub*', 'Seen a whale once!', 'Captain\'s a fair man. Mostly.', 'First voyage? You look green.'] },
 ];
 var voyage = null;
+fences.push({ kind: 'fisher', harbour: true, name: 'Harbourmaster Quill', map: 'town', x: town.portDock.x * TS + 8, y: town.portDock.y * TS + 12, dir: 'up', fa: -Math.PI / 2, sheet: makeSheet({ skin: '#f1c27d', hair: '#3a2a1a', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#2a3a5a', pants: '#2a2a30', beard: true }), animT: 0, bubble: null, chatT: 4 });
+DOCKS.port = { x: town.portDock.x, y: town.portDock.y + 1, name: 'the Silverwater quay' };
 const VOYAGE_FARE = 80;
 function startVoyage(f) {
   const p = player;
   if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
   if (gold < VOYAGE_FARE) { say(f, `Passage is ${VOYAGE_FARE} gold. Come back when you've got it.`, 2.5); SFX.deny(); return; }
-  gold -= VOYAGE_FARE; SFX.buy(); restockShip(); stat('voyages'); voyage = { start: gameTime, end: gameTime + DAY_LEN };
+  gold -= VOYAGE_FARE; SFX.buy(); restockShip(); stat('voyages'); voyage = { start: gameTime, end: gameTime + DAY_LEN, dock: f.harbour ? DOCKS.port : DOCKS.gil };
   for (const g of guards) if (g.map === 'ship' && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
-  say(f, 'All aboard the Sea Maiden! Back by this time tomorrow.', 2.5);
+  say(f, f.harbour ? 'Sea Maiden, berth three. Back by this time tomorrow.' : 'All aboard the Sea Maiden! Back by this time tomorrow.', 2.5);
   transition(() => { const m = maps.ship; p.map = 'ship'; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.state = 'free';
     msg(`You board the Sea Maiden for a one-day voyage. Your cabin is the first door on the left (sleep there to skip to port). The captain keeps his valuables in his quarters at the stern... and there are marines aboard. They don't mind you walking about - only stealing.`, '#9ad0ff'); });
 }
 function endVoyage(slept) {
-  voyage = null;
-  transition(() => { const p = player; p.map = 'town'; p.x = 10 * TS + 8; p.y = 93 * TS + 12; p.dir = 'down'; p.state = 'free'; msg(slept ? 'You wake to gulls and shouting: the Sea Maiden is back at Old Gil\'s dock.' : 'The Sea Maiden ties up at Old Gil\'s dock. Voyage over.', '#9ad0ff'); });
+  const d = (voyage && voyage.dock) || DOCKS.gil; voyage = null;
+  transition(() => { const p = player; p.map = 'town'; p.x = d.x * TS + 8; p.y = d.y * TS + 12; p.dir = 'down'; p.state = 'free'; msg(slept ? `You wake to gulls and shouting: the Sea Maiden is back at ${d.name}.` : `The Sea Maiden ties up at ${d.name}. Voyage over.`, '#9ad0ff'); });
 }
 function shipAlarm(by) {
   if (wanted) return;
@@ -2133,8 +2227,8 @@ function updateShip(dt) {
   if (p.map === 'ship' && Math.random() < dt * 0.05) { const n = pick(shipNPCs); if (dist(n, p) < 120) say(n, pick(n.lines), 2.5); }
 }
 const jailNPCs = [
-  { kind: 'decor', name: 'Jailer Grubb', map: 'jail', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
-  { kind: 'decor', name: 'Captain Harlow', map: 'jail', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(2), animT: 0, bubble: null, lines: ['Wagons don\'t guard themselves.', 'Keep your boots polished.', 'The roads are crawling with thieves.'] },
+  { kind: 'decor', jailer: true, name: 'Jailer Grubb', map: 'jail', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
+  { kind: 'decor', escortCaptain: true, homeTown: 0, name: 'Captain Harlow', map: 'jail', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(2), animT: 0, bubble: null, lines: ['Wagons don\'t guard themselves.', 'Keep your boots polished.', 'The roads are crawling with thieves.'] },
   { kind: 'decor', name: 'Turnkey Bolt', map: 'jail', x: 7 * TS + 8, y: 7 * TS + 12, dir: 'down', sheet: guardSheet(8), animT: 0, bubble: null, lines: ['No talking.', 'Back from the bars.', 'Lights out soon.'] },
   { kind: 'decor', name: 'Turnkey Hask', map: 'jail', x: 22 * TS + 8, y: 7 * TS + 12, dir: 'down', sheet: guardSheet(9), animT: 0, bubble: null, lines: ['Quiet in the cells!', 'I\'ve got my eye on you.', 'Behave.'] },
   ...INMATES.map(([name, k, row, lines], i) => ({ kind: 'decor', name: 'Prisoner ' + name, map: 'jail', x: (2 + 4 * k) * TS + 8, y: (row === 'top' ? 3 : 11) * TS + 12,
@@ -2468,6 +2562,14 @@ function setupPosts() {
     staff: [['guard', 'Sergeant Ashby', CITYWATCH_SHEETS[0], [[394, 104], [556, 104]]], ['guard', 'Watchman Orrin', CITYWATCH_SHEETS[1], [[440, 14], [440, 104]]], ['guard', 'Watchman Tilda', CITYWATCH_SHEETS[2], [[488, 14], [488, 121]]],
       ['guard', 'Watchman Crane', CITYWATCH_SHEETS[0], [[394, 32], [556, 32]]], ['guard', 'Watchman Bess', CITYWATCH_SHEETS[1], [[394, 68], [556, 68]]], ['guard', 'Watchman Fenn', CITYWATCH_SHEETS[2], [[536, 14], [536, 112], [400, 112]]],
       ['dog', 'Brutus', DOG_SHEET, [[464, 50], [512, 50], [512, 14], [464, 14]]]] });
+  extraPosts.push({ name: 'Silverwater', map: 'town', inArea: inPort, welcome: () => true,
+    staff: [['guard', 'Sergeant Marlow', PORTWATCH_SHEETS[0], [[564, 104], [735, 104]]], ['guard', 'Watchman Quell', PORTWATCH_SHEETS[1], [[566, 14], [566, 104]]], ['guard', 'Watchman Ivo', PORTWATCH_SHEETS[2], [[618, 14], [618, 120]]],
+      ['guard', 'Watchman Dara', PORTWATCH_SHEETS[0], [[670, 14], [670, 112]]], ['guard', 'Watchman Penn', PORTWATCH_SHEETS[1], [[566, 32], [735, 32]]], ['guard', 'Watchman Sorrel', PORTWATCH_SHEETS[2], [[566, 68], [735, 68]]],
+      ['guard', 'Watchman Tibb', PORTWATCH_SHEETS[0], [[566, 93], [735, 93]]], ['dog', 'Salt', DOG_SHEET, [[644, 50], [696, 50], [696, 14], [644, 14]]]] });
+  { const pb = houses.find(h => h.portBank); if (pb) extraPosts.push({ name: 'the Silverwater Bank', house: pb, welcome: () => !isNight() && player.y >= 22 * TS,
+    staff: [['guard', 'Bank Guard Wren', BANKGUARD_SHEETS[0], [[3, 19], [32, 19]]], ['guard', 'Bank Guard Lowe', BANKGUARD_SHEETS[1], [[2, 13], [2, 3], [16, 3], [2, 3]]], ['guard', 'Bank Guard Ash', BANKGUARD_SHEETS[2], [[33, 3], [33, 13]]], ['guard', 'Vault Sentry Hale', BANKGUARD_SHEETS[1], [[20, 2]], true]] }); }
+  extraPosts.push({ name: 'the Silverwater Watch House', map: 'jail2', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
+    staff: [['guard', 'Turnkey Reed', guardSheet(5), [[2, 7], [28, 7]]], ['guard', 'Turnkey Cole', guardSheet(6), [[3, 16], [27, 16]]]] });
   extraPosts.push({ name: 'Mudford', map: 'town', inArea: inMudford, welcome: () => true,
     staff: [['guard', 'Constable Hobbes', CONSTABLE_SHEETS[0], [[300, 104], [376, 104]]], ['guard', 'Constable Penny', CONSTABLE_SHEETS[1], [[316, 95], [316, 120]]], ['guard', 'Constable Dunn', CONSTABLE_SHEETS[2], [[346, 120], [346, 113], [376, 113], [298, 113]]]] });
   extraPosts.push({ name: 'the Sea Maiden', map: 'ship', welcome: () => true,
@@ -3031,8 +3133,8 @@ function rentRoom(h) {
 //  back to thieving whenever you like. Honest work pays a daily wage for showing up and doing it.
 // =====================================================================
 var career = { type: 'thief' }; // var: newGame() runs during start-up
-const TOWN_NAMES = ['the big town', 'Mudford', 'Kingsbridge'], WATCH_PAY = [25, 20, 35], STRIKES_OUT = 3;
-const townIdxAt = x => x >= CITY.x0 - 4 ? 2 : x >= MUD.x0 - 2 ? 1 : 0; // the city gate's lamps belong to Kingsbridge
+const TOWN_NAMES = ['the big town', 'Mudford', 'Kingsbridge', 'Silverwater'], WATCH_PAY = [25, 20, 35, 40], STRIKES_OUT = 3;
+const townIdxAt = x => x >= PORT.x0 - 2 ? 3 : x >= CITY.x0 - 4 ? 2 : x >= MUD.x0 - 2 ? 1 : 0; // the city gate's lamps belong to Kingsbridge
 const SHOP_JOBS = { bakery: ["Baker's hand", 14, 'Knead the dough'], general: ['Shop assistant', 12, 'Stock the shelves'], tailor: ["Tailor's helper", 14, 'Sew a hem'], smith: ["Smith's apprentice", 18, 'Work the bellows'], apothecary: ["Apothecary's helper", 15, 'Grind the herbs'], jeweler: ["Jeweler's clerk", 20, 'Polish the stock'], inn: ['Inn servant', 12, 'Serve the tables'] };
 const WATCH_SHEET = makeSheet({ skin: '#f1c27d', hair: '#5a3b22', hairStyle: 'short', hat: 'helmet', shirt: '#3a6ea8', pants: '#2a2a36', emblem: '#f7d774', belt: '#f7d774', spear: true });
 const isWatch = () => career.type === 'watch', isWorker = () => career.type === 'worker';
@@ -3077,7 +3179,7 @@ var wagon = null; // a supply wagon you're escorting between towns
 // or you and another player who comes to the Captain and joins. The wagon leaves from the big town's carriage stand.
 function startWagon(from, mode) {
   from = from == null ? 0 : from;
-  const to = pick([0, 1, 2].filter(i => i !== from)), c = town.coaches[from];
+  const to = pick([0, 1, 2, 3].filter(i => i !== from)), c = town.coaches[from];
   wagon = { kind: 'wagon', map: 'town', x: c.ax * TS + 8, y: (c.ay + 1) * TS + 12, from, to, crates: 6, path: null, repath: 0, stuckT: 0, fa: 0, dir: 'down', animT: 0, raidT: gameTime + rnd(40, 60), raids: 0, farT: 0, moving: false, guards: [], partner: null, open: mode === 'wait', waitUntil: gameTime + 60, started: false };
   if (mode !== 'wait') wagonNpcPartner();
   msg(`Escort the supply wagon from ${TOWN_NAMES[from]} to ${TOWN_NAMES[to]} (it's at the carriage stand). ${mode === 'wait' ? 'Waiting up to a minute for another watchman to join at the Captain - after that you get a Watch partner.' : `${wagon.partner.label} rides guard with you.`} Robbers will go for the crates. Pay: 25g + 5g a crate delivered.`, '#9ab0ff'); SFX.buy();
@@ -3090,7 +3192,7 @@ function wagonNpcPartner() {
 }
 // Now and then by day the Watch sends a supply wagon down the road with two watchmen guarding it - a juicy target for a thief.
 function startNpcWagon() {
-  const from = Math.floor(Math.random() * 3), to = pick([0, 1, 2].filter(i => i !== from)), c = town.coaches[from];
+  const from = Math.floor(Math.random() * 4), to = pick([0, 1, 2, 3].filter(i => i !== from)), c = town.coaches[from];
   wagon = { kind: 'wagon', npc: true, map: 'town', x: c.ax * TS + 8, y: (c.ay + 1) * TS + 12, from, to, crates: 6, path: null, repath: 0, stuckT: 0, fa: 0, dir: 'down', animT: 0, raidT: 1e12, raids: 99, farT: 0, moving: false, guards: [] };
   const free = guards.filter(g => g.unit === 'guard' && !g.post && g.map === 'town' && ['patrol', 'pause', 'return'].includes(g.state)).sort((a, b) => Math.hypot(a.x - wagon.x, a.y - wagon.y) - Math.hypot(b.x - wagon.x, b.y - wagon.y)).slice(0, 2);
   free.forEach((g, k) => { g.state = 'convoy'; g.path = null; g.convoySide = k ? -1 : 1; g.x = wagon.x + (k ? -28 : 28); g.y = wagon.y + 6; g.map = 'town'; });
@@ -3181,7 +3283,7 @@ function drawWagon(e) {
   }
 }
 var homeIdx = null; // your cottage, if the Watch gave you one
-function homeFor(town) { return houses.filter(h => h.type === 'cottage' && !h.yard && !h.shop && !h.estate && !h.woods && townIdxAt(h.x) === town && (town !== 0 || h.x < 118)).sort((a, b) => hash(a.idx, 5, 77) - hash(b.idx, 5, 77))[0]; }
+function homeFor(town) { return houses.filter(h => (h.type === 'cottage' || (town === 3 && h.type === 'house')) && !h.yard && !h.shop && !h.estate && !h.woods && townIdxAt(h.x) === town && (town !== 0 || h.x < 118)).sort((a, b) => hash(a.idx, 5, 77) - hash(b.idx, 5, 77))[0]; }
 function applyHome(h) {
   if (!h || h.playerHome) return;
   h.homeBackup = { residents: h.residents, pet: h.pet, loot: h.floors.map(f => new Map(f.loot)) };
@@ -3209,7 +3311,7 @@ function watchPosts(town) { const out = []; for (const l of lamps) if (townIdxAt
 // a watch post: a street corner, a beat to walk between lamps, a room in a shop or big house, or the cells
 function makePost(ti, old) {
   const L = watchPosts(ti), far = l => !old || Math.hypot(l.x - old.x, l.y - old.y) > 8;
-  const kinds = ['spot', 'route', 'route', 'house', 'house', ...(ti === 0 ? ['prison'] : [])].filter(k => !old || k !== old.kind || k === 'route');
+  const kinds = ['spot', 'route', 'route', 'house', 'house', ...(ti === 0 || ti === 3 ? ['prison'] : [])].filter(k => !old || k !== old.kind || k === 'route');
   const kind = pick(kinds);
   if (kind === 'route') {
     const pts = [pick(L.filter(far)) || L[0]];
@@ -3220,7 +3322,7 @@ function makePost(ti, old) {
     const hs = houses.filter(h => townIdxAt(h.x) === ti && !h.playerHome && !h.estate && !h.woods && !h.yard && (h.shop || h.type === 'large') && h.floors && h.floors.length && h.residents.length);
     if (hs.length) { const h = pick(hs); return { kind: 'house', h: h.idx, x: h.door.x, y: h.door.y, name: `inside ${h.shop ? h.shopName : `the ${h.family} house`} - guard the room` }; }
   }
-  if (kind === 'prison') { const a = town.jail.approach; return { kind: 'prison', x: a.x, y: a.y - 1, name: 'the cells in the Watch House - keep an eye on the prisoners' }; }
+  if (kind === 'prison') { const J = ti === 3 ? town.jail2 : town.jail, a = J.approach; return { kind: 'prison', jail: ti === 3 ? 'jail2' : 'jail', x: a.x, y: a.y - 1, name: 'the cells in the Watch House - keep an eye on the prisoners' }; }
   const l = pick(L.filter(far)) || L[0]; return { kind: 'spot', x: l.x, y: l.y, name: 'a street corner - stand watch by the lamp' };
 }
 function segDist(px, py, a, b) { const ax = a.x * TS + 8, ay = a.y * TS + 8, bx = b.x * TS + 8, by = b.y * TS + 8, dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1, k = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)); return Math.hypot(px - ax - k * dx, py - ay - k * dy); }
@@ -3229,7 +3331,7 @@ function onPost(P) {
   if (wagon && p.map === 'town' && dist(wagon, p) < 8 * TS) return true; // escort duty counts
   if (career.joinedWagon) { const g = online.ghosts.get(career.joinedWagon); if (g && g.wagon && p.map === 'town' && dist(g.wagon, p) < 8 * TS) return true; }
   if (P.kind === 'house') return houses[P.h].floors.some(f => f.key === p.map);
-  if (P.kind === 'prison') return p.map === 'jail';
+  if (P.kind === 'prison') return p.map === P.jail;
   if (p.map !== 'town') return false;
   if (P.kind === 'route') { const n = P.pts.length, a = P.pts[(P.i + n - 1) % n], b = P.pts[P.i]; return segDist(p.x, p.y, a, b) < 4 * TS; }
   return Math.hypot(p.x - (P.x * TS + 8), p.y - (P.y * TS + 8)) < 6 * TS;
@@ -3349,16 +3451,16 @@ function cuffRobber(t) {
 function updateEscorted(t, dt) {
   const p = player;
   if (!isWatch() || career.escort !== t.i || wanted) { if (career.escort === t.i) career.escort = null; t.state = 'flee'; t.fleeSpd = 76; t.path = null; say(t, 'So long, sucker!', 1.6); return; }
-  if (p.map === 'jail' && t.map === 'jail') { say(jailNPCs[1] || p, 'In you go.', 1.5); jailRobber(t); return; }
+  if (maps[p.map].kind === 'jail' && t.map === p.map) { say(p, 'In you go.', 1.5); jailRobber(t, p.map); return; }
   if (t.map !== p.map || dist(t, p) > 90) { t.map = p.map; t.x = p.x; t.y = p.y + 6; t.path = null; t.stuckT = 0; return; }
-  if (p.map !== 'jail' && Math.random() < dt * 0.025) { robberSlips(t, (t.smoke || 0) > 0 && Math.random() < 0.6 ? 'smoke' : 'wriggle'); return; } // they'll try it on the way
+  if (maps[p.map].kind !== 'jail' && Math.random() < dt * 0.025) { robberSlips(t, (t.smoke || 0) > 0 && Math.random() < 0.6 ? 'smoke' : 'wriggle'); return; } // they'll try it on the way
   if (dist(t, p) > 18) { const pt = tileOfE(p); navTo(t, p.map, pt.x, pt.y, 62, dt, true); if (t.stuckT > 2) { t.x = p.x; t.y = p.y + 6; t.stuckT = 0; } }
 }
-function jailRobber(t) {
+function jailRobber(t, key = 'jail') {
   if (career.escort === t.i) career.escort = null;
   if (t.crate) { t.crate = false; if (wagon) { wagon.crates++; msg('You got the stolen crate back onto the wagon!', '#9df0a0'); } }
   dropClaim(t); t.state = 'jailed'; t.captor = null; t.freeAt = gameTime + DAY_LEN; t.path = null;
-  const d = jailCellFor(t); if (d) { t.cell = d; t.map = 'jail'; t.x = d.x * TS + 8; t.y = (d.y === 5 ? 3 : 11) * TS + 12; t.dir = d.y === 5 ? 'down' : 'up'; } else t.map = 'limbo';
+  const d = jailCellFor(t, key); if (d) { t.cell = d; t.map = key; t.x = d.x * TS + 8; t.y = (d.y === 5 ? 3 : 11) * TS + 12; t.dir = d.y === 5 ? 'down' : 'up'; } else t.map = 'limbo';
   const solved = career.caseOn && career.caseOn.thief === t.i, pay = solved ? 60 : 20; if (solved) career.caseOn = null;
   gold += pay; totalEarned += pay; career.arrests = (career.arrests || 0) + 1; SFX.coins(); stat('arrests'); goodWork(solved ? 1 : 0.5);
   msg(solved ? `CASE CLOSED! You arrested ${t.name}, the robber you tracked down. Reward: 20g + 40g case bonus.` : `You arrested ${t.name}! They're off to the cells. Reward: 20g.`, '#9df0a0');
@@ -3374,14 +3476,14 @@ function careerInteraction(p) {
   if (isWatch() && !wanted && multi() && online.room) for (const g of online.ghosts.values()) if (g.map === p.map && dist(g, p) < 22 && (g.wanted || g.bounty > 0 || ['stealing', 'picking', 'pickpocket'].includes(g.st)) && !['grabbed', 'held', 'escorted', 'jailed'].includes(g.st) && !(g.grabT > gameTime)) {
     p.inter = { label: `Grab ${g.label}!`, act: () => { g.grabT = gameTime + 4; say(p, pick(['Gotcha!', 'Stop, thief!', 'You\'re nicked!']), 1.5); SFX.grab(); sendEv({ k: 'grab', to: g.peer, nm: profile.name || 'A watchman' }); msg(`You grab ${g.label}! Hold on...`, '#9ab0ff'); } }; return true;
   }
-  if (isWatch() && career.escort != null && !wanted) { const t = thieves[career.escort], g = guards.find(g => g.unit !== 'dog' && g.map === p.map && dist(g, p) < 24 && !['stunned', 'nab', 'haul'].includes(g.state)); if (t && g) { p.inter = { label: `Hand ${t.name} over to ${g.name || 'the guard'}`, act: () => { say(g, 'I\'ll take it from here. Good work.', 2); jailRobber(t); } }; return true; } }
+  if (isWatch() && career.escort != null && !wanted) { const t = thieves[career.escort], g = guards.find(g => g.unit !== 'dog' && g.map === p.map && dist(g, p) < 24 && !['stunned', 'nab', 'haul'].includes(g.state)); if (t && g) { p.inter = { label: `Hand ${t.name} over to ${g.name || 'the guard'}`, act: () => { say(g, 'I\'ll take it from here. Good work.', 2); jailRobber(t, jailFor(townPos(p))); } }; return true; } }
   if (isWatch() && !wanted && maps[p.map].house && recentRobbery(maps[p.map].house)) {
     const m = maps[p.map]; for (const e of m.loot.values()) if (e.taken && e.robbedBy != null && Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)) < 24) { p.inter = { label: 'Search for clues (hold E)', act: () => { p.state = 'investigate'; p.workT = 0; } }; return true; }
   }
   return false;
 }
 function careerLabel() {
-  if (isWatch()) return [`${rankTitle().toUpperCase()} ${['', 'Mudford ', 'Kingsbridge '][career.town]}${career.shift} shift ${payFor(WATCH_PAY[career.town])}g${career.post ? (onPost(career.post.kind ? career.post : { kind: 'spot', x: career.post.x, y: career.post.y }) ? ' - on post' : career.grace > gameTime ? ' - go to post' : ' - OFF POST') : ''}`, '#9ab0ff'];
+  if (isWatch()) return [`${rankTitle().toUpperCase()} ${['', 'Mudford ', 'Kingsbridge ', 'Silverwater '][career.town]}${career.shift} shift ${payFor(WATCH_PAY[career.town])}g${career.post ? (onPost(career.post.kind ? career.post : { kind: 'spot', x: career.post.x, y: career.post.y }) ? ' - on post' : career.grace > gameTime ? ' - go to post' : ' - OFF POST') : ''}`, '#9ab0ff'];
   if (isWorker()) return [`${rankTitle()} ${payFor(career.job.wage)}g/day${shiftWindow() && career.need ? ` ${career.done}/${career.need}` : ''}`, '#9df0a0'];
   return ['THIEF', '#c9a0ff'];
 }
@@ -3459,10 +3561,10 @@ function chatOptions() {
     add('Talk your way out of it', () => { chatClose(); say(t, pick(['Nice try. You\'re nicked!', 'Save it for the judge!']), 2.5); grab(t); });
     add('Insult them', () => { chatClose(); say(t, 'Oh, you\'ll pay for that!', 2.5); grab(t); });
   } else if (t.kind === 'guard') {
-    const town = townIdxAt(townPos(t).x);
+    const town = townIdxAt(townPos(t).x / TS);
     if (isWatch()) {
       add(`Switch to the ${career.shift === 'day' ? 'night' : 'day'} shift`, () => { career.shift = career.shift === 'day' ? 'night' : 'day'; career.post = null; career.shiftNo = -1; chat.reply = `${career.shift === 'day' ? 'Day' : 'Night'} shift it is.`; });
-      add('Any escort work?', () => { chat.reply = 'Wagon escorts come from Captain Harlow, in the Watch House in the big town.'; });
+      add('Any escort work?', () => { chat.reply = 'Wagon escorts come from the captain at the Watch House - Captain Harlow in the big town, or Captain Vane in Silverwater.'; });
       add('How am I doing?', () => { chat.reply = howAmIDoing(); });
       add('Hand in your badge (quit the Watch)', () => { quitCareer('You hand in your badge. Just a citizen again.'); chat.reply = 'Shame. You had the look.'; });
     } else {
@@ -3486,17 +3588,17 @@ function chatOptions() {
   } else if (t.ship) {
     if (t.captain) add('When do we make port?', () => { const left = voyage ? Math.max(0, voyage.end - gameTime) : 0; chat.reply = left > DAY_LEN * 0.5 ? 'We\'ve barely left! Tomorrow, same time.' : left > DAY_LEN * 0.15 ? 'Back by morning, if the wind holds.' : 'Not long now. You can smell the harbour.'; });
     add('Small talk', () => { chat.reply = pick(t.lines); });
-  } else if (t.name === 'Captain Harlow') {
+  } else if (t.escortCaptain) {
     if (!isWatch()) add('Any work?', () => { chat.reply = 'Only for the Watch, citizen. Ask any guard on the street about joining up.'; });
     else if (wagon && !wagon.npc) add('About my escort...', () => { chat.reply = wagon.partner ? `Get that wagon to ${TOWN_NAMES[wagon.to]}. ${wagon.partner.label} is with you.` : 'Still waiting on a partner. Give it a moment.'; });
     else if (career.joinedWagon) add('About my escort...', () => { chat.reply = 'Stick with that wagon till it\'s delivered.'; });
     else {
-      add('Take a wagon escort with a Watch partner (25g + 5g a crate)', () => { if (wagon) endWagon(undefined); startWagon(0, 'npc'); chat.reply = `Good. ${wagon.partner.label} goes with you. Wagon's at the carriage stand.`; });
-      if (multi() && online.room) add('Take a wagon escort, wait for another player to join', () => { if (wagon) endWagon(undefined); startWagon(0, 'wait'); chat.reply = 'I\'ll send the next watchman who comes in. If nobody does in a minute, you get one of mine.'; });
+      add('Take a wagon escort with a Watch partner (25g + 5g a crate)', () => { if (wagon) endWagon(undefined); startWagon(t.homeTown || 0, 'npc'); chat.reply = `Good. ${wagon.partner.label} goes with you. Wagon's at the carriage stand.`; });
+      if (multi() && online.room) add('Take a wagon escort, wait for another player to join', () => { if (wagon) endWagon(undefined); startWagon(t.homeTown || 0, 'wait'); chat.reply = 'I\'ll send the next watchman who comes in. If nobody does in a minute, you get one of mine.'; });
       if (multi()) for (const g of online.ghosts.values()) if (g.wagon && g.wagon.open && g.cr === 'w') add(`Join ${g.label}'s wagon escort`, () => { sendEv({ k: 'join', to: g.peer }); chat.reply = `Right - report to ${g.label} at the carriage stand.`; });
     }
     add('How am I doing?', () => { chat.reply = isWatch() ? howAmIDoing() : 'You\'re not one of mine.'; });
-  } else if (t.name === 'Jailer Grubb') {
+  } else if (t.jailer) {
     if ((bounty > 0 || halfBounty) && !wanted) add(`Pay off your bounty (${bounty * 60 + (halfBounty ? 30 : 0)}g)`, () => { if (!pay(bounty * 60 + (halfBounty ? 30 : 0))) return; halfBounty = false; bounty = 0; syncForce(); chat.reply = 'Paid in full. Your slate is clean... for now.'; msg('Bounty cleared!', '#9df0a0'); }, bounty * 60 + (halfBounty ? 30 : 0));
     add('Who\'s locked up?', () => { const j = thieves.filter(o => o.state === 'jailed' && o.cell).map(o => o.name); chat.reply = j.length ? `Got ${j.join(' and ')} in the cells. Thieves, the lot of 'em.` : 'Just the usual drunks and layabouts.'; });
   } else if (t.kind === 'thief' && t.state === 'jailed') {
@@ -3558,7 +3660,7 @@ function nearbyChars() {
   out.push(...rats.filter(r => r.map === player.map));
   out.push(...fences.filter(f => f.map === player.map), ...thieves.filter(t => t.map === player.map));
   if (player.map === 'town' && isMarketDay()) out.push(...vendors);
-  if (player.map === 'jail') out.push(...jailNPCs);
+  out.push(...allJailNPCs().filter(n => n.map === player.map));
   if (player.map === 'ship') out.push(...shipNPCs);
   return out;
 }
@@ -3705,8 +3807,11 @@ function breakFree() {
   stat('breakFree');
   p.state = 'free'; p.invuln = 1.6; p.boostT = 1.6; escapes++; SFX.free(); msg('You wriggled free! RUN!', '#9df0a0'); say(p, 'Not today!', 1.5);
 }
+var curJail = 'jail';
+const jailFor = pos => townIdxAt(pos.x / TS) === 3 ? 'jail2' : 'jail';
 function arrest() {
   if (player.grabG && player.grabG.wild) { wildCatch(player.grabG); return; }
+  curJail = maps[player.map].kind === 'jail' ? player.map : jailFor(townPos(player));
   if (player.grabG && player.grabG.online) { sendEv({ k: player.loot.some(i => i.wagonCrate) ? 'jailedc' : 'jailed', to: player.grabG.online }); wanted = false; player.state = 'held'; escort = { A: null, B: null, waitT: 0, t: 0 }; msg(`${player.grabG.name} of the Watch hauls you off to the cells!`, '#ff6b6b'); pickCell(); finishEscort(); player.grabG = null; return; }
   const p = player, G0 = p.grabG; p.state = 'held'; G0.state = 'hold'; wanted = false; SFX.jail();
   for (const g of guards) if (g !== G0 && (['chase', 'respond', 'search'].includes(g.state) || g.unit !== 'guard')) { g.state = 'return'; g.path = null; }
@@ -3717,7 +3822,7 @@ function arrest() {
     others.slice(0, 2).forEach(g => { g.state = 'assist'; g.path = null; say(g, 'Good boy! Hold them!'); });
     return;
   }
-  const A = G0, inJail = p.map === 'jail', B = inJail ? guards.find(g => g !== G0 && g.unit !== 'dog' && g.map === 'jail' && !['stunned', 'nab', 'haul'].includes(g.state)) : others[0];
+  const A = G0, inJail = maps[p.map].kind === 'jail', B = inJail ? guards.find(g => g !== G0 && g.unit !== 'dog' && g.map === p.map && !['stunned', 'nab', 'haul'].includes(g.state)) : others[0];
   escort = { A, B: B || null, waitT: 0, t: 0 };
   say(A, pick(["You're nicked!", 'By order of the Watch, you are under arrest!', "That's enough running."]), 3);
   msg('CAUGHT! A second watchman is coming to escort you to jail.', '#ff6b6b');
@@ -3739,7 +3844,7 @@ function wildCatch(g) {
 }
 function startEscort() {
   pickCell();
-  const p = player, { A, B } = escort; if (escort.dog) { escort.dog.state = 'return'; escort.dog.path = null; escort.dog = null; } A.state = 'escort_lead'; A.path = null; maps.jail.cellOpen = true;
+  const p = player, { A, B } = escort; if (escort.dog) { escort.dog.state = 'return'; escort.dog.path = null; escort.dog = null; } A.state = 'escort_lead'; A.path = null; maps[curJail].cellOpen = true;
   if (B) B.state = 'escort_follow';
   p.state = 'escorted'; trail = [];
   // an invisible walker leads the way; the prisoner walks on it with a watchman gripping each arm
@@ -3749,37 +3854,37 @@ function startEscort() {
 }
 // Each arrest lands you in a random empty cell.
 function pickCell() {
-  const j = maps.jail, taken = jailNPCs.filter(n => n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) }))
+  const j = maps[curJail], taken = jailNPCs.filter(n => n.map === curJail && n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) }))
     .concat(thieves.filter(t => t.cell).map(t => ({ x: t.cell.x, y: t.cell.y === 5 ? 3 : 11 })));
   const free = j.cellDoors.filter(d => !taken.some(t => t.x === d.x && (d.y === 5 ? t.y < 5 : t.y > 9)));
-  const pt = tileOfE(player), inCell = player.map === 'jail' && j.cellDoors.find(c => Math.abs(pt.x - c.x) <= 1 && (c.y === 5 ? pt.y >= 2 && pt.y <= 4 : pt.y >= 10 && pt.y <= 12));
+  const pt = tileOfE(player), inCell = player.map === curJail && j.cellDoors.find(c => Math.abs(pt.x - c.x) <= 1 && (c.y === 5 ? pt.y >= 2 && pt.y <= 4 : pt.y >= 10 && pt.y <= 12));
   const d = inCell || pick(free.length ? free : j.cellDoors); // caught inside a cell? that's your cell now
   j.cell = { x: d.x, y: d.y }; j.cellSpot = { x: d.x, y: d.y === 5 ? 3 : 11 }; j.escortSpot = { x: d.x, y: 7 }; j.cellOpen = true;
 }
 function finishEscort() {
   const { A, B } = escort;
   transition(() => {
-    const p = player, j = maps.jail; p.map = 'jail'; p.x = j.cellSpot.x * TS + 8; p.y = j.cellSpot.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+    const p = player, j = maps[curJail]; p.map = curJail; p.x = j.cellSpot.x * TS + 8; p.y = j.cellSpot.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
     j.cellOpen = false; p.state = 'jailed'; arrests++; stat('jailed');
     const lost = lootValue(), fine = Math.floor(gold * 0.2); gold -= fine; evidence.push(...p.loot.filter(i => !i.job)); p.loot = [];
     if (job && job.got) { msg(`The Watch took the ${job.name}. The job's off.`, '#ff8a6b'); job = null; }
     if (heist) failHeist('Jailed!');
     p.jailT = Math.min(90, 15 + bounty * 12 + arrests * 3); p.sentence = p.jailT; msg(`Sentenced to ${Math.round(p.jailT)}s in the cells${bounty ? ` (bounty ${bounty})` : ''}.`, '#ffb36b');
     SFX.jail(); msg(`Locked up! Loot confiscated (${lost}g, it's in the evidence locker) and fined ${fine}g.`, '#ff6b6b');
-    say(jailNPCs[0], pick(jailNPCs[0].lines), 3);
-    for (const g of [A, B]) if (g) { g.state = 'return'; g.path = null; g.x = j.escortSpot.x * TS + 8 + (g === B ? -16 : 16); g.y = j.escortSpot.y * TS + 12; g.map = 'jail'; }
+    { const jl = allJailNPCs().find(n => n.jailer && n.map === curJail); if (jl) say(jl, pick(jl.lines), 3); }
+    for (const g of [A, B]) if (g) { g.state = 'return'; g.path = null; g.x = j.escortSpot.x * TS + 8 + (g === B ? -16 : 16); g.y = j.escortSpot.y * TS + 12; g.map = curJail; }
     for (const g of guards) if (g.post) { const w = g.route[0]; g.map = g.routeMap || 'town'; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.wi = g.route.length > 1 ? 1 : 0; g.path = null; } // groundsmen go back to their posts
     escort = null; trail = []; escapes = 0; if (bounty || halfBounty) msg('Your bounty has been cleared.', '#9df0a0'); bounty = 0; halfBounty = false; syncForce();
   });
 }
-function enterWatchHouse() {
+function enterWatchHouse(key = 'jail') {
   if (wanted) { say(player, 'Walk in there with the Watch after me? No.', 2); SFX.deny(); return; }
   SFX.door();
-  transition(() => { const p = player, j = maps.jail; p.map = 'jail'; p.x = j.entry.x * TS + 8; p.y = j.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
-    say(jailNPCs[0], isWatch() ? pick(['Evening, officer.', 'Morning, officer. All quiet.', 'Brought me another one?']) : isNight() ? '...zzz... wha? Who\'s there?' : 'Visiting hours. Don\'t touch anything.', 2.5); });
+  transition(() => { const p = player, j = maps[key]; p.map = key; p.x = j.entry.x * TS + 8; p.y = j.entry.y * TS + 12; p.dir = 'up'; p.fa = -Math.PI / 2; p.state = 'free';
+    say(allJailNPCs().find(n => n.jailer && n.map === key), isWatch() ? pick(['Evening, officer.', 'Morning, officer. All quiet.', 'Brought me another one?']) : isNight() ? '...zzz... wha? Who\'s there?' : 'Visiting hours. Don\'t touch anything.', 2.5); });
 }
 function leaveWatchHouse() {
-  transition(() => { const p = player, from = p.map, j = maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+  transition(() => { const p = player, from = p.map, j = maps[p.map].kind === 'jail' ? maps[p.map] : maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
     for (const g of guards) if (g.state === 'chase' && g.map === from && g.lostT < 2) g.lastKnown = { map: 'town', x: p.x, y: p.y }; });
 }
 // rival thieves locked up in the cells: pick the cell door and they run for the sewers
@@ -3787,14 +3892,14 @@ function freeThief(t) {
   const d = t.cell; t.cell = null; t.state = 'flee'; t.fleeSpd = 70; t.path = null; t.x = d.x * TS + 8; t.y = 7 * TS + 12;
   rep += 2; SFX.unlock(); say(t, pick(['You came for me!', 'I owe you one, mate!', 'Freedom!']), 2.5); msg(`You broke ${t.name} out! Reputation +2.`, '#c9a0ff'); unlock('jailbreak');
 }
-function jailCellFor(t) {
-  const j = maps.jail, taken = jailNPCs.filter(n => n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) })).concat(thieves.filter(o => o.cell).map(o => ({ x: o.cell.x, y: o.cell.y === 5 ? 3 : 11 })));
+function jailCellFor(t, key = 'jail') {
+  const j = maps[key], taken = jailNPCs.filter(n => n.map === key && n.name.startsWith('Prisoner')).map(n => ({ x: Math.floor(n.x / TS), y: Math.floor((n.y - 3) / TS) })).concat(thieves.filter(o => o.cell && o.map === key).map(o => ({ x: o.cell.x, y: o.cell.y === 5 ? 3 : 11 })));
   const free = j.cellDoors.filter(d => !taken.some(q => q.x === d.x && (d.y === 5 ? q.y < 5 : q.y > 9)) && !(j.cell && j.cell.x === d.x && j.cell.y === d.y && player.state === 'jailed'));
   return free.length ? pick(free) : null;
 }
 function release() {
   transition(() => {
-    const p = player, j = maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
+    const p = player, j = maps[p.map].kind === 'jail' ? maps[p.map] : maps.jail; p.map = 'town'; p.x = j.approach.x * TS + 8; p.y = j.approach.y * TS + 12; p.dir = 'down'; p.fa = Math.PI / 2;
     p.state = 'free'; p.stamina = 100; j.cellOpen = false; wanted = false; // your cell locks behind you
     msg("You've served your time. Behave yourself... or don't.", '#9df0a0'); say(p, 'Free at last.', 2);
   });
@@ -3886,7 +3991,8 @@ function setMode(m) { online.mode = m; profile.mode = m; saveProfile(); online.l
 const START_TOWNS = [
   { name: 'The Big Town', blurb: 'The fences in the sewers, a big market, and plenty of Watchmen.', col: '#f7d774' },
   { name: 'Mudford', blurb: 'Poor and muddy, a few rich homes, and only three constables.', col: '#c9a06a' },
-  { name: 'Kingsbridge', blurb: 'A huge walled royal city: the richest homes, and the City Watch.', col: '#c070ff' }];
+  { name: 'Kingsbridge', blurb: 'A huge walled royal city: the richest homes, and the City Watch.', col: '#c070ff' },
+  { name: 'Silverwater', blurb: 'A wealthy river port: fine homes, a bank, a harbour, and its own Watch and thieves.', col: '#7ac8e8' }];
 let townPick = 0, townUI = [];
 function openTownPick() { state = 'towns'; audioInit(); }
 let rolePick = 0, roleUI = [], startWhere = 0;
@@ -3896,6 +4002,7 @@ function startGame(where = 0, role = 0) {
   const p = player;
   if (where === 1) { const c = town.coaches[1]; p.x = c.ax * TS + 8; p.y = c.ay * TS + 12; msg('You start in Mudford. The carriage can take you to the other towns; the fences are in the big town\'s sewers.', '#c9a06a'); }
   else if (where === 2) { const c = town.coaches[2]; p.x = c.ax * TS + 8; p.y = (c.ay + 1) * TS + 12; arriveIn('Kingsbridge'); }
+  else if (where === 3) { const c = town.coaches[3]; p.x = c.ax * TS + 8; p.y = (c.ay + 1) * TS + 12; arriveIn('Silverwater'); }
   updateCamera(null, p.map, p.x, p.y - 8);
   if (role === 1) joinWatch(where, 'day');
   else if (role === 2) { // a random honest job in the town you picked: any shop that's hiring, the lamps, or the woodcutter
@@ -3927,7 +4034,7 @@ function drawTownPick() {
     txt(`${touchMode ? '' : (i + 1) + '. '}${t.name}`, bx + 8, y + 5, 7, t.col, 'left', null); txt(t.blurb, bx + 8, y + 18, 4, '#d8d0c0', 'left', null);
     townUI.push({ x: bx, y, w: bw, h: 30, fn: () => { townPick = i; startWhere = i; state = 'roles'; } });
   });
-  txt(touchMode ? 'Tap a town. The carriages link all three.' : 'Up/Down + Enter, or 1-3.   Esc: back.   The carriages link all three towns.', cxm, by + 3 * 34 + 4, 4, '#9a9080', 'center', null);
+  txt(touchMode ? 'Tap a town. The carriages link them all.' : 'Up/Down + Enter, or 1-4.   Esc: back.   The carriages link all four towns.', cxm, by + START_TOWNS.length * 34 + 4, 4, '#9a9080', 'center', null);
 }
 function closeMenu() { state = 'play'; menu = null; }
 
@@ -4015,7 +4122,8 @@ function findInteraction() {
       if ((isNight() || away) && h.alarmT <= 0) p.inter2 = { label: away ? 'Pick lock (nobody home)' : 'Pick lock', act: () => startPick(h) };
       return;
     }
-    if (doorNear(town.jail.door)) { p.inter = { label: 'Enter the Watch House', act: enterWatchHouse }; return; }
+    if (doorNear(town.jail.door)) { p.inter = { label: 'Enter the Watch House', act: () => enterWatchHouse('jail') }; return; }
+    if (doorNear(town.jail2.door)) { p.inter = { label: 'Enter the Silverwater Watch House', act: () => enterWatchHouse('jail2') }; return; }
     for (const f of fences) if (f.map === 'town' && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => f.kind === 'steward' ? openSteward(f) : f.kind === 'fisher' ? chatOpen(f) : f.kind === 'smuggler' ? openShop({ shop: 'smuggler', shopName: 'the Smuggler\'s Wares', lead: f, residents: [] }) : openFence(f) }; return; }
     for (const r of rats) if (raiding(r) && r.map === p.map && dist(r, p) < 26) { p.inter = exiled ? { label: `${r.name.split(' (')[0]} (raiding)`, act: () => say(r, 'Shh! Don\'t blow it for me, outcast.', 2) } : { label: `Run ${r.name.split(' (')[0]} out of town!`, act: () => runOutOfTown(r) }; return; }
     for (const sh of shrooms) if (sh.picked !== dayInfo().day && Math.hypot(p.x - (sh.x * TS + 8), p.y - 4 - (sh.y * TS + 8)) < 14) {
@@ -4023,7 +4131,7 @@ function findInteraction() {
       return;
     }
     if (treasure && Math.hypot(p.x - (treasure.x * TS + 8), p.y - 4 - (treasure.y * TS + 8)) < 16) { p.inter = { label: 'Dig where X marks the spot', act: digTreasure }; return; }
-    for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { const [d1, d2] = town.coaches.filter(o => o !== c); p.inter = { label: `Carriage to ${d1.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d1) }; p.inter2 = { label: `Carriage to ${d2.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d2) }; return; }
+    for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { const others = town.coaches.filter(o => o !== c), k = (p.coachSel || 0) % others.length, d = others[k]; p.inter = { label: `Carriage to ${d.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d) }; p.inter2 = { label: `Other stops (${others.filter(o => o !== d).map(o => o.at).join(', ')})`, act: () => { p.coachSel = k + 1; } }; return; }
     for (const mh of manholes) if (Math.hypot(p.x - (mh.x * TS + 8), p.y - 4 - (mh.y * TS + 8)) < 14) { p.inter = exiled ? { label: 'Sewer grate (chained shut)', act: () => { say(p, 'Chained from below. The crew don\'t want me.', 2); SFX.deny(); } } : { label: 'Climb down into the sewers', act: () => enterSewer(mh) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
     const mark = !wanted && career.type === 'thief' && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and press E to pick their pocket - then tap E each time the needle is in the green.', '#cfe8ff'); }
@@ -4037,7 +4145,7 @@ function findInteraction() {
       if (evidence.length) p.inter2 = { label: 'Pick the evidence locker', act: () => startPick(null, () => { const room = sackCap() - p.loot.length, back = evidence.splice(0, Math.max(0, room)); p.loot.push(...back); SFX.steal(); msg(`You took back ${back.length} confiscated item${back.length === 1 ? '' : 's'}!`, '#f7d774'); unlock('evidence'); }, 7, 'Evidence locker') };
       return;
     }
-    for (const t of thieves) if (t.state === 'jailed' && t.cell && Math.hypot(p.x - (t.cell.x * TS + 8), p.y - 4 - (t.cell.y * TS + 8)) < 22) {
+    for (const t of thieves) if (t.state === 'jailed' && t.cell && t.map === p.map && Math.hypot(p.x - (t.cell.x * TS + 8), p.y - 4 - (t.cell.y * TS + 8)) < 22) {
       p.inter = { label: `${t.name}'s cell`, act: () => say(t, pick(['Get me out of here!', 'Psst! Pick the lock!']), 2) };
       p.inter2 = { label: `Pick the lock - free ${t.name}`, act: () => startPick(null, () => freeThief(t), 6, 'Cell door') };
       return;
@@ -4334,11 +4442,11 @@ function startChase(g) {
   for (const o of guards) if (room > 0 && o !== g && o.unit === 'guard' && (!o.post || o.post === g.post) && o.map === g.map && ['patrol', 'pause', 'return'].includes(o.state) && dist(o, g) < 220 && room--) { o.state = 'respond'; o.target = { map: player.map, x: Math.floor(player.x / TS), y: Math.floor((player.y - 3) / TS) }; o.path = null; }
 }
 function updateEscort(dt) {
-  const e = escort, n = e.nav, p = player, j = maps.jail, before = n.map;
+  const e = escort, n = e.nav, p = player, j = maps[curJail], before = n.map;
   e.t += dt; n.moving = false;
   e.stuckT = n.noPath ? (e.stuckT || 0) + dt : 0;
   if (e.far && e.t > 7 && !e.done) { e.done = true; msg('They bundle you into the prison wagon for the long ride back to the Watch House...', '#ffb36b'); finishEscort(); }
-  if ((navTo(n, 'jail', j.escortSpot.x, j.escortSpot.y, 34, dt) || e.t > 150 || e.stuckT > 3) && !e.done) { e.done = true; finishEscort(); } // no way through? straight to the cell
+  if ((navTo(n, curJail, j.escortSpot.x, j.escortSpot.y, 34, dt) || e.t > 150 || e.stuckT > 3) && !e.done) { e.done = true; finishEscort(); } // no way through? straight to the cell
   if (n.map !== before) { fade.a = 1; fade.dir = -1; }
   // walking up or down: a watchman on each side. Walking sideways: one just ahead and one just behind, staggered so the prisoner stays visible.
   const fa = n.fa, d = dirFromAngle(fa), sideways = d === 'left' || d === 'right', hx = d === 'left' ? -1 : 1, m = maps[n.map];
@@ -4535,7 +4643,7 @@ function updateResident(r, dt) {
       if (isMarketDay() && r.outCD > 20 && !r.worker) r.outCD = rnd(0, 20);
       r.outCD -= dt;
       if (!here && inHouse(h, r.map) && r.outCD <= 0 && !r.worker) {
-        if (isMarketDay() && !h.mudford && !h.woods && !h.city) { r.state = 'market'; r.wtarget = null; r.path = null; r.wait = 0; }
+        if (isMarketDay() && !h.mudford && !h.woods && !h.city && !h.port) { r.state = 'market'; r.wtarget = null; r.path = null; r.wait = 0; }
         else if (!isNight()) {
           if (residentsOut() < 26 && !r.child && Math.random() < 0.4 && friendHouse(r)) { r.state = 'visit'; r.visitH = friendHouse(r); r.wtarget = null; r.path = null; r.wait = 0; }
           else if (residentsOut() < 26) { r.state = 'out'; r.outT = rnd(35, 80); r.wtarget = null; r.path = null; r.wait = 0; }
@@ -4556,7 +4664,7 @@ function updateResident(r, dt) {
       }
       witness(r);
       if (!mkt && !r.child && !(r.chatCD > gameTime) && Math.random() < dt * 0.25) { const o = allResidents().find(o => o !== r && o.state === 'out' && o.map === 'town' && !o.child && !(o.chatCD > gameTime) && dist(o, r) < 90); if (o) { startConvo(r, o, false); break; } }
-      if (!mkt && isMarketDay() && !h.mudford && !h.woods && !h.city) { r.state = 'market'; r.wtarget = null; break; }
+      if (!mkt && isMarketDay() && !h.mudford && !h.woods && !h.city && !h.port) { r.state = 'market'; r.wtarget = null; break; }
       if (mkt ? !isMarketDay() : ((r.outT -= dt) <= 0 || isNight())) goHome(r);
       break;
     }
@@ -4750,7 +4858,7 @@ function updateWorld(dt) {
   if (alertPing) { alertPing.t -= dt; if (alertPing.t <= 0) alertPing = null; }
   if (isMarketDay() && player.map === 'town') for (const v of vendors) { v.chatT -= dt; if (v.chatT <= 0) { v.chatT = rnd(5, 12); if (dist(v, player) < 140) say(v, pick(TALK.vendor), 2.2); } }
   for (const f of fences) { f.chatT -= dt; if (f.chatT <= 0) { f.chatT = rnd(6, 12); if (player.map === f.map && dist(f, player) < 90) say(f, pick(f.kind === 'smuggler' ? ['Psst. Fine goods, no questions.', 'Keys, pardons, smoke...', 'Only after dark, friend.'] : f.kind === 'fisher' ? ['Bitin\'s good today.', 'Fresh fish! 3g!', 'Caught a boot once.'] : f.kind === 'steward' ? ['The great houses lie east.', 'Invitations by merit only.', 'Ahem.'] : ['Psst. Got goods?', 'Buying shiny things...', 'No questions asked.', 'Over here, friend.']), 2.2); } }
-  for (const n of jailNPCs) { if (Math.random() < dt * 0.04 && player.map === 'jail' && !(isNight() && n === jailNPCs[0])) say(n, pick(n.lines), 2.5); }
+  for (const n of allJailNPCs()) { if (Math.random() < dt * 0.04 && player.map === n.map && !(isNight() && n.jailer)) say(n, pick(n.lines), 2.5); }
   if (doorBubble) { doorBubble.t -= dt; if (doorBubble.t <= 0) doorBubble = null; }
   for (const e of allChars()) if (e.bubble) { e.bubble.t -= dt; if (e.bubble.t <= 0) e.bubble = null; }
   for (const mm of msgs) mm.t -= dt; msgs = msgs.filter(mm => mm.t > 0);
@@ -4952,7 +5060,7 @@ function render(dt) {
   if (camMap === 'town') list.push(...yardDogs);
   if (!titleish) for (const r of rats) if (r.map === camMap) list.push(r);
   if (!titleish && multi()) for (const g of online.ghosts.values()) { if (g.map === camMap && g.st !== 'hidden') list.push(g); if (g.wagon && camMap === 'town') list.push(g.wagon); }
-  if (camMap === 'jail') list.push(...jailNPCs);
+  list.push(...allJailNPCs().filter(n => n.map === camMap));
   if (camMap === 'ship') list.push(...shipNPCs);
   if (camMap === 'town' && wagon) list.push(wagon);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
@@ -5505,7 +5613,7 @@ function questTargets() {
   if (typeof career !== 'undefined' && career.joinedWagon) { const g = online.ghosts.get(career.joinedWagon); if (g && g.wagon && (player.map !== 'town' || dist(g.wagon, player) > 7 * TS)) T0.push({ x: Math.floor(g.wagon.x / TS), y: Math.floor(g.wagon.y / TS), col: '#f7d774', label: 'WAGON' }); }
   if (typeof wagon !== 'undefined' && wagon && wagon.npc) { if (career.type === 'thief' && (player.map !== 'town' || dist(wagon, player) > 7 * TS)) T0.push({ x: Math.floor(wagon.x / TS), y: Math.floor(wagon.y / TS), col: '#f7d774', label: 'WAGON' }); }
   else if (typeof wagon !== 'undefined' && wagon) { const c = town.coaches[wagon.to]; if (player.map !== 'town' || dist(wagon, player) > 7 * TS) T0.push({ x: Math.floor(wagon.x / TS), y: Math.floor(wagon.y / TS), col: '#f7d774', label: 'WAGON' }); T0.push({ x: c.x, y: c.y, col: '#f7d774', label: 'DROP-OFF' }); }
-  if (typeof career !== 'undefined' && isWatch() && career.escort != null && player.map !== 'jail') T0.push({ x: town.jail.approach.x, y: town.jail.approach.y - 1, col: '#9ab0ff', label: 'JAIL' });
+  if (typeof career !== 'undefined' && isWatch() && career.escort != null && maps[player.map].kind !== 'jail') T0.push({ x: (inPort() ? town.jail2 : town.jail).approach.x, y: (inPort() ? town.jail2 : town.jail).approach.y - 1, col: '#9ab0ff', label: 'JAIL' });
   if (typeof career !== 'undefined' && isWatch() && career.caseOn) { const t = thieves[career.caseOn.thief]; if (t && t.state !== 'jailed') { const tp = t.map === 'sewer' ? { x: manholes[1].x * TS, y: manholes[1].y * TS } : townPos(t); T0.push({ x: Math.floor(tp.x / TS), y: Math.floor(tp.y / TS), col: '#ff9a6b', label: 'SUSPECT' }); } }
   if (typeof career !== 'undefined' && isWatch() && career.post && !onPost(career.post.kind ? career.post : { kind: 'spot', x: career.post.x, y: career.post.y }) || (typeof career !== 'undefined' && isWatch() && career.post && career.post.kind === 'route')) T0.push({ x: career.post.x, y: career.post.y, col: '#9ab0ff', label: career.post.kind === 'route' ? 'BEAT' : 'POST' });
   if (typeof career !== 'undefined' && isWatch() && career.alert && gameTime < career.alert.until) T0.push({ x: career.alert.x, y: career.alert.y, col: '#ff5a4a', label: 'ALARM' });
@@ -5707,9 +5815,9 @@ function frame(now) {
     else if (hit('a')) { state = 'achievements'; achScroll = 0; }
   } else if (state === 'towns') {
     const sc = titleScene(), p = player; p.map = 'town'; p.x = sc.x; p.y = sc.y; updateCamera(null, 'town', sc.x, sc.y - VH * 0.12);
-    if (hit('arrowup') || hit('w')) townPick = (townPick + 2) % 3; if (hit('arrowdown') || hit('s')) townPick = (townPick + 1) % 3;
-    for (let i = 1; i <= 3; i++) if (hit(String(i))) townPick = i - 1;
-    if (hit('enter') || hit(' ') || hit('e') || ['1', '2', '3'].some(hit)) { startWhere = townPick; state = 'roles'; }
+    const NT = START_TOWNS.length; if (hit('arrowup') || hit('w')) townPick = (townPick + NT - 1) % NT; if (hit('arrowdown') || hit('s')) townPick = (townPick + 1) % NT;
+    for (let i = 1; i <= NT; i++) if (hit(String(i))) townPick = i - 1;
+    if (hit('enter') || hit(' ') || hit('e') || ['1', '2', '3', '4'].some(hit)) { startWhere = townPick; state = 'roles'; }
     else if (hit('escape')) state = 'title';
   } else if (state === 'roles') {
     const sc = titleScene(), p = player; p.map = 'town'; p.x = sc.x; p.y = sc.y; updateCamera(null, 'town', sc.x, sc.y - VH * 0.12);
