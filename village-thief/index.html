@@ -2190,14 +2190,14 @@ function genShip() {
   for (let i = 0; i < W * H; i++) { m.ground[i] = T.OCEAN; m.tiles[i] = T.OCEAN; }
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (hull(x, y)) { m.ground[y * W + x] = T.DECK; set(x, y, [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !hull(x + dx, y + dy)) ? T.RAIL : 0); }
   for (let y = 9; y <= 16; y++) set(13, y, y === 12 ? 0 : T.CABWALL); // the captain's quarters at the stern
-  set(8, 9, T.BED); set(8, 10, T.BED2); set(10, 9, T.CHEST); set(12, 15, T.DRESSER); set(7, 15, T.CHEST); set(10, 13, T.TABLE); set(11, 13, T.CHAIR);
+  set(8, 9, T.SHELF); set(10, 9, T.CHEST); set(12, 15, T.DRESSER); set(7, 15, T.CHEST); set(10, 13, T.TABLE); set(11, 13, T.CHAIR);
   for (let x = 14; x <= 26; x++) set(x, 11, [16, 20, 24].includes(x) ? 0 : T.CABWALL); // three passenger cabins
   for (const x of [14, 18, 22, 26]) for (const y of [9, 10]) set(x, y, T.CABWALL);
-  for (const bx of [15, 19, 23]) { set(bx, 9, T.BED); set(bx, 10, T.BED2); }
+  for (const bx of [15, 19, 23]) { set(bx, 9, T.TABLE); set(bx, 10, T.CHAIR); } // officers' cabins: chart tables, no beds - the bunks are below
   set(21, 9, T.CHEST); set(25, 9, T.POT);
   for (const [x, y, t] of [[20, 16, T.BARREL], [21, 16, T.CRATE], [22, 16, T.CHEST], [24, 16, T.CRATE], [25, 16, T.BARREL], [27, 16, T.CHEST], [28, 16, T.CRATE], [29, 16, T.BARREL], [37, 9, T.BARREL], [38, 10, T.CRATE]]) set(x, y, t);
   set(29, 13, T.MAST); set(35, 13, T.MAST); set(16, 14, T.HELM);
-  m.beds = [{ map: 'ship', x: 15, y: 9 }]; m.masts = [{ x: 29, y: 13 }, { x: 35, y: 13 }];
+  m.beds = []; m.masts = [{ x: 29, y: 13 }, { x: 35, y: 13 }];
   m.entry = { x: 33, y: 15 }; m.approach = { x: 10, y: 93 }; m.torches = [{ x: 13, y: 11 }, { x: 28, y: 8 }, { x: 28, y: 17 }, { x: 40, y: 12 }, { x: 10, y: 11 }];
   m.links.push({ x: 24, y: 14, to: 'shipbelow', ax: 18, ay: 7, walk: true }); set(24, 14, T.STAIRS_DN); m.hatch = { x: 24, y: 14 };
   m.lootSpots = [[10, 9, 'Captain\'s purse', 60], [7, 15, 'Captain\'s strongbox', 140], [12, 15, 'Gold pocket watch', 70], [21, 9, 'A passenger\'s purse', 30], [25, 9, 'Silver hip flask', 25], [22, 16, 'Bolt of silk', 40], [27, 16, 'Crate of spices', 50]];
@@ -2321,8 +2321,8 @@ const shipNPCs = [
 var voyage = null;
 fences.push({ kind: 'fisher', harbour: true, name: 'Harbourmaster Quill', map: 'town', x: town.portDock.x * TS + 8, y: town.portDock.y * TS + 12, dir: 'up', fa: -Math.PI / 2, sheet: makeSheet({ skin: '#f1c27d', hair: '#3a2a1a', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#2a3a5a', pants: '#2a2a30', beard: true }), animT: 0, bubble: null, chatT: 4 });
 DOCKS.port = { x: town.portDock.x, y: town.portDock.y, name: 'the Silverwater quay' };
-const VOYAGE_FARE = 80;
-const CROSSING_FARE = 30, CROSSING_LEN = 150;
+const VOYAGE_FARE = 100;
+const CROSSING_FARE = 50, CROSSING_LEN = 150;
 function startCrossing(f) {
   const p = player, to = f.harbour ? DOCKS.gil : DOCKS.port;
   if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
