@@ -647,7 +647,19 @@ const THIEF_SKINS = [
   { id: 'charmer', name: 'Charmer', pal: { H: '#6a2a7a', Hh: '#9a4aa8', Hd: '#421a4e', C: '#521f5e', Cd: '#36143e', SC: '#f07fa8', SCh: '#ffb0c8' } },
   { id: 'ghost', name: 'Ghost', pal: { H: '#c8ccd4', Hh: '#f4f6fa', Hd: '#9a9ea8', C: '#b0b4bc', Cd: '#8a8e96', SC: '#5a5e66', SCh: '#7a7e86', P: '#7a7e86', TU: '#9a9ea6' } },
   { id: 'outlaw', name: 'Outlaw', pal: { H: '#2a2a2a', Hh: '#444444', Hd: '#151515', C: '#222222', Cd: '#121212', SC: '#c0392b', SCh: '#e04a3a', TU: '#4a2a1a', GO: '#c0392b' } },
+  { id: 'harbour', name: 'Harbour Rat', pal: { H: '#23395a', Hh: '#3a5a86', Hd: '#142238', C: '#1c3050', Cd: '#101e34', SC: '#d8d8d8', SCh: '#ffffff', TU: '#3a4a5a', GO: '#b8c4d0' } },
+  { id: 'pirate', name: 'Corsair', pal: { H: '#7a1a1a', Hh: '#a82a2a', Hd: '#4a0e0e', C: '#1a1a1e', Cd: '#0e0e10', SC: '#f0e6c8', SCh: '#ffffff', TU: '#6a4a2a', GO: '#e8c45a' } },
+  { id: 'forest', name: 'Greenwood', pal: { H: '#2f5a24', Hh: '#4a7f36', Hd: '#1c3814', C: '#4a3a22', Cd: '#2e2414', SC: '#8a6a3a', SCh: '#b08a52', TU: '#3a5a2a' } },
+  { id: 'royal', name: 'Royal Purloiner', pal: { H: '#4a1a6a', Hh: '#6e2e96', Hd: '#2e0e44', C: '#3a145a', Cd: '#240a3a', SC: '#e8c45a', SCh: '#fff0a0', GO: '#ffe070', TU: '#e8c45a' } },
+  { id: 'ember', name: 'Ember', pal: { H: '#8a3a12', Hh: '#c25a1e', Hd: '#5a2208', C: '#6a2a0e', Cd: '#441a06', SC: '#f0a030', SCh: '#ffd060', GO: '#ffb040' } },
+  { id: 'frost', name: 'Frostbite', pal: { H: '#a8c8e0', Hh: '#d8ecff', Hd: '#7a9ab4', C: '#8ab0cc', Cd: '#6a8ca8', SC: '#ffffff', SCh: '#ffffff', TU: '#5a7a96', P: '#4a6a86' } },
+  { id: 'plague', name: 'Plague Doctor', pal: { H: '#1e2a1e', Hh: '#334433', Hd: '#0e160e', C: '#262e22', Cd: '#141a12', SC: '#c8b890', SCh: '#e8dcb8', TU: '#3a3a2a', GO: '#8a8a6a' } },
+  { id: 'jester', name: 'Jester', pal: { H: '#c0302a', Hh: '#e8483e', Hd: '#80201a', C: '#e8b830', Cd: '#b88a1a', SC: '#3050c0', SCh: '#5070e0', GO: '#ffffff', TU: '#c0302a' } },
+  { id: 'sand', name: 'Desert Wind', pal: { H: '#b8945a', Hh: '#d8b47a', Hd: '#8a6a3a', C: '#a4824a', Cd: '#7a5e32', SC: '#6a2a1a', SCh: '#8a3a2a', TU: '#d8c49a' } },
+  { id: 'nightingale', name: 'Nightingale', pal: { H: '#141c34', Hh: '#26325a', Hd: '#0a0e1c', C: '#10162a', Cd: '#080b16', SC: '#7a8ab8', SCh: '#a8b8e8', GO: '#c8d4ff', TU: '#1e2640', P: '#10162a' } },
 ];
+// how many achievements unlock each skin (or its own special achievement does it sooner)
+const SKIN_AT = { crimson: 3, gilded: 6, merchant: 9, shadow: 12, locksmith: 15, moonlit: 18, charmer: 21, ghost: 24, outlaw: 27, golden: 30, harbour: 33, pirate: 36, forest: 39, royal: 42, ember: 46, frost: 50, plague: 55, jester: 60, sand: 66, nightingale: 75 };
 function drawThief(dir, f, bound, pal = {}, crouch = false) {
   const c = mk(16, 22), g = c.getContext('2d'), ox = 2, oy = 6, drop = crouch ? 2 : 0, side = dir === 'left';
   // crouching: hunched lower, and from the side the head and shoulders lean forward into the sneak
@@ -774,14 +786,67 @@ const ACH = [
   ['escape_dog', 'Outfoxed', 'Break free from a hound', {}],
   ['jailed', 'Jailbird', 'Get thrown in jail', { stat: 'jailed', n: 1, skin: 'outlaw' }],
   ['jailed_10', 'Repeat Offender', 'Go to jail 10 times', { stat: 'jailed', n: 10 }],
+  ['pocket_1', 'Quick Hands', 'Pick someone\'s pocket', { stat: 'pickpockets', n: 1 }],
+  ['pocket_25', 'Cutpurse', 'Pick 25 pockets', { stat: 'pickpockets', n: 25 }],
+  ['rides_1', 'Fare Paid', 'Ride a carriage', { stat: 'rides', n: 1 }],
+  ['rides_10', 'Frequent Traveller', 'Ride carriages 10 times', { stat: 'rides', n: 10 }],
+  ['treasure', 'X Marks the Spot', 'Dig up buried treasure', { stat: 'treasure', n: 1 }],
+  ['forage_10', 'Forager', 'Forage 10 times in the Deepwood', { stat: 'forage', n: 10 }],
+  ['disguise', 'Master of Disguise', 'Wear a disguise', { stat: 'disguise', n: 1 }],
+  ['bandits', 'Shaken Down', 'Get robbed by the bandits', { stat: 'robbedByBandits', n: 1 }],
+  ['mauled', 'Wolf Bait', 'Get mauled by wolves', { stat: 'mauled', n: 1 }],
+  ['chats_50', 'Chatterbox', 'Have 50 conversations', { stat: 'chats', n: 50 }],
+  ['friend_25', 'Pillar of the Community', 'Make 25 friends', { stat: 'friends', n: 25 }],
+  ['knock_100', 'Travelling Salesman', 'Knock on 100 doors', { stat: 'knock', n: 100 }],
+  ['pick_100', 'Lock Whisperer', 'Pick 100 locks', { stat: 'picked', n: 100 }],
+  ['steal_500', 'Hoarder', 'Steal 500 items', { stat: 'steal', n: 500 }],
+  ['sell_10000', 'Crime Lord', 'Sell 10,000g of loot', { stat: 'sold', n: 10000 }],
+  ['night_100', 'Creature of the Night', 'Steal 100 items at night', { stat: 'nightSteal', n: 100 }],
+  ['heat_50', 'Untouchable', 'Lose the Watch 50 times', { stat: 'heatLost', n: 50 }],
+  ['break_50', 'Houdini', 'Break free 50 times', { stat: 'breakFree', n: 50 }],
+  ['jailed_25', 'Lifer', 'Go to jail 25 times', { stat: 'jailed', n: 25 }],
+  ['gift_50', 'Philanthropist', 'Give 50 gifts', { stat: 'gifts', n: 50 }],
+  ['compliment_50', 'Flatterer', 'Land 50 compliments', { stat: 'compliments', n: 50 }],
+  ['insult_50', 'Town Menace', 'Insult 50 people', { stat: 'insults', n: 50 }],
+  ['overheard_1', 'All Ears', 'Overhear a secret', { stat: 'overheard', n: 1 }],
+  ['overheard_20', 'Eavesdropper', 'Overhear 20 secrets', { stat: 'overheard', n: 20 }],
+  ['job_1', 'Honest Work', 'Take a job', { stat: 'jobs', n: 1 }],
+  ['wages_100', 'Payday', 'Earn 100g in wages', { stat: 'wages', n: 100 }],
+  ['wages_1000', 'Hard Graft', 'Earn 1,000g in wages', { stat: 'wages', n: 1000 }],
+  ['promo_1', 'Moving Up', 'Get promoted', { stat: 'promotions', n: 1 }],
+  ['promo_3', 'Top Brass', 'Reach the top rank of a job', { stat: 'promotions', n: 3 }],
+  ['watch_join', 'Badge and Helmet', 'Join the Watch', { stat: 'watchJoin', n: 1 }],
+  ['arrest_1', 'Collar', 'Arrest a robber', { stat: 'arrests', n: 1 }],
+  ['arrest_25', 'Thief-Taker', 'Arrest 25 robbers', { stat: 'arrests', n: 25 }],
+  ['cases_5', 'Detective', 'Crack 5 cases from clues', { stat: 'cases', n: 5 }],
+  ['tackle_10', 'Flying Tackle', 'Land 10 tackles', { stat: 'tackles', n: 10 }],
+  ['wagon_1', 'Wagon Guard', 'Deliver a supply wagon', { stat: 'wagons', n: 1 }],
+  ['wagon_10', 'Convoy Veteran', 'Deliver 10 supply wagons', { stat: 'wagons', n: 10 }],
+  ['crates_5', 'Highway Robber', 'Steal 5 crates off supply wagons', { stat: 'wagonCrates', n: 5 }],
+  ['evidence', 'Finders Keepers', 'Take your loot back from the evidence locker', {}],
+  ['jailbreak', 'Jailbreak', 'Free a prisoner from the cells', {}],
+  ['vault', 'Vault Breaker', 'Get into a bank vault', {}],
+  ['voyage_1', 'Sea Legs', 'Sail on the Sea Maiden', { stat: 'voyages', n: 1 }],
+  ['voyage_5', 'Old Salt', 'Sail 5 voyages', { stat: 'voyages', n: 5 }],
+  ['ship_steal', 'Pirate', 'Steal something aboard ship', { stat: 'shipSteal', n: 1 }],
+  ['strongbox', 'Captain\'s Ransom', 'Steal the captain\'s strongbox', {}],
+  ['port_steal', 'River Rat', 'Steal in Silverwater', { stat: 'portSteal', n: 1 }],
+  ['port_steal_25', 'Silverwater Shakedown', 'Steal 25 items in Silverwater', { stat: 'portSteal', n: 25 }],
+  ['city_steal', 'Royal Pilferer', 'Steal 10 items in Kingsbridge', { stat: 'citySteal', n: 10 }],
+  ['grand_tour', 'Grand Tour', 'Visit all four towns', { set: 'towns', n: 4 }],
+  ['pardon', 'Clean Slate', 'Buy a forged pardon', {}],
+  ['ach_50', 'Half Way There', 'Earn 50 achievements', {}],
 ].map(([id, name, desc, o]) => Object.assign({ id, name, desc }, o));
 let toasts = [];
+function unlockLater(id) { setTimeout(() => unlock(id), 0); }
 function unlock(id) {
   if (profile.unlocked.includes(id)) return;
   const a = ACH.find(x => x.id === id); if (!a) return;
   profile.unlocked.push(id); saveProfile();
   toasts.push({ a, t: 4.5 }); SFX.win();
-  if (a.skin) msg(`New skin unlocked: ${THIEF_SKINS.find(k => k.id === a.skin).name}! Pick it in the Wardrobe on the title screen.`, '#f7d774');
+  const fresh = THIEF_SKINS.filter(k => k.id !== 'teal' && (a.skin === k.id || SKIN_AT[k.id] === profile.unlocked.length)); // a skin earned by this one, or by the running total
+  for (const k of fresh) msg(`New skin unlocked: ${k.name}! Open the Wardrobe from the pause menu (P) to wear it.`, '#f7d774');
+  if (profile.unlocked.length >= 50) unlockLater('ach_50'); if (profile.unlocked.length >= 100) unlockLater('ach_100');
 }
 function stat(key, n = 1) {
   profile.stats[key] = (profile.stats[key] || 0) + n; saveProfile();
@@ -792,7 +857,7 @@ function addToSet(key, val) {
   if (!list.includes(val)) { list.push(val); saveProfile(); }
   for (const a of ACH) if (a.set === key && list.length >= a.n) unlock(a.id);
 }
-const skinUnlocked = id => id === 'teal' || ACH.some(a => a.skin === id && profile.unlocked.includes(a.id));
+const skinUnlocked = id => id === 'teal' || ACH.some(a => a.skin === id && profile.unlocked.includes(a.id)) || profile.unlocked.length >= (SKIN_AT[id] || 999);
 function achProgress(a) {
   if (a.stat) return [Math.min(a.n, profile.stats[a.stat] || 0), a.n];
   if (a.set) return [Math.min(a.n, (profile.sets[a.set] || []).length), a.n];
@@ -2037,7 +2102,7 @@ function startVoyage(f) {
   const p = player;
   if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
   if (gold < VOYAGE_FARE) { say(f, `Passage is ${VOYAGE_FARE} gold. Come back when you've got it.`, 2.5); SFX.deny(); return; }
-  gold -= VOYAGE_FARE; SFX.buy(); restockShip(); voyage = { start: gameTime, end: gameTime + DAY_LEN };
+  gold -= VOYAGE_FARE; SFX.buy(); restockShip(); stat('voyages'); voyage = { start: gameTime, end: gameTime + DAY_LEN };
   for (const g of guards) if (g.map === 'ship' && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
   say(f, 'All aboard the Sea Maiden! Back by this time tomorrow.', 2.5);
   transition(() => { const m = maps.ship; p.map = 'ship'; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.state = 'free';
@@ -3188,6 +3253,7 @@ function goodWork(n) {
 }
 function updateCareer(dt) {
   updateShip(dt);
+  if (player.map === 'town' && Math.random() < dt) addToSet('towns', townIdxAt(player.x / TS)); // places you've been
   if (wagon) updateWagon(dt);
   else if (!isWatch() && !isNight() && dayInfo().t > 0.08 && Math.random() < dt / 240) startNpcWagon(); // a wagon every few minutes by day
   if (career.type === 'thief') return;
@@ -3270,7 +3336,7 @@ function tackle(t) {
   if (Math.random() < (t.state === 'flee' ? 0.3 : 0.2) && t.downT <= gameTime) { const sd = Math.random() < 0.5 ? 26 : -26, px = t.x - Math.sin(a) * sd, py = t.y + Math.cos(a) * sd; if (!isSolid(maps[t.map], Math.floor(px / TS), Math.floor((py - 4) / TS))) { t.x = px; t.y = py; } say(t, pick(['Missed me!', 'Whoops!']), 1.2); } // a sidestep
   for (let k = 0; k < 30; k += 2) { const nx = p.x + Math.cos(a) * 2, ny = p.y + Math.sin(a) * 2; if (isSolid(maps[p.map], Math.floor(nx / TS), Math.floor((ny - 4) / TS))) break; p.x = nx; p.y = ny; if (dist(p, t) < 12) break; }
   p.dust = 0.3; SFX.grab();
-  if (dist(p, t) < 20) { t.downT = gameTime + 2.4; t.path = null; say(t, 'OOF!', 1.2); msg(`You tackled ${t.name} to the ground! Cuff them!`, '#9ab0ff'); startCuff(t); }
+  if (dist(p, t) < 20) { stat('tackles'); t.downT = gameTime + 2.4; t.path = null; say(t, 'OOF!', 1.2); msg(`You tackled ${t.name} to the ground! Cuff them!`, '#9ab0ff'); startCuff(t); }
   else { p.stunT = 0.8; say(p, 'Oof!', 1.2); msg('You dive... and miss! Get up!', '#ffb36b'); }
 }
 function cuffRobber(t) {
@@ -3503,8 +3569,8 @@ function startSteal(e) {
 }
 function finishSteal() {
   const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0;
-  if (!h) { p.loot.push(e.item); SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free'; stat('steal'); return; } // on board ship
-  h.visitStolen++;
+  if (!h) { p.loot.push(e.item); SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free'; stat('steal'); stat('shipSteal'); if (/strongbox/.test(e.item.name)) unlock('strongbox'); return; } // on board ship
+  h.visitStolen++; { const ti = townIdxAt(h.x); if (ti === 3) stat('portSteal'); else if (ti === 2) stat('citySteal'); }
   if (heist && h === heistHouse()) { heist.got++; msg(`Heist: ${heist.got}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - now get back to the sewers!' : ''}`, '#f7d774'); }
   contestTally(e.item.value);
   if (e.contract) { e.contract = false; job.got = true; p.loot.push(Object.assign({ job: true }, e.item)); msg(`Got the ${e.item.name}! Take it to ${thieves[job.giver].name} in the sewers.`, '#c9a0ff'); } else p.loot.push(e.item);
@@ -3593,7 +3659,7 @@ function buy(kind, cost) {
     if (kind === 'bones' && (player.bones || 0) >= 5) { say(menu.fence, 'Your pockets already stink of bones.'); SFX.deny(); return; }
     if (gold < cost) { say(menu.fence, 'Come back with more coin.'); SFX.deny(); return; }
     gold -= cost; SFX.buy();
-    if (kind === 'pardon') { if (halfBounty) halfBounty = false; else bounty--; syncForce(); msg('A forged pardon, signed and sealed. Your bounty drops.', '#9df0a0'); }
+    if (kind === 'pardon') { unlock('pardon'); if (halfBounty) halfBounty = false; else bounty--; syncForce(); msg('A forged pardon, signed and sealed. Your bounty drops.', '#9df0a0'); }
     else { player.bones = Math.min(5, (player.bones || 0) + 2); msg('Two meaty bones. Toss one to a dog and it stays quiet.', '#9df0a0'); }
     return;
   }
@@ -4970,12 +5036,12 @@ function render(dt) {
     panel(0, 0, VW, VH, 0.6); const cy = Math.max(10, VH / 2 - 76);
     txt('PAUSED', VW / 2, cy, 12, '#fff', 'center');
     if (pauseView === 'history') { drawHistory(); if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`); return; }
-    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')], ['Message history', 'N', () => { pauseView = 'history'; histScroll = 0; }], ['Main menu', 'Q', toMainMenu]].map(([label, k, fn], i) => {
+    pauseUI = [['Resume', 'P', () => { paused = false; }], ['Save game', 'S', () => openSaves('save', 'play')], ['Load game', 'L', () => openSaves('load', 'play')], ['Message history', 'N', () => { pauseView = 'history'; histScroll = 0; }], ['Wardrobe', 'W', openWardrobe], ['Main menu', 'Q', toMainMenu]].map(([label, k, fn], i) => {
       const it = { x: VW / 2 - 60, y: cy + 18 + i * 15, w: 120, h: 12, fn }; F(ctx, it.x, it.y, it.w, it.h, 'rgba(255,255,255,0.1)');
       txt((touchMode ? '' : `[${k}] `) + label, VW / 2, it.y + 3, 5, i === 1 && !canSave() ? '#888' : '#fff', 'center', null); return it;
     });
-    if (!canSave()) txt('(save outdoors or at home, when not wanted)', VW / 2, cy + 94, 4, '#999', 'center', null);
-    drawHelp(VW / 2 - 110, cy + 104);
+    if (!canSave()) txt('(save outdoors or at home, when not wanted)', VW / 2, cy + 109, 4, '#999', 'center', null);
+    drawHelp(VW / 2 - 110, cy + 119);
   }
   if (fade.a > 0) F(ctx, 0, 0, VW, VH, `rgba(0,0,0,${fade.a})`);
 }
@@ -5006,10 +5072,12 @@ function drawLighting(dark, cx, cy, m) {
   ctx.globalCompositeOperation = 'source-over';
 }
 let lockUI = null, pauseUI = [], titleUI = [], wardrobe = null, wardUI = [], achScroll = 0, achUI = [];
+function openWardrobe() { wardrobe = { i: Math.max(0, THIEF_SKINS.findIndex(k => k.id === profile.skin)), from: state === 'play' ? 'play' : 'title' }; pauseView = null; state = 'wardrobe'; }
+function closeWardrobe() { state = wardrobe && wardrobe.from === 'play' ? 'play' : 'title'; if (state === 'play') paused = true; }
 function wardrobePick() {
   const sk = THIEF_SKINS[wardrobe.i];
   if (!skinUnlocked(sk.id)) { SFX.deny(); return; }
-  applySkin(sk.id); SFX.buy(); state = 'title';
+  applySkin(sk.id); SFX.buy(); msg(`You're now wearing ${sk.name}.`, '#9df0a0'); closeWardrobe();
 }
 function drawWardrobe() {
   panel(0, 0, VW, VH, 0.82);
@@ -5019,8 +5087,8 @@ function drawWardrobe() {
   const sc = 5, img = thiefSheet(false, sk.pal).down[0], px = Math.round(cxm - 8 * sc), py = top + 26;
   ctx.save(); if (!open) ctx.filter = 'brightness(0)'; ctx.globalAlpha = open ? 1 : 0.55; ctx.drawImage(img, px, py, 16 * sc, 22 * sc); ctx.restore();
   txt(open ? sk.name : '???', cxm, py + 22 * sc + 4, 7, open ? '#ffffff' : '#888', 'center');
-  const how = ACH.find(a => a.skin === sk.id);
-  const note = open ? (profile.skin === sk.id ? 'Wearing' : (touchMode ? 'Tap to wear' : 'Enter - wear')) : `Locked: ${how.name} - ${how.desc}`;
+  const how = ACH.find(a => a.skin === sk.id), need = SKIN_AT[sk.id], have = profile.unlocked.length;
+  const note = open ? (profile.skin === sk.id ? 'Wearing' : (touchMode ? 'Tap to wear' : 'Enter - wear')) : `Locked: earn ${need} achievements (you have ${have})${how ? ` - or get ${how.name}: ${how.desc}` : ''}`;
   wrap(note, Math.floor((VW - 20) / 5)).forEach((l, i) => txt(l, cxm, py + 22 * sc + 16 + i * 8, 5, open ? '#9df0a0' : '#ffb36b', 'center', null));
   const ay = py + 11 * sc;
   txt('<', cxm - 70, ay, 12, '#f7d774', 'center'); txt('>', cxm + 70, ay, 12, '#f7d774', 'center');
@@ -5028,7 +5096,7 @@ function drawWardrobe() {
     { x: cxm - 90, y: ay - 14, w: 40, h: 40, fn: () => { wardrobe.i = (wardrobe.i + THIEF_SKINS.length - 1) % THIEF_SKINS.length; } },
     { x: cxm + 50, y: ay - 14, w: 40, h: 40, fn: () => { wardrobe.i = (wardrobe.i + 1) % THIEF_SKINS.length; } },
     { x: px, y: py, w: 16 * sc, h: 22 * sc + 28, fn: wardrobePick },
-    { x: cxm - 40, y: VH - 18, w: 80, h: 14, fn: () => { state = 'title'; } },
+    { x: cxm - 40, y: VH - 18, w: 80, h: 14, fn: closeWardrobe },
   ];
   txt(touchMode ? 'Back' : '< > browse   Esc - back', cxm, VH - 14, 5, '#aaa', 'center', null);
 }
@@ -5653,7 +5721,7 @@ function frame(now) {
     if (hit('arrowleft') || hit('a')) wardrobe.i = (wardrobe.i + THIEF_SKINS.length - 1) % THIEF_SKINS.length;
     if (hit('arrowright') || hit('d')) wardrobe.i = (wardrobe.i + 1) % THIEF_SKINS.length;
     if (hit('enter') || hit('e') || hit(' ')) wardrobePick();
-    if (hit('escape')) state = 'title';
+    if (hit('escape')) closeWardrobe();
   } else if (state === 'achievements') {
     if (hit('arrowdown') || hit('s')) achScroll += 3; if (hit('arrowup') || hit('w')) achScroll -= 3;
     if (hit('escape')) state = 'title';
@@ -5679,6 +5747,7 @@ function frame(now) {
     else if (paused && hit('s')) openSaves('save', 'play');
     else if (paused && hit('l')) openSaves('load', 'play');
     else if (paused && hit('q')) toMainMenu();
+    else if (paused && hit('w')) openWardrobe();
     if (!paused && online.chat) { for (let i = 1; i <= QUICK.length; i++) if (hit(String(i))) { sendQuick(i - 1); break; } if (hit('y') || hit('escape')) { online.chat = false; pressed.delete('escape'); } }
     else if (!paused && hit('y') && multi() && online.room && online.canChat) online.chat = true;
     if (!paused && state === 'play') syncWorldClock(false);
@@ -5698,7 +5767,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, get paused() { return paused; }, ACH, openWardrobe, get wardrobe() { return wardrobe; }, skinUnlocked, SKIN_AT, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
