@@ -142,13 +142,13 @@ const SFX = {
 // =====================================================================
 const T = {
   GRASS: 0, FLOWER: 1, PATH: 2, COBBLE: 3, TREE: 4, ROOF: 5, WALL: 6, WINDOW: 7, DOOR: 8, STONE: 9, JROOF: 10, JDOOR: 11,
-  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59, FENCEV: 60, DOGHOUSE: 61, SACK: 62, PLANTER: 63, SIGNPOST: 64, COACH: 65, HORSE: 66, ROCK: 67, CAVEFLOOR: 68, CAVEMOUTH: 69, CAMPFIRE: 70, STUMP: 71, LOGPILE: 72, SHROOM: 73, WARDROBE: 74,
+  FENCE: 12, BUSH: 13, BARREL: 14, CRATE: 15, LAMP: 16, WELL: 17, STALL: 18, HAY: 19, FIELD: 20, JWIN: 21, GATE: 22, WATER: 23, SEWER: 24, LADDER: 25, MANHOLE: 26, TORCH: 27, RIVER: 28, BRIDGE: 29, BOAT: 55, PLATE: 56, VDOOR: 57, LEVER: 58, VAULT: 59, FENCEV: 60, DOGHOUSE: 61, SACK: 62, PLANTER: 63, SIGNPOST: 64, COACH: 65, HORSE: 66, ROCK: 67, CAVEFLOOR: 68, CAVEMOUTH: 69, CAMPFIRE: 70, STUMP: 71, LOGPILE: 72, SHROOM: 73, WARDROBE: 74, OCEAN: 80, DECK: 81, RAIL: 82, MAST: 83, CABWALL: 84, HELM: 85,
   FLOOR: 30, IWALL: 31, IEDGE: 32, EXIT: 34, BED: 35, TABLE: 36, CHAIR: 37, CHEST: 38, SHELF: 39, DRESSER: 40, POT: 41,
   IBARREL: 42, FIRE: 43, PLANT: 44, SFLOOR: 45, SWALL: 46, BARS: 47, CELLDOOR: 48, DESK: 49, BENCH: 50, BED2: 51, SEDGE: 52, STAIRS_UP: 53, STAIRS_DN: 54,
 };
 const SOLID = new Set([T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.FENCE, T.BUSH, T.BARREL, T.CRATE,
   T.LAMP, T.WELL, T.STALL, T.HAY, T.IWALL, T.IEDGE, T.BED, T.BED2, T.TABLE, T.CHAIR, T.CHEST, T.SHELF, T.DRESSER, T.POT, T.IBARREL,
-  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT, T.FENCEV, T.DOGHOUSE, T.SACK, T.PLANTER, T.SIGNPOST, T.COACH, T.HORSE, T.ROCK, T.CAVEMOUTH, T.CAMPFIRE, T.STUMP, T.LOGPILE, T.WARDROBE]);
+  T.FIRE, T.PLANT, T.SWALL, T.SEDGE, T.BARS, T.DESK, T.BENCH, T.WATER, T.TORCH, T.RIVER, T.BOAT, T.LEVER, T.VAULT, T.FENCEV, T.DOGHOUSE, T.SACK, T.PLANTER, T.SIGNPOST, T.COACH, T.HORSE, T.ROCK, T.CAVEMOUTH, T.CAMPFIRE, T.STUMP, T.LOGPILE, T.WARDROBE, T.OCEAN, T.RAIL, T.MAST, T.CABWALL, T.HELM]);
 const OPAQUE = new Set([T.ROCK, T.VDOOR, T.TREE, T.ROOF, T.WALL, T.WINDOW, T.DOOR, T.STONE, T.JROOF, T.JDOOR, T.JWIN, T.BUSH, T.STALL, T.HAY,
   T.IWALL, T.IEDGE, T.FIRE, T.SWALL, T.SEDGE, T.SHELF, T.TORCH]);
 const LOOT = new Set([T.CHEST, T.SHELF, T.DRESSER, T.POT]);
@@ -259,11 +259,35 @@ GP[T.PLATE] = (g, ox, oy, tx, ty, m) => { GP[T.FLOOR](g, ox, oy, tx, ty, m); F(g
 
 // ---------- object painters ----------
 const OP = {};
-OP[T.TREE] = (g, ox, oy) => {
-  F(g, ox + 3, oy + 14, 10, 2, 'rgba(0,0,0,0.25)'); F(g, ox + 6, oy + 10, 4, 6, '#6b4423'); F(g, ox + 6, oy + 10, 1, 6, '#5a381c');
-  blob(g, ox + 8, oy + 7, 7, '#2f6b2f'); blob(g, ox + 7, oy + 6, 5, '#3f8a3a'); blob(g, ox + 6, oy + 4, 2, '#5aa64c');
-  F(g, ox + 10, oy + 8, 1, 1, '#5aa64c'); F(g, ox + 4, oy + 9, 1, 1, '#2a5a29');
-};
+const TREE_PALS = [['#24502a', '#336b33', '#468a3e', '#6cb45a'], ['#1f4628', '#2c5e34', '#3d7a42', '#5e9e55'], ['#3a5a22', '#4f7a2c', '#6a9a38', '#93c25a']];
+function tri(g, cx, top, h, hw, col) { for (let y = 0; y < h; y++) { const w = Math.round(hw * (y + 1) / h); F(g, cx - w, top + y, w * 2 + 1, 1, col); } }
+function drawTree(g, ox, oy, tx, ty) {
+  const pine = hash(tx, ty, 41) < 0.28, P = TREE_PALS[Math.floor(hash(tx, ty, 42) * TREE_PALS.length)], cx = ox + 8;
+  g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(cx + 1, oy + 14, 7, 2.5, 0, 0, 7); g.fill(); // shadow
+  if (pine) {
+    F(g, cx - 1, oy + 10, 3, 6, '#5a381c'); F(g, cx - 1, oy + 10, 1, 6, '#3e2612');
+    tri(g, cx, oy + 1, 10, 7, P[0]); tri(g, cx, oy - 3, 9, 5.5, P[1]); tri(g, cx, oy - 7, 8, 4, P[2]);
+    for (let k = 0; k < 3; k++) { F(g, cx - 2 - k, oy - 3 + k * 4, 2, 1, P[3]); F(g, cx + 3 + k, oy + k * 4, 1, 1, P[0]); } // light catches the left side of each tier
+    F(g, cx, oy - 8, 1, 2, P[3]);
+    return;
+  }
+  const big = hash(tx, ty, 43) < 0.5 ? 1 : 0;
+  F(g, cx - 2, oy + 7, 4, 9, '#6b4423'); F(g, cx - 2, oy + 7, 1, 9, '#4e2f17'); F(g, cx + 1, oy + 8, 1, 5, '#8a5a32'); F(g, cx - 3, oy + 14, 6, 2, '#5a381c'); // trunk and roots
+  blob(g, cx, oy + 1, 7 + big, P[0]); // the shaded body of the canopy
+  blob(g, cx - 3, oy, 4 + big, P[1]); blob(g, cx + 3, oy - 1, 4 + big, P[1]); blob(g, cx, oy - 3, 4 + big, P[1]);
+  blob(g, cx - 2, oy - 3, 3, P[2]); blob(g, cx + 2, oy - 4, 2, P[2]); blob(g, cx - 4, oy + 1, 2, P[2]);
+  F(g, cx - 3, oy - 5, 2, 1, P[3]); F(g, cx - 1, oy - 6 - big, 2, 1, P[3]); F(g, cx - 5, oy - 1, 1, 2, P[3]); // sunlit tops
+  for (let k = 0; k < 6; k++) { const px = cx - 6 + Math.floor(hash(tx * 7 + k, ty, 44) * 12), py = oy - 4 + Math.floor(hash(tx, ty * 7 + k, 45) * 11); F(g, px, py, 1, 1, k % 2 ? P[0] : P[2]); } // leafy texture
+  F(g, cx - 5, oy + 6, 10, 1, P[0]);
+}
+OP[T.TREE] = (g, ox, oy, tx, ty) => drawTree(g, ox, oy, tx, ty);
+GP[T.OCEAN] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#1d5585');
+OP[T.OCEAN] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#1d5585');
+GP[T.DECK] = (g, ox, oy, tx, ty) => { F(g, ox, oy, 16, 16, '#a2703e'); for (let y = 0; y < 16; y += 4) { F(g, ox, oy + y + 3, 16, 1, '#7a5028'); F(g, ox + ((y / 4 + tx) % 3) * 5 + 1, oy + y, 1, 3, '#8a5c30'); } speck(g, ox, oy, 4, ['#b07c48', '#946232'], 51, tx, ty); };
+OP[T.RAIL] = (g, ox, oy, tx, ty) => { F(g, ox, oy, 16, 16, '#5a3618'); F(g, ox + 1, oy + 1, 14, 14, '#6e4422'); F(g, ox + 1, oy + 1, 14, 2, '#9a6a38'); F(g, ox + 1, oy + 13, 14, 2, '#4a2c12'); for (let x = 2; x < 16; x += 5) F(g, ox + x, oy + 4, 2, 8, '#4a2c12'); };
+OP[T.CABWALL] = (g, ox, oy) => { F(g, ox, oy, 16, 16, '#5e3c22'); for (let x = 0; x < 16; x += 4) F(g, ox + x, oy, 1, 16, '#4a2e18'); F(g, ox, oy, 16, 2, '#8a5c34'); F(g, ox, oy + 14, 16, 2, '#3a2412'); };
+OP[T.MAST] = (g, ox, oy, tx, ty, m) => { GP[T.DECK](g, ox, oy, tx, ty, m); g.fillStyle = '#3a2412'; g.beginPath(); g.arc(ox + 8, oy + 8, 6, 0, 7); g.fill(); g.fillStyle = '#7a4e28'; g.beginPath(); g.arc(ox + 8, oy + 8, 4, 0, 7); g.fill(); F(g, ox + 6, oy + 6, 2, 2, '#9a6a38'); };
+OP[T.HELM] = (g, ox, oy, tx, ty, m) => { GP[T.DECK](g, ox, oy, tx, ty, m); F(g, ox + 7, oy + 9, 2, 6, '#4a2c12'); g.strokeStyle = '#5a3618'; g.lineWidth = 2; g.beginPath(); g.arc(ox + 8, oy + 7, 5, 0, 7); g.stroke(); for (let k = 0; k < 4; k++) { const a = k * Math.PI / 4; F(g, Math.round(ox + 8 + Math.cos(a) * 6) - 1, Math.round(oy + 7 + Math.sin(a) * 6) - 1, 2, 2, '#8a5c34'); } F(g, ox + 7, oy + 6, 2, 2, '#c9a04a'); };
 function houseOf(m, tx, ty) { return houses[m.owner[ty * m.w + tx]]; }
 const THATCH = ['#c9a24a', '#a8822f', '#e0bd68'];
 OP[T.ROOF] = (g, ox, oy, tx, ty, m) => {
@@ -1898,6 +1922,41 @@ function randFloor(m) {
 }
 
 genTown();
+// Street trees: shade along the lanes of the three towns, never blocking a door, a road or a gap between buildings.
+(function plantStreetTrees() {
+  const m = town, W = m.w, road = (x, y) => ROADLIKE.has(m.ground[y * W + x]), keep = new Set();
+  for (const h of houses) for (const p of [h.door, h.approach]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) keep.add((p.x + dx) + ',' + (p.y + dy));
+  for (const L of m.links) keep.add(L.x + ',' + L.y);
+  for (let y = 4; y < m.h - 4; y++) for (let x = 4; x < W - 4; x++) {
+    if (x >= WOODS.x0 - 2 && x <= WOODS.x1 + 2) continue;
+    const gr = m.ground[y * W + x]; if ((gr !== T.GRASS && gr !== T.FLOWER) || m.tiles[y * W + x] !== 0 || m.owner[y * W + x] >= 0 || keep.has(x + ',' + y)) continue;
+    let ok = true, nearRoad = false;
+    for (let dy = -1; dy <= 1 && ok; dy++) for (let dx = -1; dx <= 1; dx++) if (m.tiles[(y + dy) * W + x + dx] !== 0 || road(x + dx, y + dy) || m.owner[(y + dy) * W + x + dx] >= 0) { ok = false; break; }
+    for (let dy = -2; dy <= 2 && !nearRoad; dy++) for (let dx = -2; dx <= 2; dx++) if (road(x + dx, y + dy)) { nearRoad = true; break; }
+    if (ok && nearRoad && hash(x, y, 777) < 0.09) m.tiles[y * W + x] = T.TREE;
+  }
+})();
+// THE SEA MAIDEN: a merchant ship that sails a one-day voyage from Old Gil's dock. Walk her decks while the sea goes by.
+function genShip() {
+  const W = 48, H = 26, m = newMap('ship', W, H, 'ship'), set = (x, y, t) => { m.tiles[y * W + x] = t; }; m.blanket = '#3a5a8a';
+  const hull = (x, y) => { if (x < 6 || x > 43) return false; if (x <= 38) return y >= 8 && y <= 17; const k = x - 38; return y >= 8 + k && y <= 17 - k; };
+  for (let i = 0; i < W * H; i++) { m.ground[i] = T.OCEAN; m.tiles[i] = T.OCEAN; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (hull(x, y)) { m.ground[y * W + x] = T.DECK; set(x, y, [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !hull(x + dx, y + dy)) ? T.RAIL : 0); }
+  for (let y = 9; y <= 16; y++) set(13, y, y === 12 ? 0 : T.CABWALL); // the captain's quarters at the stern
+  set(8, 9, T.BED); set(8, 10, T.BED2); set(10, 9, T.CHEST); set(12, 15, T.DRESSER); set(7, 15, T.CHEST); set(10, 13, T.TABLE); set(11, 13, T.CHAIR);
+  for (let x = 14; x <= 26; x++) set(x, 11, [16, 20, 24].includes(x) ? 0 : T.CABWALL); // three passenger cabins
+  for (const x of [14, 18, 22, 26]) for (const y of [9, 10]) set(x, y, T.CABWALL);
+  for (const bx of [15, 19, 23]) { set(bx, 9, T.BED); set(bx, 10, T.BED2); }
+  set(21, 9, T.CHEST); set(25, 9, T.POT);
+  for (const [x, y, t] of [[20, 16, T.BARREL], [21, 16, T.CRATE], [22, 16, T.CHEST], [24, 16, T.CRATE], [25, 16, T.BARREL], [27, 16, T.CHEST], [28, 16, T.CRATE], [29, 16, T.BARREL], [37, 9, T.BARREL], [38, 10, T.CRATE]]) set(x, y, t);
+  set(29, 13, T.MAST); set(35, 13, T.MAST); set(16, 14, T.HELM);
+  m.beds = [{ map: 'ship', x: 15, y: 9 }]; m.myBed = { x: 15, y: 9 }; m.masts = [{ x: 29, y: 13 }, { x: 35, y: 13 }];
+  m.entry = { x: 33, y: 15 }; m.approach = { x: 10, y: 93 }; m.torches = [{ x: 13, y: 11 }, { x: 28, y: 8 }, { x: 28, y: 17 }, { x: 40, y: 12 }, { x: 10, y: 11 }];
+  m.lootSpots = [[10, 9, 'Captain\'s purse', 60], [7, 15, 'Captain\'s strongbox', 140], [12, 15, 'Gold pocket watch', 70], [21, 9, 'A passenger\'s purse', 30], [25, 9, 'Silver hip flask', 25], [22, 16, 'Bolt of silk', 40], [27, 16, 'Crate of spices', 50]];
+  restockShip();
+}
+function restockShip() { const m = maps.ship; m.loot.clear(); for (const [x, y, name, value] of m.lootSpots) m.loot.set(y * m.w + x, { x, y, item: { name, value }, taken: false, t: 0 }); }
+genShip();
 const roadTiles = [];
 let bigTownRoads = null, mudTownRoads = null;
 let woodRoads = null;
@@ -1967,6 +2026,47 @@ const INMATE_SHEETS = PRISONER_LOOKS.map(([skin, hair, hairStyle, beard]) => mak
 const INMATES = [['Dobbs', 0, 'top', ['Got any bread?', 'I was framed, I tell ya!', 'Psst... nice sack.']], ['Lark', 1, 'top', ['Fourth time this week.', 'The food is awful.', 'Zzz...']],
   ['Old Nettle', 5, 'top', ['Forty years I\'ve been in here.', 'Back in my day we stole horses.']], ['Fingers McGee', 1, 'bottom', ['They never found the emeralds...', 'Tap tap tap. Hear that? Nothing.']],
   ['Bess the Knife', 2, 'bottom', ['Don\'t look at me.', 'What are YOU in for?']], ['Crumb', 4, 'bottom', ['I only took ONE pie.', 'Is it dinner yet?']], ['Mad Wat', 6, 'bottom', ['The rats talk to me.', 'Heh heh heh.']]];
+const shipNPCs = [
+  { kind: 'decor', ship: true, captain: true, name: 'Captain Brine', map: 'ship', x: 17 * TS + 8, y: 14 * TS + 12, dir: 'right', fa: 0, sheet: makeSheet({ skin: '#e0ac69', hair: '#d9d9d9', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#1e2a4a', pants: '#2a2a30', beard: true, belt: '#c9a24a' }), animT: 0, bubble: null, path: null, repath: 0, stuckT: 0, lines: ['Steady as she goes.', 'Mind the rigging, landlubber.', 'Twenty years I\'ve sailed these waters.', 'Keep your hands off my cabin.'] },
+  { kind: 'decor', ship: true, name: 'Bosun Tarr', map: 'ship', x: 24 * TS + 8, y: 13 * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: '#c68642', hair: '#2b1d14', hairStyle: 'short', hat: 'cap', hatC: '#7a2a2a', shirt: '#d8d0c0', pants: '#3a3a4a' }), animT: 0, bubble: null, lines: ['Haul away!', 'Don\'t stand on the ropes.', 'Fair wind today.', 'You get used to the rocking.'] },
+  { kind: 'decor', ship: true, name: 'Deckhand Pip', map: 'ship', x: 34 * TS + 8, y: 10 * TS + 12, dir: 'left', fa: Math.PI, sheet: makeSheet({ skin: '#f1c27d', hair: '#a83232', hairStyle: 'short', shirt: '#4a6a8a', pants: '#3a3020' }), animT: 0, bubble: null, lines: ['*scrub scrub*', 'Seen a whale once!', 'Captain\'s a fair man. Mostly.', 'First voyage? You look green.'] },
+];
+var voyage = null;
+const VOYAGE_FARE = 80;
+function startVoyage(f) {
+  const p = player;
+  if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
+  if (gold < VOYAGE_FARE) { say(f, `Passage is ${VOYAGE_FARE} gold. Come back when you've got it.`, 2.5); SFX.deny(); return; }
+  gold -= VOYAGE_FARE; SFX.buy(); restockShip(); voyage = { start: gameTime, end: gameTime + DAY_LEN };
+  for (const g of guards) if (g.map === 'ship' && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
+  say(f, 'All aboard the Sea Maiden! Back by this time tomorrow.', 2.5);
+  transition(() => { const m = maps.ship; p.map = 'ship'; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.state = 'free';
+    msg(`You board the Sea Maiden for a one-day voyage. Your cabin is the first door on the left (sleep there to skip to port). The captain keeps his valuables in his quarters at the stern... and there are marines aboard. They don't mind you walking about - only stealing.`, '#9ad0ff'); });
+}
+function endVoyage(slept) {
+  voyage = null;
+  transition(() => { const p = player; p.map = 'town'; p.x = 10 * TS + 8; p.y = 93 * TS + 12; p.dir = 'down'; p.state = 'free'; msg(slept ? 'You wake to gulls and shouting: the Sea Maiden is back at Old Gil\'s dock.' : 'The Sea Maiden ties up at Old Gil\'s dock. Voyage over.', '#9ad0ff'); });
+}
+function shipAlarm(by) {
+  if (wanted) return;
+  say(by, pick(['THIEF! Grab them!', 'Stop! Thief on deck!', 'Hands off that!']), 2.4); setWanted('Caught stealing aboard the Sea Maiden!');
+  for (const g of guards) if (g.map === 'ship' && g.unit !== 'dog') startChase(g);
+}
+function updateShip(dt) {
+  if (voyage && player.map !== 'ship' && !fade.dir) voyage = null; // jailed, or otherwise off the ship
+  if (!voyage) return;
+  if (gameTime >= voyage.end && player.map === 'ship' && !fade.dir) { endVoyage(voyage.slept); return; }
+  const cap = shipNPCs[0], p = player;
+  cap.moving = false; cap.walkT = (cap.walkT || 0) - dt;
+  if (cap.walkT <= 0) { cap.walkT = rnd(40, 80); cap.goal = cap.goal && cap.goal.x === 10 ? { x: 17, y: 14 } : { x: 10, y: 11 }; cap.path = null; } // between the helm and his quarters
+  if (cap.goal && Math.hypot(cap.x - (cap.goal.x * TS + 8), cap.y - (cap.goal.y * TS + 12)) > 6) { navTo(cap, 'ship', cap.goal.x, cap.goal.y, 22, dt); cap.animT += dt; }
+  if (p.map === 'ship' && p.state === 'stealing') {
+    for (const n of shipNPCs) if (canSee(n, p, 110, 0.5)) { shipAlarm(n); break; }
+    for (const g of guards) if (g.map === 'ship' && guardSees(g)) { shipAlarm(g); break; }
+  }
+  for (const n of shipNPCs) if (n.bubble) { n.bubble.t -= dt; if (n.bubble.t <= 0) n.bubble = null; }
+  if (p.map === 'ship' && Math.random() < dt * 0.05) { const n = pick(shipNPCs); if (dist(n, p) < 120) say(n, pick(n.lines), 2.5); }
+}
 const jailNPCs = [
   { kind: 'decor', name: 'Jailer Grubb', map: 'jail', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
   { kind: 'decor', name: 'Captain Harlow', map: 'jail', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(2), animT: 0, bubble: null, lines: ['Wagons don\'t guard themselves.', 'Keep your boots polished.', 'The roads are crawling with thieves.'] },
@@ -1981,7 +2081,7 @@ let nightNotified = -1, bounty = 0, lastSeenPos = { x: 0, y: 0 }, forceT = 0, cu
 let player, gold, totalEarned, wanted, lastSeenT, gameTime, escapes, arrests, up, msgs, clouds, trail, won, state, menu, paused, whistleCD, wonT, escort, alertPing;
 
 function newGame() {
-  career = { type: 'thief' }; clearHomes(); wagon = null;
+  career = { type: 'thief' }; clearHomes(); wagon = null; voyage = null;
   player = { disguiseDay: -1, keys: 0, bones: 0, cakes: 0, rings: 0, room: null, sneak: false, fedT: 0, tonicT: 0, pepperDay: -1, kind: 'player', map: 'town', x: 50 * TS + 8, y: 33 * TS + 12, fa: Math.PI / 2, dir: 'down', sheet: PLAYER_SHEET, animT: 0, state: 'free', stamina: 100, tired: false,
     loot: [], smoke: 1, picks: 5, lock: null, invuln: 0, boostT: 0, prompt: null, inter: null, bubble: null, stealT: 0, struggle: 0, grabT: 0, jailT: 0, shake: 0 };
   gold = 0; totalEarned = 0; wanted = false; lastSeenT = 0; gameTime = 0; escapes = 0; arrests = 0; won = false; wonT = 0;
@@ -2305,6 +2405,8 @@ function setupPosts() {
       ['dog', 'Brutus', DOG_SHEET, [[464, 50], [512, 50], [512, 14], [464, 14]]]] });
   extraPosts.push({ name: 'Mudford', map: 'town', inArea: inMudford, welcome: () => true,
     staff: [['guard', 'Constable Hobbes', CONSTABLE_SHEETS[0], [[300, 104], [376, 104]]], ['guard', 'Constable Penny', CONSTABLE_SHEETS[1], [[316, 95], [316, 120]]], ['guard', 'Constable Dunn', CONSTABLE_SHEETS[2], [[346, 120], [346, 113], [376, 113], [298, 113]]]] });
+  extraPosts.push({ name: 'the Sea Maiden', map: 'ship', welcome: () => true,
+    staff: [['guard', 'Marine Dorran', CITYWATCH_SHEETS[0], [[14, 12], [37, 12]]], ['guard', 'Marine Hale', CITYWATCH_SHEETS[1], [[30, 15], [38, 15], [38, 10], [30, 10]]]] });
   extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
     staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
 }
@@ -3085,6 +3187,7 @@ function goodWork(n) {
   msg(`PROMOTED! You're now ${rankTitle()}${isWatch() ? ` of the Watch of ${TOWN_NAMES[c.town]}` : ''}. Raise: ${isWatch() ? payFor(WATCH_PAY[c.town]) + 'g a shift' : payFor(c.job.wage) + 'g a day'}. Your strikes are wiped clean.`, '#f7d774');
 }
 function updateCareer(dt) {
+  updateShip(dt);
   if (wagon) updateWagon(dt);
   else if (!isWatch() && !isNight() && dayInfo().t > 0.08 && Math.random() < dt / 240) startNpcWagon(); // a wagon every few minutes by day
   if (career.type === 'thief') return;
@@ -3311,8 +3414,12 @@ function chatOptions() {
     add('Small talk', () => { chat.reply = pick(TALK.vendor); });
     add('Buy an apple (2g) - restores stamina', () => { if (!pay(2)) return; player.stamina = 100; player.tired = false; chat.reply = 'Crisp and sweet! Enjoy.'; }, 2);
   } else if (t.kind === 'fisher') {
+    add(`Book passage on the Sea Maiden (${VOYAGE_FARE}g): a one-day voyage`, () => { chatClose(); startVoyage(t); });
     add('Buy a smoked fish (3g)', () => { chatClose(); buyFish(t); }, 3);
     add('Any tips?', () => { chat.reply = pick(['The Watch walks the quay at night. Mind yourself.', 'Carriage east goes to Mudford, and on to Kingsbridge.', 'Silas the smuggler comes out after dark.']); });
+  } else if (t.ship) {
+    if (t.captain) add('When do we make port?', () => { const left = voyage ? Math.max(0, voyage.end - gameTime) : 0; chat.reply = left > DAY_LEN * 0.5 ? 'We\'ve barely left! Tomorrow, same time.' : left > DAY_LEN * 0.15 ? 'Back by morning, if the wind holds.' : 'Not long now. You can smell the harbour.'; });
+    add('Small talk', () => { chat.reply = pick(t.lines); });
   } else if (t.name === 'Captain Harlow') {
     if (!isWatch()) add('Any work?', () => { chat.reply = 'Only for the Watch, citizen. Ask any guard on the street about joining up.'; });
     else if (wagon && !wagon.npc) add('About my escort...', () => { chat.reply = wagon.partner ? `Get that wagon to ${TOWN_NAMES[wagon.to]}. ${wagon.partner.label} is with you.` : 'Still waiting on a partner. Give it a moment.'; });
@@ -3386,6 +3493,7 @@ function nearbyChars() {
   out.push(...fences.filter(f => f.map === player.map), ...thieves.filter(t => t.map === player.map));
   if (player.map === 'town' && isMarketDay()) out.push(...vendors);
   if (player.map === 'jail') out.push(...jailNPCs);
+  if (player.map === 'ship') out.push(...shipNPCs);
   return out;
 }
 function startSteal(e) {
@@ -3394,7 +3502,9 @@ function startSteal(e) {
   player.state = 'stealing'; player.stealT = 0; player.stealTarget = e;
 }
 function finishSteal() {
-  const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0; h.visitStolen++;
+  const p = player, e = p.stealTarget, h = maps[p.map].house; e.taken = true; e.t = 0;
+  if (!h) { p.loot.push(e.item); SFX.steal(); msg(`Pinched: ${e.item.name} (${e.item.value}g)`, '#f7d774'); p.state = 'free'; stat('steal'); return; } // on board ship
+  h.visitStolen++;
   if (heist && h === heistHouse()) { heist.got++; msg(`Heist: ${heist.got}/${HEIST_NEED}${heist.got >= HEIST_NEED ? ' - now get back to the sewers!' : ''}`, '#f7d774'); }
   contestTally(e.item.value);
   if (e.contract) { e.contract = false; job.got = true; p.loot.push(Object.assign({ job: true }, e.item)); msg(`Got the ${e.item.name}! Take it to ${thieves[job.giver].name} in the sewers.`, '#c9a0ff'); } else p.loot.push(e.item);
@@ -3840,7 +3950,7 @@ function findInteraction() {
       return;
     }
     if (doorNear(town.jail.door)) { p.inter = { label: 'Enter the Watch House', act: enterWatchHouse }; return; }
-    for (const f of fences) if (f.map === 'town' && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => f.kind === 'steward' ? openSteward(f) : f.kind === 'fisher' ? buyFish(f) : f.kind === 'smuggler' ? openShop({ shop: 'smuggler', shopName: 'the Smuggler\'s Wares', lead: f, residents: [] }) : openFence(f) }; return; }
+    for (const f of fences) if (f.map === 'town' && dist(p, f) < 22) { p.inter = { label: 'Talk to ' + f.name, act: () => f.kind === 'steward' ? openSteward(f) : f.kind === 'fisher' ? chatOpen(f) : f.kind === 'smuggler' ? openShop({ shop: 'smuggler', shopName: 'the Smuggler\'s Wares', lead: f, residents: [] }) : openFence(f) }; return; }
     for (const r of rats) if (raiding(r) && r.map === p.map && dist(r, p) < 26) { p.inter = exiled ? { label: `${r.name.split(' (')[0]} (raiding)`, act: () => say(r, 'Shh! Don\'t blow it for me, outcast.', 2) } : { label: `Run ${r.name.split(' (')[0]} out of town!`, act: () => runOutOfTown(r) }; return; }
     for (const sh of shrooms) if (sh.picked !== dayInfo().day && Math.hypot(p.x - (sh.x * TS + 8), p.y - 4 - (sh.y * TS + 8)) < 14) {
       p.inter = { label: 'Forage mushrooms', act: () => { if (p.loot.length >= sackCap()) { say(p, 'My sack is full.', 1.2); return; } sh.picked = dayInfo().day; const truffle = Math.random() < 0.12, it = truffle ? { name: 'Rare Truffle', value: 40 } : { name: 'Wild Mushrooms', value: 8 }; p.loot.push(it); SFX.steal(); msg(`Foraged: ${it.name} (${it.value}g)${truffle ? ' - what a find!' : ''}`, '#9df0a0'); stat('forage'); } };
@@ -3866,6 +3976,11 @@ function findInteraction() {
       p.inter2 = { label: `Pick the lock - free ${t.name}`, act: () => startPick(null, () => freeThief(t), 6, 'Cell door') };
       return;
     }
+  } else if (m.kind === 'ship') {
+    const b = m.myBed; if (voyage && Math.hypot(p.x - (b.x * TS + 8), p.y - 4 - (b.y * TS + 16)) < 22) { p.inter = { label: 'Sleep in your cabin (until we make port)', act: () => { if (wanted) { say(p, 'Not with the marines after me!', 1.5); SFX.deny(); return; } voyage.slept = true; transition(() => { gameTime = voyage.end - 1; p.stamina = 100; p.tired = false; }); } }; return; }
+    let best = null, bd = 21;
+    for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
+    if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: career.type === 'thief' ? 'Steal (hold E)' : 'Steal (quit your job first)', act: () => startSteal(best) };
   } else if (m.kind === 'sewer') {
     for (const mh of manholes) if (Math.hypot(p.x - (mh.ladder.x * TS + 8), p.y - 4 - (mh.ladder.y * TS + 12)) < 18) { p.inter = { label: 'Climb up to town', act: () => climbUp(mh) }; return; }
     const sb = m.stash; if (Math.hypot(p.x - (sb.x * TS + 8), p.y - 4 - (sb.y * TS + 8)) < 22) {
@@ -4645,6 +4760,7 @@ function bubbleAt(x, y, text, color = '#fff8e7') {
 // streaks that drift downstream (each row at its own pace), a few glints, and bubbles in the sewer.
 const WATER_STYLE = {
   [T.RIVER]: { base: '#2f6aa8', rows: [[3, 13, '#5a92cc', 6], [8, 9, '#4a82bc', 4], [12, 16, '#6aa2d8', 5]], glint: '#bfe0ff', period: 26 },
+  [T.OCEAN]: { base: '#1d5585', rows: [[3, -34, '#3f7fb5', 7], [8, -26, '#2e6aa0', 5], [12, -42, '#5592c6', 6]], glint: '#d8f0ff', period: 30, ocean: true },
   [T.WATER]: { base: '#24443a', rows: [[4, 7, '#3d6e5c', 6], [9, 5, '#36604f', 4], [13, 9, '#447a64', 3]], glint: '#6b9a7a', period: 22, sewer: true },
 };
 function drawWater(m, cx, cy) {
@@ -4657,10 +4773,46 @@ function drawWater(m, cx, cy) {
       for (let d = -S.period; d < 16 + S.period; d += S.period) { const sx = ((phase - ox) % S.period + S.period) % S.period + d, a = Math.max(0, sx), b = Math.min(16, sx + len); if (b > a) F(ctx, ox + a, oy + row, b - a, 1, col); }
     });
     if (hash(tx, ty, Math.floor(t * 1.5)) < 0.04) F(ctx, ox + Math.floor(hash(tx, ty, 5) * 13) + 1, oy + Math.floor(hash(tx, ty, 6) * 12) + 2, 2, 1, S.glint); // a glint of light
+    if (S.ocean && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.tiles[(ty + dy) * m.w + tx + dx] === T.RAIL)) for (const fy of [2, 7, 12]) { const ph = ((t * 46 + fy * 13 + tx * 5) % 20 + 20) % 20; F(ctx, ox + 16 - Math.floor(ph), oy + fy, 5, 1, '#e8f4ff'); F(ctx, ox + 16 - Math.floor((ph + 10) % 20), oy + fy + 2, 3, 1, '#b8d8f0'); } // foam where the hull cuts the water
     if (S.sewer) { const bt = (t * 0.7 + hash(tx, ty, 8) * 5) % 5; if (bt < 0.6 && hash(tx, ty, 9) < 0.25) F(ctx, ox + 4 + Math.floor(hash(tx, ty, 2) * 8), oy + 6 + Math.floor(hash(tx, ty, 4) * 6), bt < 0.3 ? 1 : 2, bt < 0.3 ? 1 : 2, '#5d8a6e'); // a bubble
       if (hash(tx, ty, 3) < 0.15) { const dx = Math.floor((t * 4 + tx * 16) % 16); F(ctx, ox + dx, oy + 6, 2, 1, '#6b8a3a'); } } // floating muck drifts by
-    else if (hash(tx, ty, 9) < 0.08 && !boat) { const bob = Math.round(Math.sin(t * 1.3 + tx) * 0.6); F(ctx, ox + 5, oy + 6 + bob, 4, 3, '#3f8a3a'); F(ctx, ox + 6, oy + 7 + bob, 1, 1, '#f0f0f0'); } // a lily pad bobbing
+    else if (!S.ocean && hash(tx, ty, 9) < 0.08 && !boat) { const bob = Math.round(Math.sin(t * 1.3 + tx) * 0.6); F(ctx, ox + 5, oy + 6 + bob, 4, 3, '#3f8a3a'); F(ctx, ox + 6, oy + 7 + bob, 1, 1, '#f0f0f0'); } // a lily pad bobbing
     if (boat) { const bob = Math.round(Math.sin(t * 1.6 + tx) * 0.7); F(ctx, ox + 1, oy + 5 + bob, 14, 7, '#5a3a20'); F(ctx, ox + 2, oy + 6 + bob, 12, 5, '#8a6238'); F(ctx, ox + 7, oy + 6 + bob, 2, 5, '#5a3a20'); }
+  }
+}
+// land slides past the ship now and then: a strip of beach and woods to the north or south
+function shoreDepth(u, side, seed) {
+  const id = Math.floor(u / 900), local = u - id * 900;
+  if (hash(id, side, seed) > 0.55 || local < 100 || local > 800) return 0;
+  const taper = Math.min(1, (local - 100) / 90, (800 - local) / 90);
+  return Math.round((72 + Math.sin(local / 70 + id) * 16 + hash(Math.floor(u / 12), side, 5) * 5) * taper);
+}
+function drawShore(m, cx) {
+  const scroll = gameTime * 30, H = m.h * TS;
+  for (const [side, seed] of [[0, 71], [1, 72]]) {
+    for (let sx = Math.floor(cx / 4) * 4 - 8; sx < cx + VW + 8; sx += 4) {
+      const depth = shoreDepth(sx + scroll, side, seed); if (depth < 6) continue;
+      if (!side) { F(ctx, sx, 0, 4, depth - 6, '#4a7f3a'); F(ctx, sx, depth - 9, 4, 3, '#3f7232'); F(ctx, sx, depth - 6, 4, 4, '#d8c48a'); F(ctx, sx, depth - 2, 4, 2, '#e8f4ff'); }
+      else { F(ctx, sx, H - depth + 6, 4, depth - 6, '#4a7f3a'); F(ctx, sx, H - depth + 2, 4, 4, '#d8c48a'); F(ctx, sx, H - depth, 4, 2, '#e8f4ff'); }
+    }
+    for (let slot = Math.floor((cx + scroll) / 26) - 2; slot < Math.floor((cx + VW + scroll) / 26) + 2; slot++) { // woods along the shore
+      if (hash(slot, side, 9) > 0.7) continue;
+      const u = slot * 26 + Math.floor(hash(slot, side, 3) * 14), depth = shoreDepth(u, side, seed); if (depth < 40) continue;
+      const wx = u - scroll, off = 10 + Math.floor(hash(slot, 2, 4) * (depth - 34));
+      drawTree(ctx, wx - 8, (side ? H - depth + off + 4 : off) - 8, slot, side + 7);
+    }
+  }
+}
+function drawShipTop(m) {
+  const p = player;
+  for (const L of m.torches) { const x = L.x * TS + 8, y = L.y * TS + 4; F(ctx, x - 2, y - 3, 4, 5, '#3a2a1a'); F(ctx, x - 1, y - 2, 2, 3, Math.floor(gameTime * 6 + L.x) % 3 ? '#ffd27a' : '#ffb84a'); }
+  for (const ms of m.masts) {
+    const x = ms.x * TS + 8, top = 8 * TS + 4, bot = 17 * TS + 12, billow = 5 + Math.sin(gameTime * 1.7 + ms.x) * 1.5, under = p.map === 'ship' && Math.abs(p.x - x) < 22 && p.y > top && p.y < bot + 10;
+    ctx.globalAlpha = under ? 0.4 : 0.95;
+    F(ctx, x - 2, top - 2, 4, bot - top + 4, '#5a3618'); // the yard across the ship
+    for (let y = top; y < bot; y += 2) { const k = Math.sin((y - top) / (bot - top) * Math.PI), w = Math.round(6 + billow * 2.2 * k); F(ctx, x + 2, y, w, 2, (y / 2) % 6 < 1 ? '#d8cfb4' : '#efe6cc'); F(ctx, x + 2 + w, y, 1, 2, '#b8ae94'); } // the sail bellies out with the wind
+    ctx.globalAlpha = 1;
+    const fl = Math.sin(gameTime * 6 + ms.x); F(ctx, x - 1, top - 10, 2, 9, '#3a2412'); F(ctx, x + 1, top - 10, 6 + Math.round(fl), 3, '#c03030'); F(ctx, x + 1, top - 7, 4 + Math.round(-fl), 2, '#a02020'); // pennant
   }
 }
 function render(dt) {
@@ -4668,11 +4820,12 @@ function render(dt) {
   const titleish = ['title', 'wardrobe', 'achievements', 'towns', 'roles'].includes(state) || (state === 'saves' && saves && saves.from === 'title');
   const p = player, camMap = titleish ? 'town' : p.map, m = maps[camMap];
   const resHere = []; for (const h of houses) for (const r of h.residents) if (r.map === camMap) resHere.push(r);
-  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : '#0d0906');
+  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : m.kind === 'ship' ? '#1d5585' : '#0d0906');
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   ctx.drawImage(m.canvas, 0, 0);
-  if (m.kind === 'town' || m.kind === 'sewer') drawWater(m, cx, cy);
+  if (m.kind === 'town' || m.kind === 'sewer' || m.kind === 'ship') drawWater(m, cx, cy);
+  if (m.kind === 'ship') drawShore(m, cx);
   const di = titleish ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
   if (m.kind === 'town') {
@@ -4734,6 +4887,7 @@ function render(dt) {
   if (!titleish) for (const r of rats) if (r.map === camMap) list.push(r);
   if (!titleish && multi()) for (const g of online.ghosts.values()) { if (g.map === camMap && g.st !== 'hidden') list.push(g); if (g.wagon && camMap === 'town') list.push(g.wagon); }
   if (camMap === 'jail') list.push(...jailNPCs);
+  if (camMap === 'ship') list.push(...shipNPCs);
   if (camMap === 'town' && wagon) list.push(wagon);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
   for (const d of pets) if (d.map === camMap) list.push(d);
@@ -4746,6 +4900,7 @@ function render(dt) {
   list.sort((a, b) => a.y - b.y);
   drawDust(camMap, dt);
   for (const e of list) drawEntity(e);
+  if (camMap === 'ship') drawShipTop(m);
   if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
     const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
     ctx.strokeStyle = '#2f4f9e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(tx, ty); ctx.stroke(); F(ctx, tx - 1, ty - 1, 2, 2, '#f1c27d');
@@ -4757,7 +4912,7 @@ function render(dt) {
     for (let i = 0; i < 9; i++) { const ang = i * 0.7 + gameTime * 0.4, rr = c.r * (0.3 + (i % 3) * 0.25); ctx.fillStyle = `rgba(200,200,205,${a * 0.5})`; ctx.beginPath(); ctx.arc(c.x + Math.cos(ang) * rr, c.y + Math.sin(ang) * rr * 0.7, c.r * 0.45, 0, 7); ctx.fill(); }
   }
   // lighting
-  if (m.kind === 'town' && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  if ((m.kind === 'town' || m.kind === 'ship') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
   if (m.kind === 'town' && !titleish && isRaining()) { // rain streaks and puddle splashes
     ctx.setTransform(S, 0, 0, S, 0, 0); F(ctx, 0, 0, VW, VH, 'rgba(30,40,70,0.18)'); ctx.strokeStyle = 'rgba(170,190,230,0.45)'; ctx.lineWidth = 1; ctx.beginPath();
     for (let i = 0; i < 90; i++) { const x = (hash(i, 1, 90) * VW + gameTime * 60) % (VW + 20) - 10, y = (hash(i, 2, 91) * VH + gameTime * (260 + i % 5 * 30)) % (VH + 20) - 10; ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 7); }
@@ -5543,7 +5698,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
