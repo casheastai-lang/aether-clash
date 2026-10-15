@@ -282,8 +282,8 @@ function drawTree(g, ox, oy, tx, ty) {
   F(g, cx - 5, oy + 6, 10, 1, P[0]);
 }
 OP[T.TREE] = (g, ox, oy, tx, ty) => drawTree(g, ox, oy, tx, ty);
-GP[T.OCEAN] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#1d5585');
-OP[T.OCEAN] = (g, ox, oy) => F(g, ox, oy, 16, 16, '#1d5585');
+GP[T.OCEAN] = () => { }; // the sea is painted live underneath the ship (drawOcean)
+OP[T.OCEAN] = () => { };
 GP[T.DECK] = (g, ox, oy, tx, ty) => { F(g, ox, oy, 16, 16, '#a2703e'); for (let y = 0; y < 16; y += 4) { F(g, ox, oy + y + 3, 16, 1, '#7a5028'); F(g, ox + ((y / 4 + tx) % 3) * 5 + 1, oy + y, 1, 3, '#8a5c30'); } speck(g, ox, oy, 4, ['#b07c48', '#946232'], 51, tx, ty); };
 OP[T.RAIL] = (g, ox, oy, tx, ty) => { F(g, ox, oy, 16, 16, '#5a3618'); F(g, ox + 1, oy + 1, 14, 14, '#6e4422'); F(g, ox + 1, oy + 1, 14, 2, '#9a6a38'); F(g, ox + 1, oy + 13, 14, 2, '#4a2c12'); for (let x = 2; x < 16; x += 5) F(g, ox + x, oy + 4, 2, 8, '#4a2c12'); };
 OP[T.CABWALL] = (g, ox, oy) => { F(g, ox, oy, 16, 16, '#5e3c22'); for (let x = 0; x < 16; x += 4) F(g, ox + x, oy, 1, 16, '#4a2e18'); F(g, ox, oy, 16, 2, '#8a5c34'); F(g, ox, oy + 14, 16, 2, '#3a2412'); };
@@ -2169,12 +2169,36 @@ function genShip() {
   set(21, 9, T.CHEST); set(25, 9, T.POT);
   for (const [x, y, t] of [[20, 16, T.BARREL], [21, 16, T.CRATE], [22, 16, T.CHEST], [24, 16, T.CRATE], [25, 16, T.BARREL], [27, 16, T.CHEST], [28, 16, T.CRATE], [29, 16, T.BARREL], [37, 9, T.BARREL], [38, 10, T.CRATE]]) set(x, y, t);
   set(29, 13, T.MAST); set(35, 13, T.MAST); set(16, 14, T.HELM);
-  m.beds = [{ map: 'ship', x: 15, y: 9 }]; m.myBed = { x: 15, y: 9 }; m.masts = [{ x: 29, y: 13 }, { x: 35, y: 13 }];
+  m.beds = [{ map: 'ship', x: 15, y: 9 }]; m.masts = [{ x: 29, y: 13 }, { x: 35, y: 13 }];
   m.entry = { x: 33, y: 15 }; m.approach = { x: 10, y: 93 }; m.torches = [{ x: 13, y: 11 }, { x: 28, y: 8 }, { x: 28, y: 17 }, { x: 40, y: 12 }, { x: 10, y: 11 }];
+  m.links.push({ x: 24, y: 14, to: 'shipbelow', ax: 18, ay: 7, walk: true }); set(24, 14, T.STAIRS_DN); m.hatch = { x: 24, y: 14 };
   m.lootSpots = [[10, 9, 'Captain\'s purse', 60], [7, 15, 'Captain\'s strongbox', 140], [12, 15, 'Gold pocket watch', 70], [21, 9, 'A passenger\'s purse', 30], [25, 9, 'Silver hip flask', 25], [22, 16, 'Bolt of silk', 40], [27, 16, 'Crate of spices', 50]];
   restockShip();
 }
-function restockShip() { const m = maps.ship; m.loot.clear(); for (const [x, y, name, value] of m.lootSpots) m.loot.set(y * m.w + x, { x, y, item: { name, value }, taken: false, t: 0 }); }
+function restockShip() { for (const m of [maps.ship, maps.shipbelow]) { if (!m) continue; m.loot.clear(); for (const [x, y, name, value] of m.lootSpots) m.loot.set(y * m.w + x, { x, y, item: { name, value }, taken: false, t: 0 }); } }
+// Below decks: the passenger cabins (yours is the first), the crew's bunks, the galley and the cargo hold.
+function genShipBelow() {
+  const W = 34, H = 14, m = newMap('shipbelow', W, H, 'ship'), set = (x, y, t) => { m.tiles[y * W + x] = t; }; m.blanket = '#7a3a2a';
+  for (let i = 0; i < W * H; i++) { m.ground[i] = T.DECK; m.tiles[i] = 0; }
+  for (let x = 0; x < W; x++) { set(x, 0, T.CABWALL); set(x, 1, T.CABWALL); set(x, H - 1, T.CABWALL); }
+  for (let y = 0; y < H; y++) { set(0, y, T.CABWALL); set(W - 1, y, T.CABWALL); }
+  // passenger cabins along the top: four little rooms with doors onto the passage
+  for (let x = 1; x < 22; x++) set(x, 5, [3, 8, 13, 18].includes(x) ? 0 : T.CABWALL);
+  for (const x of [6, 11, 16, 21]) for (let y = 2; y <= 4; y++) set(x, y, T.CABWALL);
+  for (const bx of [2, 7, 12, 17]) { set(bx, 2, T.BED); set(bx, 3, T.BED2); }
+  set(4, 2, T.CHEST); set(9, 2, T.CHEST); set(14, 4, T.DRESSER); set(19, 2, T.CHEST);
+  // crew bunks along the bottom, the galley, and the hold
+  for (const bx of [2, 4, 6, 8]) { set(bx, 11, T.BED); set(bx, 12, T.BED2); }
+  set(10, 12, T.CHEST); set(13, 9, T.TABLE); set(14, 9, T.TABLE); set(12, 9, T.CHAIR); set(15, 9, T.CHAIR); set(12, 12, T.FIRE); set(15, 12, T.IBARREL);
+  for (let y = 7; y < H - 1; y++) set(22, y, y === 9 || y === 10 ? 0 : T.CABWALL); // the hold door
+  for (const [x, y, t] of [[24, 7, T.CRATE], [25, 7, T.CRATE], [27, 7, T.CHEST], [29, 7, T.BARREL], [30, 7, T.BARREL], [32, 7, T.CRATE], [24, 12, T.BARREL], [26, 12, T.CHEST], [28, 12, T.CRATE], [30, 12, T.CHEST], [32, 12, T.BARREL], [32, 9, T.CRATE]]) set(x, y, t);
+  set(18, 6, T.STAIRS_UP); m.links.push({ x: 18, y: 6, to: 'ship', ax: 24, ay: 15, walk: true });
+  m.beds = [{ map: 'shipbelow', x: 2, y: 2 }]; m.myBed = { x: 2, y: 2 }; m.entry = { x: 18, y: 7 }; m.approach = { x: 10, y: 93 };
+  m.torches = [{ x: 5, y: 6 }, { x: 12, y: 6 }, { x: 20, y: 6 }, { x: 27, y: 9 }, { x: 10, y: 10 }];
+  m.lootSpots = [[9, 2, 'A merchant\'s purse', 45], [14, 4, 'Pearl necklace', 85], [19, 2, 'Silver candlesticks', 55], [10, 12, 'The crew\'s wages', 75], [27, 7, 'Chest of tea', 40], [26, 12, 'Silver plate', 65], [30, 12, 'Bolt of velvet', 50], [4, 2, 'A traveller\'s savings', 35]];
+}
+genShipBelow(); restockShip();
+const isShipMap = k => k === 'ship' || k === 'shipbelow';
 genShip();
 const roadTiles = [];
 let bigTownRoads = null, mudTownRoads = null;
@@ -2263,6 +2287,7 @@ const allJailNPCs = () => jailNPCs.concat(jail2NPCs);
 const shipNPCs = [
   { kind: 'decor', ship: true, captain: true, name: 'Captain Brine', map: 'ship', x: 17 * TS + 8, y: 14 * TS + 12, dir: 'right', fa: 0, sheet: makeSheet({ skin: '#e0ac69', hair: '#d9d9d9', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#1e2a4a', pants: '#2a2a30', beard: true, belt: '#c9a24a' }), animT: 0, bubble: null, path: null, repath: 0, stuckT: 0, lines: ['Steady as she goes.', 'Mind the rigging, landlubber.', 'Twenty years I\'ve sailed these waters.', 'Keep your hands off my cabin.'] },
   { kind: 'decor', ship: true, name: 'Bosun Tarr', map: 'ship', x: 24 * TS + 8, y: 13 * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: '#c68642', hair: '#2b1d14', hairStyle: 'short', hat: 'cap', hatC: '#7a2a2a', shirt: '#d8d0c0', pants: '#3a3a4a' }), animT: 0, bubble: null, lines: ['Haul away!', 'Don\'t stand on the ropes.', 'Fair wind today.', 'You get used to the rocking.'] },
+  { kind: 'decor', ship: true, name: 'Cook Marrow', map: 'shipbelow', x: 13 * TS + 8, y: 11 * TS + 12, dir: 'up', fa: -Math.PI / 2, sheet: makeSheet({ skin: '#f1c27d', hair: '#d9d9d9', hairStyle: 'bald', shirt: '#f0ece0', pants: '#3a3a3a', beard: true }), animT: 0, bubble: null, lines: ['Stew again tonight.', 'Keep out of my galley.', 'Mind the hold - the marines check it.', '*stirs the pot*'] },
   { kind: 'decor', ship: true, name: 'Deckhand Pip', map: 'ship', x: 34 * TS + 8, y: 10 * TS + 12, dir: 'left', fa: Math.PI, sheet: makeSheet({ skin: '#f1c27d', hair: '#a83232', hairStyle: 'short', shirt: '#4a6a8a', pants: '#3a3020' }), animT: 0, bubble: null, lines: ['*scrub scrub*', 'Seen a whale once!', 'Captain\'s a fair man. Mostly.', 'First voyage? You look green.'] },
 ];
 var voyage = null;
@@ -2275,20 +2300,20 @@ function startCrossing(f) {
   if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
   if (gold < CROSSING_FARE) { say(f, `${CROSSING_FARE} gold for the crossing.`, 2); SFX.deny(); return; }
   gold -= CROSSING_FARE; SFX.buy(); restockShip(); stat('voyages'); voyage = { start: gameTime, end: gameTime + CROSSING_LEN, dock: to, crossing: true };
-  for (const g of guards) if (g.map === 'ship' && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
+  for (const g of guards) if (isShipMap(g.map) && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
   say(f, `The Sea Maiden sails for ${f.harbour ? 'the big town' : 'Silverwater'} - down the river, out along the coast, and in again.`, 2.8);
   transition(() => { const m = maps.ship; p.map = 'ship'; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.state = 'free';
-    msg(`All aboard for ${f.harbour ? 'the big town' : 'Silverwater'}! The river opens out into the sea, then narrows again at the far end. Your cabin is the first door on the left.`, '#9ad0ff'); });
+    msg(`All aboard for ${f.harbour ? 'the big town' : 'Silverwater'}! The river opens out into the sea, then narrows again at the far end. Your cabin is below decks (the hatch by the main mast).`, '#9ad0ff'); });
 }
 function startVoyage(f) {
   const p = player;
   if (wanted) { say(f, 'Not with the Watch after you, friend.', 2); SFX.deny(); return; }
   if (gold < VOYAGE_FARE) { say(f, `Passage is ${VOYAGE_FARE} gold. Come back when you've got it.`, 2.5); SFX.deny(); return; }
   gold -= VOYAGE_FARE; SFX.buy(); restockShip(); stat('voyages'); voyage = { start: gameTime, end: gameTime + DAY_LEN, dock: f.harbour ? DOCKS.port : DOCKS.gil };
-  for (const g of guards) if (g.map === 'ship' && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
+  for (const g of guards) if (isShipMap(g.map) && g.route) { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
   say(f, f.harbour ? 'Sea Maiden, berth three. Back by this time tomorrow.' : 'All aboard the Sea Maiden! Back by this time tomorrow.', 2.5);
   transition(() => { const m = maps.ship; p.map = 'ship'; p.x = m.entry.x * TS + 8; p.y = m.entry.y * TS + 12; p.dir = 'up'; p.state = 'free';
-    msg(`You board the Sea Maiden for a one-day voyage. Your cabin is the first door on the left (sleep there to skip to port). The captain keeps his valuables in his quarters at the stern... and there are marines aboard. They don't mind you walking about - only stealing.`, '#9ad0ff'); });
+    msg(`You board the Sea Maiden for a one-day voyage. Your cabin is below decks - take the hatch down, first door on the left (sleep there to skip to port). The captain keeps his valuables in his quarters at the stern... and there are marines aboard. They don't mind you walking about - only stealing.`, '#9ad0ff'); });
 }
 function endVoyage(slept) {
   const d = (voyage && voyage.dock) || DOCKS.gil, crossing = voyage && voyage.crossing; voyage = null;
@@ -2297,22 +2322,22 @@ function endVoyage(slept) {
 function shipAlarm(by) {
   if (wanted) return;
   say(by, pick(['THIEF! Grab them!', 'Stop! Thief on deck!', 'Hands off that!']), 2.4); setWanted('Caught stealing aboard the Sea Maiden!');
-  for (const g of guards) if (g.map === 'ship' && g.unit !== 'dog') startChase(g);
+  for (const g of guards) if (isShipMap(g.map) && g.unit !== 'dog') startChase(g);
 }
 function updateShip(dt) {
-  if (voyage && player.map !== 'ship' && !fade.dir) voyage = null; // jailed, or otherwise off the ship
+  if (voyage && !isShipMap(player.map) && !fade.dir) voyage = null; // jailed, or otherwise off the ship
   if (!voyage) return;
-  if (gameTime >= voyage.end && player.map === 'ship' && !fade.dir) { endVoyage(voyage.slept); return; }
+  if (gameTime >= voyage.end && isShipMap(player.map) && !fade.dir) { endVoyage(voyage.slept); return; }
   const cap = shipNPCs[0], p = player;
   cap.moving = false; cap.walkT = (cap.walkT || 0) - dt;
   if (cap.walkT <= 0) { cap.walkT = rnd(40, 80); cap.goal = cap.goal && cap.goal.x === 10 ? { x: 17, y: 14 } : { x: 10, y: 11 }; cap.path = null; } // between the helm and his quarters
   if (cap.goal && Math.hypot(cap.x - (cap.goal.x * TS + 8), cap.y - (cap.goal.y * TS + 12)) > 6) { navTo(cap, 'ship', cap.goal.x, cap.goal.y, 22, dt); cap.animT += dt; }
-  if (p.map === 'ship' && p.state === 'stealing') {
+  if (isShipMap(p.map) && p.state === 'stealing') {
     for (const n of shipNPCs) if (canSee(n, p, 110, 0.5)) { shipAlarm(n); break; }
-    for (const g of guards) if (g.map === 'ship' && guardSees(g)) { shipAlarm(g); break; }
+    for (const g of guards) if (isShipMap(g.map) && guardSees(g)) { shipAlarm(g); break; }
   }
   for (const n of shipNPCs) if (n.bubble) { n.bubble.t -= dt; if (n.bubble.t <= 0) n.bubble = null; }
-  if (p.map === 'ship' && Math.random() < dt * 0.05) { const n = pick(shipNPCs); if (dist(n, p) < 120) say(n, pick(n.lines), 2.5); }
+  if (isShipMap(p.map) && Math.random() < dt * 0.05) { const n = pick(shipNPCs.filter(n => n.map === p.map)); if (n && dist(n, p) < 120) say(n, pick(n.lines), 2.5); }
 }
 const jailNPCs = [
   { kind: 'decor', jailer: true, name: 'Jailer Grubb', map: 'jail', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Another one, eh?', 'Keep it down in there.', 'Tea break soon...'] },
@@ -2662,6 +2687,7 @@ function setupPosts() {
     staff: [['guard', 'Constable Hobbes', CONSTABLE_SHEETS[0], [[300, 104], [376, 104]]], ['guard', 'Constable Penny', CONSTABLE_SHEETS[1], [[316, 95], [316, 120]]], ['guard', 'Constable Dunn', CONSTABLE_SHEETS[2], [[346, 120], [346, 113], [376, 113], [298, 113]]]] });
   extraPosts.push({ name: 'the Sea Maiden', map: 'ship', welcome: () => true,
     staff: [['guard', 'Marine Dorran', CITYWATCH_SHEETS[0], [[14, 12], [37, 12]]], ['guard', 'Marine Hale', CITYWATCH_SHEETS[1], [[30, 15], [38, 15], [38, 10], [30, 10]]]] });
+  extraPosts.push({ name: 'below decks', map: 'shipbelow', welcome: () => true, staff: [['guard', 'Marine Corwin', CITYWATCH_SHEETS[2], [[2, 8], [20, 8], [23, 10], [31, 10], [23, 10], [20, 8]]]] });
   extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
     staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
 }
@@ -3755,7 +3781,7 @@ function nearbyChars() {
   out.push(...fences.filter(f => f.map === player.map), ...thieves.filter(t => t.map === player.map));
   if (player.map === 'town' && isMarketDay()) out.push(...vendors);
   out.push(...allJailNPCs().filter(n => n.map === player.map));
-  if (player.map === 'ship') out.push(...shipNPCs);
+  out.push(...shipNPCs.filter(n => n.map === player.map));
   return out;
 }
 function startSteal(e) {
@@ -4245,7 +4271,7 @@ function findInteraction() {
       return;
     }
   } else if (m.kind === 'ship') {
-    const b = m.myBed; if (voyage && Math.hypot(p.x - (b.x * TS + 8), p.y - 4 - (b.y * TS + 16)) < 22) { p.inter = { label: 'Sleep in your cabin (until we make port)', act: () => { if (wanted) { say(p, 'Not with the marines after me!', 1.5); SFX.deny(); return; } voyage.slept = true; transition(() => { gameTime = voyage.end - 1; p.stamina = 100; p.tired = false; }); } }; return; }
+    const b = m.myBed; if (b && voyage && Math.hypot(p.x - (b.x * TS + 8), p.y - 4 - (b.y * TS + 16)) < 22) { p.inter = { label: 'Sleep in your cabin (until we make port)', act: () => { if (wanted) { say(p, 'Not with the marines after me!', 1.5); SFX.deny(); return; } voyage.slept = true; transition(() => { gameTime = voyage.end - 1; p.stamina = 100; p.tired = false; }); } }; return; }
     let best = null, bd = 21;
     for (const e of m.loot.values()) { const d = Math.hypot(p.x - (e.x * TS + 8), p.y - 4 - (e.y * TS + 8)); if (d < bd) { bd = d; best = e; } }
     if (best) p.inter = best.taken ? { label: '(empty)', act: () => say(p, 'Already cleaned out.', 1.2) } : { label: career.type === 'thief' ? 'Steal (hold E)' : 'Steal (quit your job first)', act: () => startSteal(best) };
@@ -4396,6 +4422,7 @@ function updatePlayer(dt) {
     case 'free': {
       doMove(dt, true);
       if (m.kind === 'house') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { if (L.to === 'town') leaveHouse(m.house, L); else changeFloor(L); return; } }
+      if (m.kind === 'ship') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { changeFloor(L); return; } }
       if (m.kind === 'jail') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveWatchHouse(); return; } const L = m.links.find(l => l.walk && l.to !== 'town' && l.x === t.x && l.y === t.y); if (L) { changeFloor(L); return; } }
       if (m.plates && m.house.alarmT <= 0) { const t = tileOfE(p); if (m.tiles[t.y * m.w + t.x] === T.PLATE && !p.sneak && (!m.lobby || t.y < m.lobby.y0)) bankBell(m.house); }
       findInteraction();
@@ -5063,7 +5090,68 @@ function crossingDepth(u) { // the river: banks hard by the ship, widening out t
   const near = k < 0.12 || k > 0.88 ? 1 : k < 0.3 ? 1 - (k - 0.12) / 0.18 : k > 0.7 ? (k - 0.7) / 0.18 : 0;
   return near <= 0 ? 0 : Math.round(104 * Math.min(1, near) + Math.sin(u / 50) * 4);
 }
+// The open sea, cheaply: each band of streaks is one pre-drawn strip slid along per row of tiles, instead of thousands of little rects.
+const OCEAN = { base: '#1d5585', P: 30, layers: [[3, -34, '#3f7fb5', 7], [8, -26, '#2e6aa0', 5], [12, -42, '#5592c6', 6]], strips: null };
+function drawOcean(m, cx, cy) {
+  const t = gameTime, P = OCEAN.P;
+  if (!OCEAN.strips) OCEAN.strips = OCEAN.layers.map(([, , col, len]) => { const c = mk(2048 + P * 2, 1), g = c.getContext('2d'); g.fillStyle = col; for (let x = 0; x < c.width; x += P) g.fillRect(x, 0, len, 1); return c; });
+  F(ctx, cx - 2, cy - 2, VW + 4, VH + 4, OCEAN.base);
+  const y0 = Math.floor(cy / TS) - 1, y1 = Math.ceil((cy + VH) / TS) + 1, w = Math.min(2048, VW + 32);
+  for (let ty = y0; ty <= y1; ty++) OCEAN.layers.forEach(([ry, sp], i) => {
+    const row = ry + ((((ty * 7 + i * 3) % 3) + 3) % 3) - 1, phase = ((t * sp + ty * 11 + i * 7) % P + P) % P, sx = (((cx - 8 - phase) % P) + P) % P;
+    ctx.drawImage(OCEAN.strips[i], sx, 0, w, 1, cx - 8, ty * TS + row, w, 1);
+  });
+  for (let k = 0; k < 14; k++) { const gx = cx + hash(k, Math.floor(t * 1.5), 1) * VW, gy = cy + hash(k, Math.floor(t * 1.5), 2) * VH; F(ctx, Math.round(gx), Math.round(gy), 2, 1, '#d8f0ff'); } // glints
+}
+function drawFoam(m) { // white water where the hull cuts the sea
+  if (!m.foam) { m.foam = []; for (let y = 1; y < m.h - 1; y++) for (let x = 1; x < m.w - 1; x++) if (m.tiles[y * m.w + x] === T.OCEAN && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.tiles[(y + dy) * m.w + x + dx] === T.RAIL)) m.foam.push({ x, y }); }
+  const t = gameTime;
+  for (const { x, y } of m.foam) for (const fy of [2, 7, 12]) { const ph = ((t * 46 + fy * 13 + x * 5) % 20 + 20) % 20, ox = x * TS, oy = y * TS; F(ctx, ox + 16 - Math.floor(ph), oy + fy, 5, 1, '#e8f4ff'); F(ctx, ox + 16 - Math.floor((ph + 10) % 20), oy + fy + 2, 3, 1, '#b8d8f0'); }
+}
+// Scenery is painted once per 256px chunk and cached, then just copied each frame; only the surf moves.
+const shoreCache = new Map();
+function landDepth(u, side) { return voyage && voyage.crossing ? Math.max(crossingDepth(u), shoreDepth(u, side, 73 + side)) : shoreDepth(u, side, 71 + side); }
+function shoreChunk(c, side) {
+  const key = `${voyage ? voyage.start : 0}:${voyage && voyage.crossing ? 1 : 0}:${side}:${c}`; let cv = shoreCache.get(key); if (cv) return cv;
+  if (shoreCache.size > 40) shoreCache.clear();
+  const CW = 256, CH = 140; cv = mk(CW, CH); const g = cv.getContext('2d'), town = voyage && voyage.crossing;
+  const depthAt = x => landDepth(c * CW + x, side);
+  if (![0, 64, 128, 192, 255].some(x => depthAt(x) > 2) && ![32, 96, 160, 224].some(x => depthAt(x) > 2)) { shoreCache.set(key, null); return null; }
+  const Y = (d, k) => side ? CH - d + k : d - k; // y measured from the water's edge inland
+  for (let x = 0; x < CW; x += 2) {
+    const d = depthAt(x); if (d < 6) continue;
+    const top = side ? CH - d : 0, h = d; // land runs from the edge of the scene to the shore
+    F(g, x, top, 2, h, '#4f8a3e');
+    for (let yy = 0; yy < h; yy += 3) { const n = hash(c * CW + x, yy, 81 + side); if (n < 0.28) F(g, x, top + yy, 2, 3, n < 0.1 ? '#437a34' : '#5c9a48'); else if (n > 0.985) F(g, x, top + yy, 1, 1, ['#f0e060', '#f08ab0', '#ffffff'][Math.floor(n * 1000) % 3]); }
+    const e = side ? CH - d : d, inl = k => side ? e + k : e - k - 1; // e: the water's edge; inl(k): k pixels inland
+    for (let k = 8; k < 12; k++) F(g, x, inl(k), 2, 1, '#3f7232'); // grass darkens down to the beach
+    for (let k = 2; k < 8; k++) F(g, x, inl(k), 2, 1, k < 5 ? '#d8c48a' : '#e8d8a0'); // dry sand
+    F(g, x, inl(0), 2, 1, '#a89068'); F(g, x, inl(1), 2, 1, '#b8a070'); // wet sand at the water
+    if (hash(c * CW + x, 3, 82 + side) < 0.03) { const ry = side ? CH - d + 3 : d - 6; F(g, x - 1, ry, 4, 3, '#8a8a90'); F(g, x - 1, ry, 4, 1, '#b0b0b8'); } // rocks on the beach
+  }
+  for (let sl = 0; sl < 9; sl++) { // trees, and cottages near the towns
+    const x = 14 + sl * 28 + Math.floor(hash(c, sl, 83 + side) * 10), d = depthAt(x); if (d < 46 || hash(c, sl, 84 + side) > 0.8) continue;
+    const off = 10 + Math.floor(hash(c, sl, 85 + side) * Math.max(1, d - 44)), y = side ? CH - d + off + 10 : off + 2;
+    if (town && crossingDepth(c * CW + x) > 60 && hash(c, sl, 86 + side) < 0.4) {
+      const rc = ROOFS[Math.floor(hash(c, sl, 87) * ROOFS.length)];
+      F(g, x - 10, y + 4, 20, 10, '#e8d7ae'); F(g, x - 10, y + 13, 20, 1, '#b8a67a'); F(g, x - 11, y - 4, 22, 9, rc[0]); F(g, x - 11, y + 4, 22, 1, rc[1]); F(g, x - 9, y - 3, 18, 1, rc[2]);
+      F(g, x - 2, y + 8, 4, 6, '#6b4423'); F(g, x - 7, y + 7, 3, 3, '#3a5a8a'); F(g, x + 4, y + 7, 3, 3, '#3a5a8a'); F(g, x + 5, y - 7, 3, 4, '#7a5a4a');
+    } else { drawTree(g, x - 8, y - 6, c * 9 + sl, side + 11); if (hash(c, sl, 88) < 0.5) drawTree(g, x + 4, y + 2, c * 9 + sl + 5, side + 13); }
+  }
+  shoreCache.set(key, cv); return cv;
+}
 function drawShore(m, cx) {
+  const scroll = gameTime * 30, H = m.h * TS, CW = 256, t = gameTime;
+  for (const side of [0, 1]) {
+    for (let c = Math.floor((cx + scroll) / CW) - 1; c <= Math.floor((cx + VW + scroll) / CW) + 1; c++) { const cv = shoreChunk(c, side); if (cv) ctx.drawImage(cv, Math.round(c * CW - scroll), side ? H - 140 : 0); }
+    for (let sx = Math.floor(cx / 6) * 6; sx < cx + VW; sx += 6) { // surf rolling on the beach
+      const d = landDepth(sx + scroll, side); if (d < 6) continue;
+      const wv = Math.round(Math.sin(t * 2.2 + (sx + scroll) / 18) * 1.5);
+      F(ctx, sx, side ? H - d - 1 + wv : d - 1 + wv, 6, 2, '#f0f8ff'); F(ctx, sx, side ? H - d - 3 + wv : d + 1 + wv, 4, 1, '#bcdcf0');
+    }
+  }
+}
+function drawShoreOld(m, cx) {
   const scroll = gameTime * 30, H = m.h * TS;
   if (voyage && voyage.crossing) {
     for (const side of [0, 1]) {
@@ -5098,7 +5186,8 @@ function drawShore(m, cx) {
 function drawShipTop(m) {
   const p = player;
   for (const L of m.torches) { const x = L.x * TS + 8, y = L.y * TS + 4; F(ctx, x - 2, y - 3, 4, 5, '#3a2a1a'); F(ctx, x - 1, y - 2, 2, 3, Math.floor(gameTime * 6 + L.x) % 3 ? '#ffd27a' : '#ffb84a'); }
-  for (const ms of m.masts) {
+  for (const ms of m.masts || []) {
+    if (m.key !== 'ship') break;
     const x = ms.x * TS + 8, top = 8 * TS + 4, bot = 17 * TS + 12, billow = 5 + Math.sin(gameTime * 1.7 + ms.x) * 1.5, under = p.map === 'ship' && Math.abs(p.x - x) < 22 && p.y > top && p.y < bot + 10;
     ctx.globalAlpha = under ? 0.4 : 0.95;
     F(ctx, x - 2, top - 2, 4, bot - top + 4, '#5a3618'); // the yard across the ship
@@ -5112,12 +5201,13 @@ function render(dt) {
   const titleish = ['title', 'wardrobe', 'achievements', 'towns', 'roles'].includes(state) || (state === 'saves' && saves && saves.from === 'title');
   const p = player, camMap = titleish ? 'town' : p.map, m = maps[camMap];
   const resHere = []; for (const h of houses) for (const r of h.residents) if (r.map === camMap) resHere.push(r);
-  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : m.kind === 'ship' ? '#1d5585' : '#0d0906');
+  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : m.key === 'ship' ? '#1d5585' : '#0d0906');
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
+  if (m.key === 'ship') { drawOcean(m, cx, cy); drawShore(m, cx); }
   ctx.drawImage(m.canvas, 0, 0);
-  if (m.kind === 'town' || m.kind === 'sewer' || m.kind === 'ship') drawWater(m, cx, cy);
-  if (m.kind === 'ship') drawShore(m, cx);
+  if (m.kind === 'town' || m.kind === 'sewer') drawWater(m, cx, cy);
+  if (m.key === 'ship') drawFoam(m);
   const di = titleish ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
   if (m.kind === 'town') {
@@ -5179,7 +5269,7 @@ function render(dt) {
   if (!titleish) for (const r of rats) if (r.map === camMap) list.push(r);
   if (!titleish && multi()) for (const g of online.ghosts.values()) { if (g.map === camMap && g.st !== 'hidden') list.push(g); if (g.wagon && camMap === 'town') list.push(g.wagon); }
   list.push(...allJailNPCs().filter(n => n.map === camMap));
-  if (camMap === 'ship') list.push(...shipNPCs);
+  list.push(...shipNPCs.filter(n => n.map === camMap));
   if (camMap === 'town' && wagon) list.push(wagon);
   if (camMap === 'town' && isMarketDay()) list.push(...vendors);
   for (const d of pets) if (d.map === camMap) list.push(d);
@@ -5192,7 +5282,7 @@ function render(dt) {
   list.sort((a, b) => a.y - b.y);
   drawDust(camMap, dt);
   for (const e of list) drawEntity(e);
-  if (camMap === 'ship') drawShipTop(m);
+  if (isShipMap(camMap)) drawShipTop(m);
   if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
     const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
     ctx.strokeStyle = '#2f4f9e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(tx, ty); ctx.stroke(); F(ctx, tx - 1, ty - 1, 2, 2, '#f1c27d');
@@ -5204,7 +5294,8 @@ function render(dt) {
     for (let i = 0; i < 9; i++) { const ang = i * 0.7 + gameTime * 0.4, rr = c.r * (0.3 + (i % 3) * 0.25); ctx.fillStyle = `rgba(200,200,205,${a * 0.5})`; ctx.beginPath(); ctx.arc(c.x + Math.cos(ang) * rr, c.y + Math.sin(ang) * rr * 0.7, c.r * 0.45, 0, 7); ctx.fill(); }
   }
   // lighting
-  if ((m.kind === 'town' || m.kind === 'ship') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  if ((m.kind === 'town' || m.key === 'ship') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  else if (m.key === 'shipbelow') drawLighting(0.45 + di.dark * 0.3, cx, cy, m);
   if (m.kind === 'town' && !titleish && isRaining()) { // rain streaks and puddle splashes
     ctx.setTransform(S, 0, 0, S, 0, 0); F(ctx, 0, 0, VW, VH, 'rgba(30,40,70,0.18)'); ctx.strokeStyle = 'rgba(170,190,230,0.45)'; ctx.lineWidth = 1; ctx.beginPath();
     for (let i = 0; i < 90; i++) { const x = (hash(i, 1, 90) * VW + gameTime * 60) % (VW + 20) - 10, y = (hash(i, 2, 91) * VH + gameTime * (260 + i % 5 * 30)) % (VH + 20) - 10; ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 7); }
@@ -6002,7 +6093,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, startCrossing, DOCKS, WATCH_SKINS, CITIZEN_SKINS, roleAch, roleSkinOpen, wardrobeTab, get CITIZEN_SHEET() { return CITIZEN_SHEET; }, get WATCH_SHEET() { return WATCH_SHEET; }, get paused() { return paused; }, ACH, openWardrobe, get wardrobe() { return wardrobe; }, skinUnlocked, SKIN_AT, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, isShipMap, startCrossing, DOCKS, WATCH_SKINS, CITIZEN_SKINS, roleAch, roleSkinOpen, wardrobeTab, get CITIZEN_SHEET() { return CITIZEN_SHEET; }, get WATCH_SHEET() { return WATCH_SHEET; }, get paused() { return paused; }, ACH, openWardrobe, get wardrobe() { return wardrobe; }, skinUnlocked, SKIN_AT, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
