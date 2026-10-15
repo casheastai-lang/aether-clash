@@ -1932,7 +1932,7 @@ const CARRIAGE_FARE = 40; // a hefty fare for a long ride
 const inPort = () => player.map === 'town' ? player.x >= (PORT.x0 - 2) * TS : !!(maps[player.map].house && maps[player.map].house.port);
 const inCity = () => player.map === 'town' ? player.x >= (CITY.x0 - 2) * TS && player.x < (CITY.x1 + 2) * TS && player.y < (CITY.y1 + 1) * TS : !!(maps[player.map].house && maps[player.map].house.city);
 function arriveIn(at) {
-  if (at === 'Silverwater' && !profile.sets.silverwater) { addToSet('silverwater', 1); msg('Silverwater: a rich river port. Fine homes, its own bank and Watch House, the harbour (the harbourmaster books the Sea Maiden) - and its own thieves in a smugglers\' cellar.', '#7ac8e8'); }
+  if (at === 'Silverwater' && !profile.sets.silverwater) { addToSet('silverwater', 1); msg('Silverwater: a rich river port. Fine homes, its own bank and Watch House, the harbour (the harbourmaster books the Sea Maiden) - and its own thieves in a smugglers\' cellar. No carriage runs to the big town from here - take the boat from the quay.', '#7ac8e8'); }
   if (at === 'Kingsbridge' && !profile.sets.kingsbridge) { addToSet('kingsbridge', 1); msg('Kingsbridge: a huge walled city with the richest homes of all - and the City Watch, who don\'t miss much. Silk Sal fences in Cutpurse Lane.', '#cfe8ff'); }
 }
 function rideCarriage(c, dest) {
@@ -4279,7 +4279,7 @@ function findInteraction() {
       return;
     }
     if (treasure && Math.hypot(p.x - (treasure.x * TS + 8), p.y - 4 - (treasure.y * TS + 8)) < 16) { p.inter = { label: 'Dig where X marks the spot', act: digTreasure }; return; }
-    for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { const others = town.coaches.filter(o => o !== c), k = (p.coachSel || 0) % others.length, d = others[k]; p.inter = { label: `Carriage to ${d.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d) }; p.inter2 = { label: `Other stops (${others.filter(o => o !== d).map(o => o.at).join(', ')})`, act: () => { p.coachSel = k + 1; } }; return; }
+    for (const c of town.coaches) if (Math.hypot(p.x - (c.x * TS + 8), p.y - 4 - (c.y * TS + 8)) < 26) { const byBoat = o => (c.at === 'Silverwater' && o.at === 'the big town') || (c.at === 'the big town' && o.at === 'Silverwater'), others = town.coaches.filter(o => o !== c && !byBoat(o)), k = (p.coachSel || 0) % others.length, d = others[k]; p.inter = { label: `Carriage to ${d.at} (${CARRIAGE_FARE}g)`, act: () => rideCarriage(c, d) }; p.inter2 = { label: `Other stops (${others.filter(o => o !== d).map(o => o.at).join(', ')}${c.at === 'Silverwater' ? '; the big town by boat only' : c.at === 'the big town' ? '; Silverwater by boat only' : ''})`, act: () => { p.coachSel = k + 1; } }; return; }
     for (const mh of manholes) if (Math.hypot(p.x - (mh.x * TS + 8), p.y - 4 - (mh.y * TS + 8)) < 14) { p.inter = exiled ? { label: 'Sewer grate (chained shut)', act: () => { say(p, 'Chained from below. The crew don\'t want me.', 2); SFX.deny(); } } : { label: 'Climb down into the sewers', act: () => enterSewer(mh) }; return; }
     for (const hy of hays) if (Math.hypot(p.x - (hy.x * TS + 8), p.y - 4 - (hy.y * TS + 8)) < 20) { p.inter = { label: 'Hide in hay', act: () => hide(hy) }; return; }
     const mark = !wanted && career.type === 'thief' && pocketTarget(); if (mark && !profile.sets.pocketTip) { addToSet('pocketTip', 1); msg('Tip: creep up BEHIND people in the street and press E to pick their pocket - then tap E each time the needle is in the green.', '#cfe8ff'); }
