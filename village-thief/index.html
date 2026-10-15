@@ -4641,6 +4641,28 @@ function bubbleAt(x, y, text, color = '#fff8e7') {
   F(ctx, bx - 1, by, w + 2, h, '#222'); F(ctx, bx, by - 1, w, h + 2, '#222'); F(ctx, bx, by, w, h, color); F(ctx, Math.round(x) - 1, by + h, 3, 2, '#222'); F(ctx, Math.round(x), by + h, 1, 1, color);
   lines.forEach((l, i) => txt(l, bx + 3, by + 3 + i * (fs + 2), fs, '#1a1a1a', 'left', null));
 }
+// Flowing water: the cached map has still water, so each frame the visible river and sewer tiles are repainted with
+// streaks that drift downstream (each row at its own pace), a few glints, and bubbles in the sewer.
+const WATER_STYLE = {
+  [T.RIVER]: { base: '#2f6aa8', rows: [[3, 13, '#5a92cc', 6], [8, 9, '#4a82bc', 4], [12, 16, '#6aa2d8', 5]], glint: '#bfe0ff', period: 26 },
+  [T.WATER]: { base: '#24443a', rows: [[4, 7, '#3d6e5c', 6], [9, 5, '#36604f', 4], [13, 9, '#447a64', 3]], glint: '#6b9a7a', period: 22, sewer: true },
+};
+function drawWater(m, cx, cy) {
+  const t = gameTime, x0 = Math.max(0, Math.floor(cx / TS)), y0 = Math.max(0, Math.floor(cy / TS)), x1 = Math.min(m.w - 1, Math.ceil((cx + VW) / TS)), y1 = Math.min(m.h - 1, Math.ceil((cy + VH) / TS));
+  for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
+    const k = m.tiles[ty * m.w + tx], boat = k === T.BOAT, S = WATER_STYLE[boat ? T.RIVER : k]; if (!S) continue;
+    const ox = tx * TS, oy = ty * TS; F(ctx, ox, oy, 16, 16, S.base);
+    S.rows.forEach(([ry, sp, col, len], i) => { // world-space dashes, so they run on smoothly from tile to tile
+      const row = ry + ((ty * 7 + i * 3) % 3) - 1, phase = ((t * sp + ty * 11 + i * 7) % S.period + S.period) % S.period;
+      for (let d = -S.period; d < 16 + S.period; d += S.period) { const sx = ((phase - ox) % S.period + S.period) % S.period + d, a = Math.max(0, sx), b = Math.min(16, sx + len); if (b > a) F(ctx, ox + a, oy + row, b - a, 1, col); }
+    });
+    if (hash(tx, ty, Math.floor(t * 1.5)) < 0.04) F(ctx, ox + Math.floor(hash(tx, ty, 5) * 13) + 1, oy + Math.floor(hash(tx, ty, 6) * 12) + 2, 2, 1, S.glint); // a glint of light
+    if (S.sewer) { const bt = (t * 0.7 + hash(tx, ty, 8) * 5) % 5; if (bt < 0.6 && hash(tx, ty, 9) < 0.25) F(ctx, ox + 4 + Math.floor(hash(tx, ty, 2) * 8), oy + 6 + Math.floor(hash(tx, ty, 4) * 6), bt < 0.3 ? 1 : 2, bt < 0.3 ? 1 : 2, '#5d8a6e'); // a bubble
+      if (hash(tx, ty, 3) < 0.15) { const dx = Math.floor((t * 4 + tx * 16) % 16); F(ctx, ox + dx, oy + 6, 2, 1, '#6b8a3a'); } } // floating muck drifts by
+    else if (hash(tx, ty, 9) < 0.08 && !boat) { const bob = Math.round(Math.sin(t * 1.3 + tx) * 0.6); F(ctx, ox + 5, oy + 6 + bob, 4, 3, '#3f8a3a'); F(ctx, ox + 6, oy + 7 + bob, 1, 1, '#f0f0f0'); } // a lily pad bobbing
+    if (boat) { const bob = Math.round(Math.sin(t * 1.6 + tx) * 0.7); F(ctx, ox + 1, oy + 5 + bob, 14, 7, '#5a3a20'); F(ctx, ox + 2, oy + 6 + bob, 12, 5, '#8a6238'); F(ctx, ox + 7, oy + 6 + bob, 2, 5, '#5a3a20'); }
+  }
+}
 function render(dt) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
   const titleish = ['title', 'wardrobe', 'achievements', 'towns', 'roles'].includes(state) || (state === 'saves' && saves && saves.from === 'title');
@@ -4650,6 +4672,7 @@ function render(dt) {
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   ctx.drawImage(m.canvas, 0, 0);
+  if (m.kind === 'town' || m.kind === 'sewer') drawWater(m, cx, cy);
   const di = titleish ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
   if (m.kind === 'town') {
