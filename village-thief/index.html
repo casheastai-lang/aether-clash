@@ -2230,41 +2230,40 @@ function genShipBelow() {
 }
 genShipBelow(); restockShip();
 // PRISON ISLAND: where the Watch sends thieves caught with a 5-star bounty. A walled compound on a rock in the sea.
-const ISL = { W: 84, H: 64, cell: { x0: 25, x1: 27, y0: 17, y1: 19, door: { x: 26, y: 20 }, bed: { x: 25, y: 17 }, stone: { x: 27, y: 17 } }, gate: { x: 42, y: 46 },
-  drain: { x: 59, y: 24 }, drainOut: { x: 67, y: 22 }, climb: { x: 61, y: 15 }, climbOut: { x: 64, y: 11 }, tunnelOut: { x: 27, y: 49 }, dockEnd: { x: 42, y: 61 } };
+const ISL = { W: 122, H: 88, cx: 60, cy: 38, rx: 60, ry: 44, cell: { x0: 25, x1: 27, y0: 17, y1: 19, door: { x: 26, y: 20 }, bed: { x: 25, y: 17 }, stone: { x: 27, y: 17 } }, gate: { x: 60, y: 62 },
+  drain: { x: 59, y: 24 }, drainOut: { x: 59, y: 11 }, climb: { x: 97, y: 15 }, climbOut: { x: 99, y: 12 }, tunnelOut: { x: 19, y: 18 }, dockEnd: { x: 60, y: 85 }, cart: { x: 70, y: 34 }, cartOut: { x: 60, y: 67 } };
 function genIsland() {
   const W = ISL.W, H = ISL.H, m = newMap('island', W, H, 'island'), set = (x, y, t) => { m.tiles[y * W + x] = t; }, G = (x, y, t) => { m.ground[y * W + x] = t; m.tiles[y * W + x] = t; };
   m.locks = new Map(); m.blanket = '#6a6a5a'; m.torches = []; m.approach = { x: 10, y: 93 };
-  const land = (x, y) => { const d = ((x - 42) / 38) ** 2 + ((y - 32) / 28) ** 2; return d < 1 - hash(x, y, 601) * 0.06; };
+  const land = (x, y) => { const d = ((x - ISL.cx) / ISL.rx) ** 2 + ((y - ISL.cy) / ISL.ry) ** 2; return d < 1 - hash(x, y, 601) * 0.06; };
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (land(x, y)) G(x, y, hash(x, y, 602) < 0.06 ? T.FLOWER : T.GRASS); else { m.ground[y * W + x] = T.OCEAN; m.tiles[y * W + x] = T.OCEAN; } }
-  for (let y = 57; y <= 62; y++) for (const x of [41, 42, 43]) G(x, y, T.BRIDGE); // the dock
-  for (let y = 47; y <= 56; y++) for (const x of [41, 42, 43]) G(x, y, T.PATH); // the road from the gate
-  // the compound wall
-  for (let x = 22; x <= 62; x++) for (const y of [14, 46]) set(x, y, T.STONE);
-  for (let y = 14; y <= 46; y++) for (const x of [22, 62]) set(x, y, T.STONE);
-  for (let y = 15; y <= 45; y++) for (let x = 23; x <= 61; x++) G(x, y, T.COBBLE);
+  for (let y = 80; y <= 86; y++) for (const x of [59, 60, 61]) G(x, y, T.BRIDGE); // the dock
+  for (let y = 63; y <= 79; y++) for (const x of [59, 60, 61]) G(x, y, T.PATH); // the road from the gate
+  // the compound wall: twice the size it was
+  for (let x = 22; x <= 98; x++) for (const y of [14, 62]) set(x, y, T.STONE);
+  for (let y = 14; y <= 62; y++) for (const x of [22, 98]) set(x, y, T.STONE);
+  for (let y = 15; y <= 61; y++) for (let x = 23; x <= 97; x++) G(x, y, T.COBBLE);
+  for (let y = 38; y <= 60; y++) for (let x = 64; x <= 96; x++) G(x, y, hash(x, y, 604) < 0.05 ? T.FLOWER : T.GRASS); // the exercise field
+  for (let y = 48; y <= 60; y++) for (let x = 24; x <= 60; x++) if ((x - 24) % 6 < 4 && (y - 48) % 5 < 3) G(x, y, T.FIELD); // the prison farm
   const lock = (x, y, name, pins) => { set(x, y, T.VDOOR); m.locks.set(y * W + x, { x, y, name, pins, kind: 'pick', shut: true }); };
   lock(ISL.gate.x, ISL.gate.y, 'The main gate', 8);
   const building = (x0, y0, x1, y1, doors) => { for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { if (x === x0 || x === x1 || y === y0 || y === y1) set(x, y, T.STONE); else G(x, y, T.SFLOOR); } for (const [dx, dy] of doors) G(dx, dy, T.SFLOOR); };
-  building(24, 16, 44, 26, [[34, 26]]); // the cell block
-  for (let k = 0; k < 5; k++) { const cx0 = 25 + k * 4; for (let y = 17; y <= 19; y++) set(cx0 + 3, y, T.STONE); for (let x = cx0; x <= cx0 + 2; x++) set(x, 20, T.BARS); lock(cx0 + 1, 20, k ? 'A cell door' : 'Your cell door', 7); set(cx0, 17, T.BED); set(cx0, 18, T.BED2); }
-  for (let k = 1; k < 5; k++) { const L = m.locks.get(20 * W + 26 + k * 4); L.shut = true; }
+  const cellBlock = (x0, n, door, first) => { building(x0 - 1, 16, x0 - 1 + n * 4, 26, [[door, 26]]); for (let k = 0; k < n; k++) { const cx0 = x0 + k * 4; for (let y = 17; y <= 19; y++) set(cx0 + 3, y, T.STONE); for (let x = cx0; x <= cx0 + 2; x++) set(x, 20, T.BARS); lock(cx0 + 1, 20, first && !k ? 'Your cell door' : 'A cell door', 7); set(cx0, 17, T.BED); set(cx0, 18, T.BED2); } };
+  cellBlock(25, 5, 34, true); // Cell Block A (yours is the first cell)
+  cellBlock(65, 6, 76, false); // Cell Block B
   building(46, 16, 60, 26, [[53, 26]]); // the mess hall, the kitchen at its east end
   for (const [x, y] of [[48, 19], [49, 19], [50, 19], [48, 22], [49, 22], [50, 22]]) set(x, y, T.TABLE);
-  for (let y = 17; y <= 25; y++) if (y !== 21) set(54, y, T.STONE); // the kitchen wall, a door at 54,21
+  for (let y = 17; y <= 25; y++) if (y !== 21) set(54, y, T.STONE);
   set(57, 17, T.FIRE); set(59, 17, T.IBARREL); set(56, 25, T.IBARREL); set(ISL.drain.x, ISL.drain.y, T.MANHOLE);
-  building(24, 38, 36, 45, [[30, 38]]); // the workshop
-  set(25, 44, T.CRATE); set(35, 44, T.CRATE); set(26, 39, T.TABLE); set(34, 39, T.TABLE);
-  building(48, 38, 60, 45, [[54, 38]]); // the guardhouse
-  set(59, 39, T.DESK); set(49, 44, T.CHEST); set(59, 44, T.IBARREL);
-  for (const [x, y] of [[26, 28], [57, 28], [26, 35], [57, 35]]) { set(x, y, T.STONE); set(x + 1, y, T.STONE); set(x, y + 1, T.STONE); set(x + 1, y + 1, T.STONE); } // watchtowers in the yard
-  for (const [x, y] of [[30, 31], [31, 31], [44, 33], [45, 33]]) set(x, y, T.BENCH);
-  m.pickups = [{ x: 26, y: 40, id: 'rope', name: 'a coil of rope' }, { x: 59, y: 40, id: 'keys', name: 'the warden\'s key ring' }, { x: 49, y: 43, id: 'oars', name: 'a pair of oars' }];
-  for (const [x, y] of [[23, 16], [61, 16], [23, 44], [61, 44], [34, 27], [53, 27], [42, 45], [42, 47], [30, 37], [54, 37], [42, 30]]) m.torches.push({ x, y });
-  // the hidden rowboat on the north beach
-  let ry = 0; while (ry < H && !land(42 + 14, ry)) ry++; m.rowboat = { x: 56, y: ry, boat: { x: 56, y: ry - 1 } }; if (ry > 0) set(56, ry - 1, T.BOAT);
-  // trees and rocks outside the walls, never in the patrols' way
-  m.routeTiles = new Set();
+  building(90, 16, 97, 26, [[93, 26]]); set(96, 18, T.DESK); set(91, 17, T.SHELF); set(92, 17, T.SHELF); // the warden's office
+  building(64, 28, 78, 36, [[71, 28]]); set(65, 29, T.IBARREL); set(77, 29, T.IBARREL); set(66, 35, T.CRATE); set(76, 35, T.CRATE); // the laundry
+  building(24, 38, 36, 45, [[30, 38]]); set(25, 44, T.CRATE); set(35, 44, T.CRATE); set(26, 39, T.TABLE); set(34, 39, T.TABLE); // the workshop
+  building(48, 38, 60, 45, [[54, 38]]); set(59, 39, T.DESK); set(49, 44, T.CHEST); set(59, 44, T.IBARREL); // the guardhouse
+  for (const [x, y] of [[26, 28], [57, 28], [26, 35], [57, 35], [65, 39], [94, 39], [65, 58], [94, 58], [24, 46], [58, 46]]) { set(x, y, T.STONE); set(x + 1, y, T.STONE); set(x, y + 1, T.STONE); set(x + 1, y + 1, T.STONE); } // watchtowers
+  for (const [x, y] of [[30, 31], [31, 31], [44, 33], [45, 33], [75, 49], [76, 49], [84, 52], [85, 52]]) set(x, y, T.BENCH);
+  m.pickups = [{ x: 26, y: 40, id: 'rope', name: 'a coil of rope' }, { x: 95, y: 19, id: 'keys', name: 'the warden\'s key ring' }, { x: 49, y: 43, id: 'oars', name: 'a pair of oars' }];
+  for (const [x, y] of [[23, 16], [97, 16], [23, 61], [97, 61], [34, 27], [53, 27], [76, 27], [93, 27], [60, 61], [60, 63], [30, 37], [54, 37], [42, 30], [80, 45], [80, 55], [42, 53], [71, 37]]) m.torches.push({ x, y });
+  let ry = 0; while (ry < H && !land(74, ry)) ry++; m.rowboat = { x: 74, y: ry, boat: { x: 74, y: ry - 1 } }; if (ry > 0) set(74, ry - 1, T.BOAT); // the hidden rowboat on the north beach
   m.entry = { x: ISL.cell.x0 + 1, y: 18 };
   return m;
 }
@@ -2272,9 +2271,9 @@ const ISLAND_MAP = genIsland();
 function plantIsland() { // after the patrols exist: scatter trees and rocks where nobody walks
   const m = ISLAND_MAP, W = m.w, keep = new Set();
   for (const g of guards) if (g.map === 'island') { const pts = g.route; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) || 1; for (let k = 0; k <= n; k++) { const x = Math.round(a.x + (b.x - a.x) * k / n), y = Math.round(a.y + (b.y - a.y) * k / n); for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) keep.add((x + dx) + ',' + (y + dy)); } } }
-  for (const p of [ISL.tunnelOut, ISL.drainOut, ISL.climbOut, m.rowboat]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) keep.add((p.x + dx) + ',' + (p.y + dy));
+  for (const p of [ISL.tunnelOut, ISL.drainOut, ISL.climbOut, ISL.cartOut, m.rowboat]) for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) keep.add((p.x + dx) + ',' + (p.y + dy));
   for (let y = 2; y < m.h - 2; y++) for (let x = 2; x < W - 2; x++) {
-    if (x >= 21 && x <= 63 && y >= 13 && y <= 47) continue; if (m.tiles[y * W + x] !== T.GRASS && m.tiles[y * W + x] !== T.FLOWER) continue; if (keep.has(x + ',' + y) || (x >= 40 && x <= 44)) continue;
+    if (x >= 21 && x <= 99 && y >= 13 && y <= 63) continue; if (m.tiles[y * W + x] !== T.GRASS && m.tiles[y * W + x] !== T.FLOWER) continue; if (keep.has(x + ',' + y) || (x >= 57 && x <= 63)) continue;
     const h = hash(x, y, 603); if (h < 0.05) m.tiles[y * W + x] = T.TREE; else if (h < 0.08) m.tiles[y * W + x] = T.ROCK;
   }
   renderMap(m);
@@ -2288,7 +2287,7 @@ function islandAllowed() { // where a prisoner may be: the cell by night; by day
   const p = player; if (p.map !== 'island') return true; const t = tileOfE(p);
   if (inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1)) return true;
   if (isNight()) return false;
-  return inRect(t, 25, 17, 43, 25) || inRect(t, 47, 17, 53, 25) || inRect(t, 23, 26, 61, 37) || (t.x === 34 && t.y === 26) || (t.x === 53 && t.y === 26);
+  return inRect(t, 25, 17, 43, 25) || inRect(t, 65, 17, 87, 25) || inRect(t, 47, 17, 53, 25) || inRect(t, 23, 26, 63, 37) || inRect(t, 63, 37, 97, 61) || inRect(t, 23, 46, 62, 61) || [[34, 26], [53, 26], [76, 26]].some(([x, y]) => t.x === x && t.y === y);
 }
 function sendToIsland() {
   const p = player, m = ISLAND_MAP;
@@ -2300,6 +2299,7 @@ function sendToIsland() {
     for (const g of guards) if (g.map === 'island') { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
     msg(`With a 5-star bounty, there\'s no Watch House for you: the prison ship carries you out to PRISON ISLAND. Sentence: ${island.weeks} week${island.weeks > 1 ? 's' : ''}${islandCount > 1 ? ` (trip number ${islandCount})` : ''}.`, '#ff6b6b');
     msg('Tip: the loose stone by your bed - hold F there to dig a tunnel, a little at a time.', '#cfe8ff');
+    msg('By day you may also walk the exercise field and the prison farm.', '#cfe8ff');
     msg('25 warders and 5 dogs, always on alert. By day you may use the cell block, the mess hall and the yard; at night, only your cell. Serve your time - or find a way off this rock. The other prisoners know a few tricks.', '#ffb36b');
     SFX.jail(); stat('islandSent');
   });
@@ -2326,6 +2326,7 @@ function updateIsland(dt) {
   if (gameTime >= island.end && player.state === 'free' && !fade.dir) leaveIsland(false);
 }
 function drawIslandLife(m) {
+  { const x = ISL.cart.x * TS, y = ISL.cart.y * TS; F(ctx, x + 1, y + 6, 14, 8, '#6b4423'); F(ctx, x + 2, y + 3, 12, 5, '#f0ece4'); F(ctx, x + 4, y + 2, 5, 2, '#e0dcd4'); F(ctx, x + 2, y + 13, 3, 3, '#2a2a2a'); F(ctx, x + 11, y + 13, 3, 3, '#2a2a2a'); } // the laundry cart
   if (island && island.boatHere) { const x = ISL.dockEnd.x * TS - 30, y = (ISL.dockEnd.y + 1) * TS; F(ctx, x, y, 76, 16, '#5a3618'); F(ctx, x + 2, y + 2, 72, 10, '#8a5c34'); F(ctx, x + 70, y + 4, 10, 8, '#5a3618'); F(ctx, x + 34, y - 28, 3, 30, '#3a2412'); F(ctx, x + 22, y - 26, 28, 18, '#efe6cc'); for (let k = 0; k < 4; k++) F(ctx, x + 8 + k * 14, y + 3, 9, 7, '#a0703a'); }
   const t = gameTime; for (const L of m.locks.values()) if (L.shut === false && L.x === ISL.gate.x) F(ctx, L.x * TS, L.y * TS, 16, 16, 'rgba(0,0,0,0.5)');
 }
@@ -2413,7 +2414,7 @@ const jail2NPCs = [
   { kind: 'decor', jailer: true, name: 'Jailer Moss', map: 'jail2', x: 3 * TS + 8, y: 14 * TS + 12, dir: 'down', sheet: JAILER_SHEET, animT: 0, bubble: null, lines: ['Silverwater keeps its cells clean.', 'Name? Crime? Sign here.', 'Mind the wet floor.'] },
   { kind: 'decor', escortCaptain: true, homeTown: 3, name: 'Captain Vane', map: 'jail2', x: 19 * TS + 8, y: 15 * TS + 12, dir: 'down', sheet: guardSheet(3), animT: 0, bubble: null, lines: ['The harbour runs on trade.', 'Wagons out at all hours.', 'Smugglers in every cellar.'] },
 ];
-const islandNPCs = [['Old Finn', 33, 31, ['I hid a rowboat on the north beach years ago. Never found oars - the guardhouse keeps them.', 'Fifteen years I\'ve been here.']], ['Knuckles', 50, 20, ['The kitchen drain runs under the east wall. Grate\'s locked, mind.', 'Eat your gruel.']], ['Silent Sal', 41, 23, ['Some dig. Behind the loose stone. Takes all night, and the warders check.', '...']], ['Lefty', 27, 33, ['A rope from the workshop and the dark north-east corner. That\'s how Mags got out.', 'Watch the towers.']], ['Rat-Tail Ros', 52, 33, ['Supply boat ties up at the south dock now and then. Get in the cargo and you\'re gone.', 'The warden\'s keys hang in the guardhouse.']], ['The Professor', 37, 22, ['Every lock here has more pins than you\'d like. Bring plenty of picks.', 'The dogs roam outside the walls. Mind them.']]]
+const islandNPCs = [['Old Finn', 33, 31, ['I hid a rowboat on the north beach years ago. Never found oars - the guardhouse keeps them.', 'Fifteen years I\'ve been here.']], ['Knuckles', 50, 20, ['The kitchen drain runs under the east wall. Grate\'s locked, mind.', 'Eat your gruel.']], ['Silent Sal', 41, 23, ['Some dig. Behind the loose stone. Takes all night, and the warders check.', '...']], ['Lefty', 27, 33, ['A rope from the workshop and the dark north-east corner. That\'s how Mags got out.', 'Watch the towers.']], ['Rat-Tail Ros', 52, 33, ['Supply boat ties up at the south dock now and then. Get in the cargo and you\'re gone.', 'The warden\'s keys hang in the guardhouse.']], ['The Professor', 37, 22, ['Every lock here has more pins than you\'d like. Bring plenty of picks.', 'The dogs roam outside the walls. Mind them.']], ['Big Hal', 80, 23, ['The warden keeps his keys in his office, east end. Never leaves them, except at dinner.', 'Block B\'s the quiet one.']], ['Laundry Liz', 72, 44, ['The laundry cart goes out the gate every day. Nobody checks under the sheets.', 'Lovely day for a walk round the field.']], ['Spud', 40, 52, ['I grow cabbages. Twelve years of cabbages.', 'The farm\'s the only place they leave you be.']], ['Grey Morgan', 88, 50, ['Count the towers. Ten of them now. They see everything.', 'I tried the wall once. Once.']]]
   .map(([name, x, y, lines]) => ({ kind: 'decor', name: 'Prisoner ' + name, map: 'island', x: x * TS + 8, y: y * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: SKINS[name.length % 5], hair: HAIRS[name.length % 6], hairStyle: 'short', shirt: '#8a8678', pants: '#5a5850' }), animT: 0, bubble: null, lines }));
 const allJailNPCs = () => jailNPCs.concat(jail2NPCs, islandNPCs);
 const shipNPCs = [
@@ -2821,12 +2822,12 @@ function setupPosts() {
   extraPosts.push({ name: 'the Sea Maiden', map: 'ship', welcome: () => true,
     staff: [['guard', 'Marine Dorran', CITYWATCH_SHEETS[0], [[14, 12], [37, 12]]], ['guard', 'Marine Hale', CITYWATCH_SHEETS[1], [[30, 15], [38, 15], [38, 10], [30, 10]]]] });
   { const W8 = ['Brack', 'Cole', 'Dunmore', 'Esk', 'Fenwick', 'Grist', 'Hobb', 'Irons', 'Jagger', 'Kell', 'Lusk', 'Mace', 'Nettle', 'Orme', 'Pike', 'Quarry', 'Rook', 'Slate', 'Thorne', 'Vane', 'Wick', 'Yarrow', 'Bolt', 'Crane', 'Drum'];
-    const R0 = [[[25, 22], [43, 22]], [[43, 24], [25, 24]], [[30, 23], [38, 23]], [[25, 30], [59, 30]], [[59, 34], [25, 34]], [[30, 29], [30, 36], [50, 36], [50, 29]], [[40, 28], [40, 36]], [[47, 24], [53, 24]], [[47, 18], [53, 18]],
-      [[56, 18], [59, 19], [59, 23], [56, 24]], [[26, 42], [34, 42]], [[50, 40], [58, 41], [58, 43], [50, 42]], [[42, 44]], [[42, 48]], [[23, 15], [23, 45], [61, 45], [61, 15]], [[61, 45], [23, 45], [23, 15], [61, 15]],
-      [[20, 12], [64, 12]], [[64, 12], [64, 48]], [[64, 48], [20, 48]], [[20, 48], [20, 12]], [[40, 52], [44, 56]], [[30, 8], [54, 8]], [[10, 30], [18, 40]], [[70, 26], [74, 36]], [[34, 27], [52, 27]]];
+    const R0 = [[[25, 22], [43, 22]], [[65, 22], [87, 22]], [[87, 24], [65, 24]], [[25, 30], [59, 30]], [[59, 34], [25, 34]], [[47, 24], [53, 24]], [[56, 18], [59, 19], [59, 23], [56, 24]], [[26, 42], [34, 42]], [[50, 40], [58, 41], [58, 43], [50, 42]],
+      [[91, 19], [96, 20], [96, 24], [91, 24]], [[65, 30], [77, 30], [77, 34], [65, 34]], [[60, 61]], [[60, 64]], [[67, 41], [93, 41], [93, 57], [67, 57]], [[93, 57], [67, 57], [67, 41], [93, 41]], [[23, 47], [61, 47], [61, 61], [23, 61]],
+      [[23, 15], [23, 61], [97, 61], [97, 15]], [[97, 61], [23, 61], [23, 15], [97, 15]], [[20, 12], [100, 12]], [[100, 12], [100, 64]], [[100, 64], [20, 64]], [[20, 64], [20, 12]], [[58, 68], [62, 78]], [[40, 8], [80, 8]], [[40, 28], [40, 36]]];
     const S0 = { 12: true, 13: true };
     extraPosts.push({ name: 'Prison Island', map: 'island', welcome: islandAllowed,
-      staff: R0.map((rt, i) => ['guard', 'Warder ' + W8[i], [...CITYWATCH_SHEETS, ...PORTWATCH_SHEETS][i % 6], rt, !!S0[i]]).concat([[[22, 12], [62, 12], [66, 48], [18, 48]], [[66, 48], [18, 48], [22, 12], [62, 12]], [[42, 49], [42, 56]], [[28, 8], [56, 8]], [[26, 32], [58, 32]]].map((rt, i) => ['dog', ['Fang', 'Brute', 'Ripper', 'Shadow', 'Grim'][i], i % 2 ? WOLF_SHEET : DOG_SHEET, rt])) }); }
+      staff: R0.map((rt, i) => ['guard', 'Warder ' + W8[i], [...CITYWATCH_SHEETS, ...PORTWATCH_SHEETS][i % 6], rt, !!S0[i]]).concat([[[20, 12], [100, 12], [100, 64], [20, 64]], [[100, 64], [20, 64], [20, 12], [100, 12]], [[60, 66], [60, 78]], [[30, 8], [90, 8]], [[68, 49], [92, 49]]].map((rt, i) => ['dog', ['Fang', 'Brute', 'Ripper', 'Shadow', 'Grim'][i], i % 2 ? WOLF_SHEET : DOG_SHEET, rt])) }); }
   extraPosts.push({ name: 'below decks', map: 'shipbelow', welcome: () => true, staff: [['guard', 'Marine Corwin', CITYWATCH_SHEETS[2], [[2, 8], [20, 8], [23, 10], [31, 10], [23, 10], [20, 8]]]] });
   extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
     staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
@@ -4417,12 +4418,13 @@ function findInteraction() {
     const near = (x, y, r = 20) => Math.hypot(p.x - (x * TS + 8), p.y - 4 - (y * TS + 8)) < r, t = tileOfE(p), inCell = inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1);
     const cell = m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x), gate = m.locks.get(ISL.gate.y * m.w + ISL.gate.x);
     if (inCell && near(ISL.cell.bed.x, ISL.cell.bed.y + 1, 22)) { p.inter = { label: `Sleep (${Math.max(0, Math.ceil((island.end - gameTime) / DAY_LEN))} days of your sentence left)`, act: () => { if (!isNight()) { say(p, 'Can\'t sleep in broad daylight.', 1.5); return; } transition(() => { const d = dayInfo(); gameTime = d.day * DAY_LEN + 1; p.stamina = 100; msg('Morning. The cell doors clank open.', '#cfd8ff'); }); } };
-      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold F, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.x = ISL.tunnelOut.x * TS + 8; p.y = ISL.tunnelOut.y * TS + 12; msg('You squeeze up out of the tunnel - outside the south wall!', '#9df0a0'); }); } else { p.state = 'digging'; } } }; return; }
+      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold F, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.x = ISL.tunnelOut.x * TS + 8; p.y = ISL.tunnelOut.y * TS + 12; msg('You squeeze up out of the tunnel - outside the west wall!', '#9df0a0'); }); } else { p.state = 'digging'; } } }; return; }
     if (inCell && cell.shut && near(cell.x, cell.y, 22)) { p.inter = { label: 'Pick your cell lock (hard)', act: () => startPick(null, () => { cell.shut = false; cell.picked = true; msg('Click. Your cell door swings open. Quietly now...', '#9df0a0'); }, 7, 'Cell door') }; return; }
     if (gate.shut && near(gate.x, gate.y - 1, 22)) { p.inter = islandItem('keys') ? { label: 'Unlock the main gate (warden\'s keys)', act: () => { gate.shut = false; SFX.unlock(); msg('The main gate swings open!', '#9df0a0'); } } : { label: 'Pick the main gate lock (very hard)', act: () => startPick(null, () => { gate.shut = false; msg('The main gate swings open!', '#9df0a0'); }, 8, 'Main gate') }; return; }
-    if (near(ISL.drain.x, ISL.drain.y)) { p.inter = island.drainOpen ? { label: 'Climb down the drain', act: () => transition(() => { p.x = ISL.drainOut.x * TS + 8; p.y = ISL.drainOut.y * TS + 12; msg('You crawl through the stinking drain and out onto the rocks, east of the wall!', '#9df0a0'); }) } : { label: 'Pick the drain grate', act: () => startPick(null, () => { island.drainOpen = true; msg('The grate lifts. The drain runs under the wall...', '#9df0a0'); }, 7, 'Drain grate') }; return; }
+    if (near(ISL.drain.x, ISL.drain.y)) { p.inter = island.drainOpen ? { label: 'Climb down the drain', act: () => transition(() => { p.x = ISL.drainOut.x * TS + 8; p.y = ISL.drainOut.y * TS + 12; msg('You crawl through the stinking drain, under the north wall, and out onto the rocks!', '#9df0a0'); }) } : { label: 'Pick the drain grate', act: () => startPick(null, () => { island.drainOpen = true; msg('The grate lifts. The drain runs under the wall...', '#9df0a0'); }, 7, 'Drain grate') }; return; }
     if (near(ISL.climb.x, ISL.climb.y)) { p.inter = islandItem('rope') ? { label: 'Throw the rope over the wall and climb', act: () => transition(() => { p.x = ISL.climbOut.x * TS + 8; p.y = ISL.climbOut.y * TS + 12; island.items.delete('rope'); msg('Hand over hand, up and over. You drop down outside the north-east wall!', '#9df0a0'); }) } : { label: 'A dark corner of the wall (you\'d need a rope)', act: () => say(p, 'Too high to climb bare-handed.', 1.5) }; return; }
     for (const k of m.pickups) if (!island.items.has(k.id) && !(island.taken || new Set()).has(k.id) && near(k.x, k.y)) { p.inter = { label: `Take ${k.name}`, act: () => { island.items.add(k.id); SFX.steal(); msg(`You pocket ${k.name}.`, '#f7d774'); } }; return; }
+    if (near(ISL.cart.x, ISL.cart.y, 22)) { p.inter = isNight() ? { label: 'The laundry cart (it only goes out by day)', act: () => say(p, 'Nobody wheels it out at night.', 1.5) } : { label: 'Hide in the laundry cart', act: () => transition(() => { p.x = ISL.cartOut.x * TS + 8; p.y = ISL.cartOut.y * TS + 12; msg('Buried under sheets, you\'re wheeled out through the main gate... and tipped out by the dock road. Outside the walls!', '#9df0a0'); }) }; return; }
     const rb = m.rowboat; if (near(rb.x, rb.y, 24)) { p.inter = islandItem('oars') ? { label: 'Push off in the rowboat and row for the mainland!', act: () => leaveIsland(true, 'You row through the night until your arms burn...') } : { label: 'A rowboat - but no oars', act: () => say(p, 'No oars. The guardhouse keeps them...', 2) }; return; }
     if (island.boatHere && near(ISL.dockEnd.x, ISL.dockEnd.y - 1, 30)) { p.inter = { label: 'Stow away in the supply boat\'s cargo', act: () => leaveIsland(true, 'You curl up between the crates. Hours later, the boat bumps against a mainland dock...') }; return; }
   } else if (m.kind === 'ship') {
@@ -4546,7 +4548,7 @@ function updatePlayer(dt) {
       if (!held('f') || mv.l > 0 || !island) { p.state = 'free'; break; }
       island.dig += dt; if (Math.random() < dt * 2) SFX.struggle && SFX.struggle();
       for (const g of guards) if (g.map === 'island' && guardSees(g)) { p.state = 'free'; say(g, 'Digging, are we?! GUARDS!', 2); island.dig = Math.max(0, island.dig - 20); setWanted('Caught digging an escape tunnel!'); startChase(g); break; }
-      if (island.dig >= 45) { p.state = 'free'; msg('You break through! The tunnel runs under the south wall. Press F by the loose stone to crawl in.', '#9df0a0'); }
+      if (island.dig >= 45) { p.state = 'free'; msg('You break through! The tunnel runs under the west wall. Press F by the loose stone to crawl in.', '#9df0a0'); }
       return;
     }
     case 'crating': { // lifting a crate off the supply wagon
