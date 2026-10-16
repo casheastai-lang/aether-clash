@@ -2268,6 +2268,41 @@ function genIsland() {
   return m;
 }
 const ISLAND_MAP = genIsland();
+// THE IRON MAIDEN: the prison hulk that carries convicts out to the island. You ride in her brig.
+function genPrisonShip() {
+  const W = 64, H = 26, m = newMap('prisonship', W, H, 'ship'), set = (x, y, t) => { m.tiles[y * W + x] = t; }; m.blanket = '#4a4a4a';
+  const hull = (x, y) => { if (x < 4 || x > 59) return false; if (x <= 52) return y >= 5 && y <= 20; const k = x - 52; return y >= 5 + k && y <= 20 - k; };
+  for (let i = 0; i < W * H; i++) { m.ground[i] = T.OCEAN; m.tiles[i] = T.OCEAN; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (hull(x, y)) { m.ground[y * W + x] = T.DECK; set(x, y, [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => !hull(x + dx, y + dy)) ? T.RAIL : 0); }
+  m.locks = new Map();
+  // the brig: two rows of iron cages either side of a guarded passage
+  for (let x = 8; x <= 36; x++) { set(x, 9, T.BARS); set(x, 16, T.BARS); } for (let y = 6; y <= 19; y++) if (y !== 9 && y !== 16) { set(8, y, T.CABWALL); set(36, y, T.CABWALL); }
+  for (let k = 0; k < 7; k++) { const x0 = 9 + k * 4; for (const y of [6, 7, 8]) set(x0 + 3, y, T.BARS); for (const y of [17, 18, 19]) set(x0 + 3, y, T.BARS); set(x0 + 1, 9, T.VDOOR); m.locks.set(9 * W + x0 + 1, { x: x0 + 1, y: 9, name: 'A cage door', pins: 7, kind: 'pick', shut: true }); set(x0 + 1, 16, T.VDOOR); m.locks.set(16 * W + x0 + 1, { x: x0 + 1, y: 16, name: 'A cage door', pins: 7, kind: 'pick', shut: true }); set(x0, 6, T.SACK); set(x0, 19, T.SACK); }
+  set(36, 12, 0); set(36, 13, 0); // the brig door to the deck
+  for (const [x, y, t] of [[40, 6, T.BARREL], [41, 6, T.BARREL], [44, 19, T.CRATE], [45, 19, T.CRATE], [6, 12, T.HELM], [48, 6, T.CRATE], [48, 19, T.BARREL]]) set(x, y, t);
+  set(30, 12, 0); set(42, 12, T.MAST); set(50, 13, T.MAST); set(22, 12, T.MAST);
+  m.masts = [{ x: 22, y: 12 }, { x: 42, y: 12 }, { x: 50, y: 13 }]; m.torches = [{ x: 12, y: 12 }, { x: 20, y: 13 }, { x: 28, y: 12 }, { x: 34, y: 13 }, { x: 44, y: 9 }];
+  m.sailY0 = 5; m.sailY1 = 20; m.cage = { x0: 9, x1: 11, y0: 6, y1: 8, door: { x: 10, y: 9 } }; m.entry = { x: 10, y: 7 }; m.approach = { x: 10, y: 93 };
+  return m;
+}
+const PRISON_SHIP = genPrisonShip();
+// the escape tunnel you dig from your cell, and the kitchen drain pipe: cramped, dark, and you crawl the whole way
+function genCrawl(key, len, seed, wet) {
+  const W = len + 4, H = 11, m = newMap(key, W, H, 'tunnel'); m.cave = true; m.torches = []; m.approach = { x: 10, y: 93 };
+  for (let i = 0; i < W * H; i++) { m.ground[i] = T.CAVEFLOOR; m.tiles[i] = T.ROCK; }
+  let y = 5; const path = [];
+  for (let x = 2; x <= W - 3; x++) { if (x > 4 && x < W - 5 && hash(x, 1, seed) < 0.22) y = Math.max(2, Math.min(H - 3, y + (hash(x, 2, seed) < 0.5 ? -1 : 1))); path.push({ x, y }); m.tiles[y * W + x] = 0; if (hash(x, 3, seed) < 0.4) m.tiles[(y + (hash(x, 4, seed) < 0.5 ? 1 : -1)) * W + x] = 0; }
+  for (let i = 1; i < path.length; i++) if (path[i].y !== path[i - 1].y) m.tiles[path[i - 1].y * W + path[i].x] = 0; // keep the turns connected
+  if (wet) for (const q of path) if (hash(q.x, q.y, seed + 1) < 0.3) m.ground[q.y * W + q.x] = T.SEWER;
+  m.start = path[0]; m.end = path[path.length - 1]; m.entry = m.start;
+  return m;
+}
+const TUNNEL_MAP = genCrawl('tunnel', 54, 611, false), DRAIN_MAP = genCrawl('drainpipe', 40, 621, true);
+TUNNEL_MAP.links.push({ x: TUNNEL_MAP.end.x, y: TUNNEL_MAP.end.y, to: 'island', ax: ISL.tunnelOut.x, ay: ISL.tunnelOut.y, walk: true });
+DRAIN_MAP.links.push({ x: DRAIN_MAP.end.x, y: DRAIN_MAP.end.y, to: 'island', ax: ISL.drainOut.x, ay: ISL.drainOut.y, walk: true });
+TUNNEL_MAP.links.push({ x: TUNNEL_MAP.start.x, y: TUNNEL_MAP.start.y, to: 'island', ax: ISL.cell.x0 + 1, ay: 18, walk: true, back: true });
+DRAIN_MAP.links.push({ x: DRAIN_MAP.start.x, y: DRAIN_MAP.start.y, to: 'island', ax: ISL.drain.x - 1, ay: ISL.drain.y, walk: true, back: true });
+const ISLAND_MAPS = ['island', 'prisonship', 'tunnel', 'drainpipe'];
 function plantIsland() { // after the patrols exist: scatter trees and rocks where nobody walks
   const m = ISLAND_MAP, W = m.w, keep = new Set();
   for (const g of guards) if (g.map === 'island') { const pts = g.route; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], n = Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) || 1; for (let k = 0; k <= n; k++) { const x = Math.round(a.x + (b.x - a.x) * k / n), y = Math.round(a.y + (b.y - a.y) * k / n); for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) keep.add((x + dx) + ',' + (y + dy)); } } }
@@ -2284,28 +2319,41 @@ var islandCount = 0; // how many times you've been shipped to the island this ga
 const islandWeeks = n => n <= 2 ? 1 : n - 1;
 const inRect = (t, x0, y0, x1, y1) => t.x >= x0 && t.x <= x1 && t.y >= y0 && t.y <= y1;
 function islandAllowed() { // where a prisoner may be: the cell by night; by day the cell block, the mess hall (not the kitchen) and the yard
-  const p = player; if (p.map !== 'island') return true; const t = tileOfE(p);
+  const p = player; if (p.map === 'prisonship') { const t = tileOfE(p), c = PRISON_SHIP.cage; return inRect(t, c.x0, c.y0, c.x1, c.y1); } if (p.map !== 'island') return true; const t = tileOfE(p);
   if (inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1)) return true;
   if (isNight()) return false;
   return inRect(t, 25, 17, 43, 25) || inRect(t, 65, 17, 87, 25) || inRect(t, 47, 17, 53, 25) || inRect(t, 23, 26, 63, 37) || inRect(t, 63, 37, 97, 61) || inRect(t, 23, 46, 62, 61) || [[34, 26], [53, 26], [76, 26]].some(([x, y]) => t.x === x && t.y === y);
 }
 function sendToIsland() {
-  const p = player, m = ISLAND_MAP;
+  const p = player, S = PRISON_SHIP;
   islandCount++; const weeks = islandWeeks(islandCount);
-  island = { end: gameTime + weeks * 7 * DAY_LEN, weeks, items: new Set(), dig: island ? island.dig : 0, caught: 0 };
+  island = { end: gameTime + weeks * 7 * DAY_LEN, weeks, items: new Set(), dig: island ? island.dig : 0, caught: 0, phase: 'ship', shipEnd: gameTime + 120, nextCount: 0 };
+  for (const L of S.locks.values()) L.shut = true;
+  for (const g of guards) if (g.map === 'prisonship') { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
+  transition(() => {
+    p.map = 'prisonship'; p.x = S.entry.x * TS + 8; p.y = S.entry.y * TS + 12; p.dir = 'down'; p.state = 'free'; p.grabG = null;
+    msg(`With a 5-star bounty, there's no Watch House for you. You're chained in the brig of the IRON MAIDEN, the prison hulk, bound for PRISON ISLAND. Sentence: ${weeks} week${weeks > 1 ? 's' : ''}${islandCount > 1 ? ` (trip number ${islandCount})` : ''}.`, '#ff6b6b');
+    msg('Marines walk the passage between the cages. There\'s nowhere to run out here - but the other convicts talk.', '#ffb36b');
+    SFX.jail(); stat('islandSent');
+  });
+}
+function arriveOnIsland() {
+  const p = player, m = ISLAND_MAP; island.phase = 'island'; island.nextCount = gameTime + 40;
   transition(() => {
     p.map = 'island'; p.x = (ISL.cell.x0 + 1) * TS + 8; p.y = 18 * TS + 12; p.dir = 'down'; p.state = 'free'; p.grabG = null;
     for (const L of m.locks.values()) L.shut = true; m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x).shut = isNight();
     for (const g of guards) if (g.map === 'island') { const w = g.route[0]; g.x = w.x * TS + 8; g.y = w.y * TS + 12; g.state = 'patrol'; g.path = null; }
-    msg(`With a 5-star bounty, there\'s no Watch House for you: the prison ship carries you out to PRISON ISLAND. Sentence: ${island.weeks} week${island.weeks > 1 ? 's' : ''}${islandCount > 1 ? ` (trip number ${islandCount})` : ''}.`, '#ff6b6b');
+    msg('The Iron Maiden ties up at Prison Island. Warders march you to your cell.', '#ff6b6b');
     msg('Tip: the loose stone by your bed - hold F there to dig a tunnel, a little at a time.', '#cfe8ff');
     msg('By day you may also walk the exercise field and the prison farm.', '#cfe8ff');
     msg('25 warders and 5 dogs, always on alert. By day you may use the cell block, the mess hall and the yard; at night, only your cell. Serve your time - or find a way off this rock. The other prisoners know a few tricks.', '#ffb36b');
-    SFX.jail(); stat('islandSent');
+    SFX.jail();
   });
 }
 function islandCaught() {
-  const p = player, m = ISLAND_MAP; island.caught++; island.end += DAY_LEN * 0.4; island.items.clear(); wanted = false; syncForce && syncForce();
+  const p = player, m = ISLAND_MAP;
+  if (island.phase === 'ship') { const S = PRISON_SHIP; wanted = false; for (const g of guards) if (g.map === 'prisonship') { g.state = 'return'; g.path = null; } transition(() => { p.map = 'prisonship'; p.x = S.entry.x * TS + 8; p.y = S.entry.y * TS + 12; p.state = 'free'; p.grabG = null; S.locks.get(S.cage.door.y * S.w + S.cage.door.x).shut = true; msg('Thrown back in your cage, with a kick for good measure.', '#ff6b6b'); }); return; }
+  island.caught++; island.end += DAY_LEN * 0.4; island.items.clear(); wanted = false; syncForce && syncForce();
   for (const g of guards) if (g.map === 'island') { g.state = 'return'; g.path = null; g.prey = null; }
   transition(() => { p.map = 'island'; p.x = (ISL.cell.x0 + 1) * TS + 8; p.y = 18 * TS + 12; p.state = 'free'; p.grabG = null; m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x).shut = true; island.lockUntil = gameTime + 60;
     msg(`Dragged back to your cell${island.items.size ? '' : ''}. Anything you'd found is gone, and your sentence is longer.`, '#ff6b6b'); });
@@ -2317,9 +2365,39 @@ function leaveIsland(escaped, how) {
     else { bounty = 0; halfBounty = false; msg('Your sentence is served. The prison ferry drops you at Old Gil\'s dock. Go straight, eh?', '#cfe8ff'); } });
 }
 function islandItem(id) { return island && island.items.has(id); }
+const TOWERS = [[26, 28], [57, 28], [26, 35], [57, 35], [65, 39], [94, 39], [65, 58], [94, 58], [24, 46], [58, 46]];
+function searchlights() { const t = gameTime; return TOWERS.map(([x, y], i) => { const a = t * 0.45 + i * 1.9, r = 4 + Math.sin(t * 0.3 + i) * 2.5; return { x: (x + 1) * TS + Math.cos(a) * r * TS, y: (y + 1) * TS + Math.sin(a) * r * TS }; }); }
+function drawSearchlights() { if (!isNight() || !island || island.phase !== 'island') return; for (const L of searchlights()) { const g = ctx.createRadialGradient(L.x, L.y, 2, L.x, L.y, 26); g.addColorStop(0, 'rgba(255,250,210,0.55)'); g.addColorStop(1, 'rgba(255,250,210,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(L.x, L.y, 26, 20, 0, 0, 7); ctx.fill(); } }
+// the other prisoners: out in the yard, the field and the farm by day, locked in Block B at night
+const INMATE_SPOTS = [[23, 26, 61, 37], [63, 37, 96, 60], [24, 47, 61, 60]];
+function updateInmates(dt) {
+  const night = isNight();
+  islandNPCs.forEach((n, i) => {
+    if (n.repath === undefined) Object.assign(n, { path: null, repath: 0, stuckT: 0, wait: rnd(0, 4) });
+    n.moving = false; if (n.bubble) { n.bubble.t -= dt; if (n.bubble.t <= 0) n.bubble = null; }
+    if (night) { if (!n.inCell) { n.inCell = true; n.x = (66 + (i % 6) * 4) * TS + 8; n.y = 18 * TS + 12; n.path = null; } return; }
+    if (n.inCell) { n.inCell = false; n.x = (40 + i * 3) * TS + 8; n.y = 31 * TS + 12; n.path = null; }
+    if (n.wait > 0) { n.wait -= dt; return; }
+    if (!n.wt) { const [x0, y0, x1, y1] = INMATE_SPOTS[i % 3]; for (let k = 0; k < 10 && !n.wt; k++) { const x = x0 + Math.floor(Math.random() * (x1 - x0)), y = y0 + Math.floor(Math.random() * (y1 - y0)); if (!isSolid(ISLAND_MAP, x, y)) n.wt = { x, y }; } }
+    if (!n.wt) return;
+    if (navTo(n, 'island', n.wt.x, n.wt.y, 16, dt) || n.stuckT > 3) { n.wt = null; n.stuckT = 0; n.wait = rnd(3, 9); } else n.animT += dt;
+  });
+}
 function updateIsland(dt) {
   if (!island) return;
-  if (player.map !== 'island' && !fade.dir) { if (player.state !== 'jailed') island = null; return; }
+  if (!ISLAND_MAPS.includes(player.map) && !fade.dir) { if (player.state !== 'jailed') island = null; return; }
+  if (island.phase === 'ship') { if (gameTime >= island.shipEnd && !fade.dir && player.state === 'free') arriveOnIsland(); return; }
+  updateInmates(dt);
+  // the night head count: miss it and the island goes into lockdown
+  if (isNight() && gameTime >= island.nextCount && !fade.dir) {
+    island.nextCount = gameTime + 110; const t = tileOfE(player), here = player.map === 'island' && inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1);
+    const w = guards.find(g => g.map === 'island' && g.unit === 'guard'); if (w && player.map === 'island' && dist(w, player) < 300) say(w, 'HEAD COUNT! On your bunks!', 2.5);
+    if (!here && !(island.lockdown > gameTime)) { island.lockdown = gameTime + 90; msg('HEAD COUNT: your cell is empty! The bell clangs - LOCKDOWN. Every warder on the island is hunting you.', '#ff4040'); SFX.whistle && SFX.whistle(); if (player.map === 'island') { wanted = true; lastSeenT = gameTime; } }
+    else if (here) msg('Head count. The warder\'s lantern sweeps over your bunk... and moves on.', '#cfd8ff');
+  }
+  if (island.lockdown > gameTime && player.map === 'island') { wanted = true; lastSeenT = Math.max(lastSeenT, gameTime - 1); }
+  // searchlights sweep the grounds from the towers at night
+  if (isNight() && player.map === 'island' && !islandAllowed() && player.state !== 'hidden') for (const L of searchlights()) if (Math.hypot(player.x - L.x, player.y - 4 - L.y) < 24) { if (!wanted) { msg('A searchlight catches you!', '#ff6b6b'); setWanted('Spotted in the searchlight!'); } lastSeenT = gameTime; for (const g of guards.filter(g => g.map === 'island').sort((a, b) => dist(a, player) - dist(b, player)).slice(0, 4)) startChase(g); break; }
   const m = ISLAND_MAP, cell = m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x);
   if (!(island.lockUntil > gameTime)) { if (isNight() && !cell.picked) cell.shut = true; if (!isNight()) { cell.shut = false; cell.picked = false; } } // lights-out locks you in; morning lets you out
   island.boatHere = (gameTime % 300) < 80;
@@ -2416,7 +2494,9 @@ const jail2NPCs = [
 ];
 const islandNPCs = [['Old Finn', 33, 31, ['I hid a rowboat on the north beach years ago. Never found oars - the guardhouse keeps them.', 'Fifteen years I\'ve been here.']], ['Knuckles', 50, 20, ['The kitchen drain runs under the east wall. Grate\'s locked, mind.', 'Eat your gruel.']], ['Silent Sal', 41, 23, ['Some dig. Behind the loose stone. Takes all night, and the warders check.', '...']], ['Lefty', 27, 33, ['A rope from the workshop and the dark north-east corner. That\'s how Mags got out.', 'Watch the towers.']], ['Rat-Tail Ros', 52, 33, ['Supply boat ties up at the south dock now and then. Get in the cargo and you\'re gone.', 'The warden\'s keys hang in the guardhouse.']], ['The Professor', 37, 22, ['Every lock here has more pins than you\'d like. Bring plenty of picks.', 'The dogs roam outside the walls. Mind them.']], ['Big Hal', 80, 23, ['The warden keeps his keys in his office, east end. Never leaves them, except at dinner.', 'Block B\'s the quiet one.']], ['Laundry Liz', 72, 44, ['The laundry cart goes out the gate every day. Nobody checks under the sheets.', 'Lovely day for a walk round the field.']], ['Spud', 40, 52, ['I grow cabbages. Twelve years of cabbages.', 'The farm\'s the only place they leave you be.']], ['Grey Morgan', 88, 50, ['Count the towers. Ten of them now. They see everything.', 'I tried the wall once. Once.']]]
   .map(([name, x, y, lines]) => ({ kind: 'decor', name: 'Prisoner ' + name, map: 'island', x: x * TS + 8, y: y * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: SKINS[name.length % 5], hair: HAIRS[name.length % 6], hairStyle: 'short', shirt: '#8a8678', pants: '#5a5850' }), animT: 0, bubble: null, lines }));
-const allJailNPCs = () => jailNPCs.concat(jail2NPCs, islandNPCs);
+const shipConvicts = [['Gallows Jack', 13, 7, ['Third trip on the Maiden. They never learn, and neither do I.', 'On the island, dig behind your bunk. Slow, but they don\'t look there.']], ['Weeping Wen', 17, 18, ['I only stole a loaf...', 'The kitchen drain on the island - I heard it runs under the wall.']], ['Mute Moll', 25, 7, ['...', '*taps the bars, then points at the gate in her mind*']], ['Captain Crook', 29, 18, ['I sailed these seas once. The supply boat to the island - they never check its cargo.', 'Keep your head down at head count.']]]
+  .map(([name, x, y, lines]) => ({ kind: 'decor', name: 'Convict ' + name, map: 'prisonship', x: x * TS + 8, y: y * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: SKINS[name.length % 5], hair: HAIRS[name.length % 6], hairStyle: 'short', shirt: '#7a7668', pants: '#4a4840' }), animT: 0, bubble: null, lines }));
+const allJailNPCs = () => jailNPCs.concat(jail2NPCs, islandNPCs, shipConvicts);
 const shipNPCs = [
   { kind: 'decor', ship: true, captain: true, name: 'Captain Brine', map: 'ship', x: 17 * TS + 8, y: 14 * TS + 12, dir: 'right', fa: 0, sheet: makeSheet({ skin: '#e0ac69', hair: '#d9d9d9', hairStyle: 'short', hat: 'cap', hatC: '#1e2a4a', shirt: '#1e2a4a', pants: '#2a2a30', beard: true, belt: '#c9a24a' }), animT: 0, bubble: null, path: null, repath: 0, stuckT: 0, lines: ['Steady as she goes.', 'Mind the rigging, landlubber.', 'Twenty years I\'ve sailed these waters.', 'Keep your hands off my cabin.'] },
   { kind: 'decor', ship: true, name: 'Bosun Tarr', map: 'ship', x: 24 * TS + 8, y: 13 * TS + 12, dir: 'down', fa: Math.PI / 2, sheet: makeSheet({ skin: '#c68642', hair: '#2b1d14', hairStyle: 'short', hat: 'cap', hatC: '#7a2a2a', shirt: '#d8d0c0', pants: '#3a3a4a' }), animT: 0, bubble: null, lines: ['Haul away!', 'Don\'t stand on the ropes.', 'Fair wind today.', 'You get used to the rocking.'] },
@@ -2739,7 +2819,7 @@ function canSee(e, t, range, cosHalf) {
   return losClear(e.map, ex, ey, tx, ty);
 }
 const guardRange = () => DF().sight * guardRangeBase();
-const guardRangeBase = () => { const map = maps[player.map]; if (map.kind === 'island') return isNight() ? 120 : 160; return (map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110) * (up.cloak && isNight() ? 0.85 : 1); };
+const guardRangeBase = () => { const map = maps[player.map]; if (map.kind === 'island') return (isNight() ? 120 : 160) * (island && island.lockdown > gameTime ? 1.4 : 1); return (map.kind === 'town' ? (100 - dayInfo().dark * 55) * (isRaining() ? 0.75 : 1) : 110) * (up.cloak && isNight() ? 0.85 : 1); };
 const peppered = () => player.pepperDay === dayInfo().day;
 const guardSees = g => g.unit === 'dog' ? !peppered() && canSee(g, player, guardRange() * 0.95, -2) : canSee(g, player, guardRange(), 0.62);
 function townPos(e) { if (e.map === 'town') return { x: e.x, y: e.y }; const a = maps[e.map].approach; return { x: a.x * TS + 8, y: a.y * TS + 12 }; }
@@ -2754,7 +2834,7 @@ function transition(fn) { if (fade.dir) return; fade.dir = 1; fade.fn = fn; }
 // Anyone who sees you and calls the Watch puts a bounty on you: one pip per incident (more shouting
 // during the same chase doesn't stack). `seen` is false when nobody actually saw you (a theft found later).
 function setWanted(reason, seen = true) {
-  if (player.map === 'island') { if (!wanted) msg(reason, '#ff6b6b'); wanted = true; lastSeenT = gameTime; return; } // on the island it's the warders' business, not the town's
+  if (player.map === 'island' || player.map === 'prisonship') { if (!wanted) msg(reason, '#ff6b6b'); wanted = true; lastSeenT = gameTime; return; } // on the island it's the warders' business, not the town's
   if (!wanted) { msg(reason, '#ff6b6b'); unlock('first_wanted'); if (seen) raiseBounty(); if (seen) careerFired(isWatch() ? 'A watchman caught breaking the law!' : 'Word of your thieving reaches your employer.'); }
   if (disguised()) { player.disguiseDay = -1; msg('Your disguise is blown!', '#ff8a6b'); }
   wanted = true; lastSeenT = gameTime;
@@ -2838,6 +2918,9 @@ function setupPosts() {
     const S0 = { 12: true, 13: true };
     extraPosts.push({ name: 'Prison Island', map: 'island', welcome: islandAllowed,
       staff: R0.map((rt, i) => ['guard', 'Warder ' + W8[i], [...CITYWATCH_SHEETS, ...PORTWATCH_SHEETS][i % 6], rt, !!S0[i]]).concat([[[20, 12], [100, 12], [100, 64], [20, 64]], [[100, 64], [20, 64], [20, 12], [100, 12]], [[60, 66], [60, 78]], [[30, 8], [90, 8]], [[68, 49], [92, 49]]].map((rt, i) => ['dog', ['Fang', 'Brute', 'Ripper', 'Shadow', 'Grim'][i], i % 2 ? WOLF_SHEET : DOG_SHEET, rt])) }); }
+  extraPosts.push({ name: 'the Iron Maiden', map: 'prisonship', welcome: islandAllowed,
+    staff: [['guard', 'Marine Grue', CITYWATCH_SHEETS[0], [[10, 12], [34, 12]]], ['guard', 'Marine Haskett', CITYWATCH_SHEETS[1], [[34, 13], [10, 13]]], ['guard', 'Marine Pell', CITYWATCH_SHEETS[2], [[38, 8], [52, 8], [52, 17], [38, 17]]],
+      ['guard', 'Marine Stroud', PORTWATCH_SHEETS[0], [[52, 17], [38, 17], [38, 8], [52, 8]]], ['guard', 'Bosun Grail', PORTWATCH_SHEETS[1], [[6, 8], [6, 17]]], ['guard', 'Marine Tusk', PORTWATCH_SHEETS[2], [[36, 12]], true]] });
   extraPosts.push({ name: 'below decks', map: 'shipbelow', welcome: () => true, staff: [['guard', 'Marine Corwin', CITYWATCH_SHEETS[2], [[2, 8], [20, 8], [23, 10], [31, 10], [23, 10], [20, 8]]]] });
   extraPosts.push({ name: 'the Watch House', map: 'jail', welcome: () => !wanted && (isWatch() || (!isNight() && player.y >= 14 * TS)),
     staff: [['guard', 'Turnkey Rusk', guardSheet(4), [[2, 7], [28, 7]]], ['guard', 'Turnkey Wade', guardSheet(7), [[3, 16], [27, 16]]]] });
@@ -4082,9 +4165,14 @@ function breakFree() {
 var curJail = 'jail';
 const jailFor = pos => townIdxAt(pos.x / TS) === 3 ? 'jail2' : 'jail';
 function arrest() {
-  if (player.map === 'island' && island) { islandCaught(); return; }
+  if ((player.map === 'island' || player.map === 'prisonship') && island) { islandCaught(); return; }
   if (player.grabG && player.grabG.wild) { wildCatch(player.grabG); return; }
   curJail = maps[player.map].kind === 'jail' ? player.map : jailFor(townPos(player));
+  if (bounty >= 5 && !ISLAND_MAPS.includes(player.map)) { // no walk to the Watch House: straight onto the prison ship
+    const G0 = player.grabG; if (G0) { G0.state = 'return'; G0.path = null; } for (const g of guards) if (['chase', 'respond', 'search'].includes(g.state)) { g.state = 'return'; g.path = null; }
+    wanted = false; escort = null; trail = []; evidence.push(...player.loot.filter(i => !i.job)); player.loot = player.loot.filter(i => i.job); gold -= Math.floor(gold * 0.2); bounty = 0; halfBounty = false; player.grabG = null; player.state = 'held';
+    msg('CAUGHT - with a 5-star bounty! The Watch drags you straight down to the docks...', '#ff4040'); SFX.jail(); sendToIsland(); return;
+  }
   if (player.grabG && player.grabG.online) { sendEv({ k: player.loot.some(i => i.wagonCrate) ? 'jailedc' : 'jailed', to: player.grabG.online }); wanted = false; player.state = 'held'; escort = { A: null, B: null, waitT: 0, t: 0 }; msg(`${player.grabG.name} of the Watch hauls you off to the cells!`, '#ff6b6b'); pickCell(); finishEscort(); player.grabG = null; return; }
   const p = player, G0 = p.grabG; p.state = 'held'; G0.state = 'hold'; wanted = false; SFX.jail();
   for (const g of guards) if (g !== G0 && (['chase', 'respond', 'search'].includes(g.state) || g.unit !== 'guard')) { g.state = 'return'; g.path = null; }
@@ -4427,14 +4515,17 @@ function findInteraction() {
       p.inter2 = { label: `Pick the lock - free ${t.name}`, act: () => startPick(null, () => freeThief(t), 6, 'Cell door') };
       return;
     }
+  } else if (m.key === 'prisonship' && island) {
+    const S = PRISON_SHIP, L = S.locks.get(S.cage.door.y * S.w + S.cage.door.x), t = tileOfE(p);
+    if (L.shut && inRect(t, S.cage.x0, S.cage.y0, S.cage.x1, S.cage.y1) && Math.hypot(p.x - (L.x * TS + 8), p.y - 4 - (L.y * TS + 8)) < 22) { p.inter = { label: 'Pick the cage lock (and then what? You\'re at sea)', act: () => startPick(null, () => { L.shut = false; msg('The cage swings open. The marines are right there...', '#ffb36b'); }, 7, 'Cage door') }; return; }
   } else if (m.kind === 'island' && island) {
     const near = (x, y, r = 20) => Math.hypot(p.x - (x * TS + 8), p.y - 4 - (y * TS + 8)) < r, t = tileOfE(p), inCell = inRect(t, ISL.cell.x0, ISL.cell.y0, ISL.cell.x1, ISL.cell.y1);
     const cell = m.locks.get(ISL.cell.door.y * m.w + ISL.cell.door.x), gate = m.locks.get(ISL.gate.y * m.w + ISL.gate.x);
-    if (inCell && near(ISL.cell.bed.x, ISL.cell.bed.y + 1, 22)) { p.inter = { label: `Sleep (${Math.max(0, Math.ceil((island.end - gameTime) / DAY_LEN))} days of your sentence left)`, act: () => { if (!isNight()) { say(p, 'Can\'t sleep in broad daylight.', 1.5); return; } transition(() => { const d = dayInfo(); gameTime = d.day * DAY_LEN + 1; p.stamina = 100; msg('Morning. The cell doors clank open.', '#cfd8ff'); }); } };
-      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold F, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.x = ISL.tunnelOut.x * TS + 8; p.y = ISL.tunnelOut.y * TS + 12; msg('You squeeze up out of the tunnel - outside the west wall!', '#9df0a0'); }); } else { p.state = 'digging'; } } }; return; }
+    if (inCell && near(ISL.cell.bed.x, ISL.cell.bed.y + 1, 22)) { p.inter = { label: `Your bunk (${Math.max(0, Math.ceil((island.end - gameTime) / DAY_LEN))} days of your sentence left)`, act: () => say(p, pick(['Nobody sleeps in this place.', 'Too many rats, too much shouting.', 'Sleep? Here?']), 1.8) };
+      p.inter2 = { label: island.dig >= 45 ? 'Crawl into your tunnel' : `Dig behind the loose stone (hold F, ${Math.floor(island.dig / 45 * 100)}%)`, act: () => { if (island.dig >= 45) { transition(() => { p.map = 'tunnel'; p.x = TUNNEL_MAP.start.x * TS + 8 + 16; p.y = TUNNEL_MAP.start.y * TS + 12; msg('You squeeze into your tunnel. It\'s pitch dark and barely wide enough to crawl. Keep going west... and pray it holds.', '#cfe8ff'); }); } else { p.state = 'digging'; } } }; return; }
     if (inCell && cell.shut && near(cell.x, cell.y, 22)) { p.inter = { label: 'Pick your cell lock (hard)', act: () => startPick(null, () => { cell.shut = false; cell.picked = true; msg('Click. Your cell door swings open. Quietly now...', '#9df0a0'); }, 7, 'Cell door') }; return; }
     if (gate.shut && near(gate.x, gate.y - 1, 22)) { p.inter = islandItem('keys') ? { label: 'Unlock the main gate (warden\'s keys)', act: () => { gate.shut = false; SFX.unlock(); msg('The main gate swings open!', '#9df0a0'); } } : { label: 'Pick the main gate lock (very hard)', act: () => startPick(null, () => { gate.shut = false; msg('The main gate swings open!', '#9df0a0'); }, 8, 'Main gate') }; return; }
-    if (near(ISL.drain.x, ISL.drain.y)) { p.inter = island.drainOpen ? { label: 'Climb down the drain', act: () => transition(() => { p.x = ISL.drainOut.x * TS + 8; p.y = ISL.drainOut.y * TS + 12; msg('You crawl through the stinking drain, under the north wall, and out onto the rocks!', '#9df0a0'); }) } : { label: 'Pick the drain grate', act: () => startPick(null, () => { island.drainOpen = true; msg('The grate lifts. The drain runs under the wall...', '#9df0a0'); }, 7, 'Drain grate') }; return; }
+    if (near(ISL.drain.x, ISL.drain.y)) { p.inter = island.drainOpen ? { label: 'Climb down the drain', act: () => transition(() => { p.map = 'drainpipe'; p.x = DRAIN_MAP.start.x * TS + 8 + 16; p.y = DRAIN_MAP.start.y * TS + 12; msg('Down into the drain pipe. Cold slime, the stink of the kitchen... crawl for it.', '#cfe8ff'); }) } : { label: 'Pick the drain grate', act: () => startPick(null, () => { island.drainOpen = true; msg('The grate lifts. The drain runs under the wall...', '#9df0a0'); }, 7, 'Drain grate') }; return; }
     if (near(ISL.climb.x, ISL.climb.y)) { p.inter = islandItem('rope') ? { label: 'Throw the rope over the wall and climb', act: () => transition(() => { p.x = ISL.climbOut.x * TS + 8; p.y = ISL.climbOut.y * TS + 12; island.items.delete('rope'); msg('Hand over hand, up and over. You drop down outside the north-east wall!', '#9df0a0'); }) } : { label: 'A dark corner of the wall (you\'d need a rope)', act: () => say(p, 'Too high to climb bare-handed.', 1.5) }; return; }
     for (const k of m.pickups) if (!island.items.has(k.id) && !(island.taken || new Set()).has(k.id) && near(k.x, k.y)) { p.inter = { label: `Take ${k.name}`, act: () => { island.items.add(k.id); SFX.steal(); msg(`You pocket ${k.name}.`, '#f7d774'); } }; return; }
     if (near(ISL.cart.x, ISL.cart.y, 22)) { p.inter = isNight() ? { label: 'The laundry cart (it only goes out by day)', act: () => say(p, 'Nobody wheels it out at night.', 1.5) } : { label: 'Hide in the laundry cart', act: () => transition(() => { p.x = ISL.cartOut.x * TS + 8; p.y = ISL.cartOut.y * TS + 12; msg('Buried under sheets, you\'re wheeled out through the main gate... and tipped out by the dock road. Outside the walls!', '#9df0a0'); }) }; return; }
@@ -4533,6 +4624,7 @@ function updatePlayer(dt) {
   if (p.state === 'free' && !fade.dir) { const t = tileOfE(p), here = maps[p.map].tiles[t.y * maps[p.map].w + t.x]; if ([T.RIVER, T.WATER, T.OCEAN, T.BOAT].includes(here)) { // somehow on the water: back onto dry land
     let best = null; for (let r = 1; r <= 8 && !best; r++) for (let dy = -r; dy <= r && !best; dy++) for (let dx = -r; dx <= r; dx++) { const x = t.x + dx, y = t.y + dy; if (Math.max(Math.abs(dx), Math.abs(dy)) === r && !isSolid(maps[p.map], x, y)) { best = { x, y }; break; } }
     if (best) { p.x = best.x * TS + 8; p.y = best.y * TS + 12; } } }
+  if (maps[p.map] && maps[p.map].kind === 'tunnel') { p.sneak = true; p.running = false; } // no room to stand: you crawl
   if (p.stunT > 0 && p.state === 'free') { p.stunT -= dt; return; } // coughing in the smoke, or knocked back
   const m = maps[p.map];
   switch (p.state) {
@@ -4600,7 +4692,7 @@ function updatePlayer(dt) {
     case 'free': {
       doMove(dt, true);
       if (m.kind === 'house') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { if (L.to === 'town') leaveHouse(m.house, L); else changeFloor(L); return; } }
-      if (m.kind === 'ship') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { changeFloor(L); return; } }
+      if (m.kind === 'ship' || m.kind === 'tunnel') { const t = tileOfE(p), L = m.links.find(l => l.walk && l.x === t.x && l.y === t.y); if (L) { if (m.kind === 'tunnel' && !L.back) msg(m.key === 'tunnel' ? 'You claw your way up into the night air - outside the west wall!' : 'You slither out of the pipe onto the rocks, north of the wall!', '#9df0a0'); changeFloor(L); return; } }
       if (m.kind === 'jail') { const t = tileOfE(p); if (t.x === m.exit.x && t.y === m.exit.y) { leaveWatchHouse(); return; } const L = m.links.find(l => l.walk && l.to !== 'town' && l.x === t.x && l.y === t.y); if (L) { changeFloor(L); return; } }
       if (m.plates && m.house.alarmT <= 0) { const t = tileOfE(p); if (m.tiles[t.y * m.w + t.x] === T.PLATE && !p.sneak && (!m.lobby || t.y < m.lobby.y0)) bankBell(m.house); }
       findInteraction();
@@ -5191,7 +5283,7 @@ function drawEntity(e) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(sx - 4, sy - 2, 8, 3); ctx.fillRect(sx - 5, sy - 1, 10, 1);
   const sheet = e === player && (player.state === 'escorted' || player.state === 'held') ? PLAYER_BOUND : e === player && isWatch() ? WATCH_SHEET : e === player && isWorker() && CITIZEN_SHEET ? CITIZEN_SHEET : e.ghost && (e.st === 'escorted' || e.st === 'held') ? e.boundSheet : e.sheet;
   if (e === player && disguised() && !(player.sneak && player.state === 'free')) { ctx.drawImage(sheet[e.dir][fr], sx - 8, sy - 22); F(ctx, sx - 5, sy - 23, 10, 2, '#3a2a1a'); F(ctx, sx - 3, sy - 26, 6, 3, '#3a2a1a'); if (e.dir !== 'up') F(ctx, sx - 3, sy - 13, 6, 3, '#6a4a2a'); return; }
-  if ((e === player && player.sneak && player.state === 'free' && career.type === 'thief') || (e.ghost && e.st === 'sneak')) { // creeping: slow steps, a little sway
+  if ((e === player && player.sneak && player.state === 'free' && (career.type === 'thief' || maps[player.map].kind === 'tunnel')) || (e.ghost && e.st === 'sneak')) { // creeping: slow steps, a little sway
     const cs = e === player ? PLAYER_CROUCH : e.crouchSheet || sheet, cf = e.moving ? WALK[Math.floor(e.animT * 5) % 4] : 0;
     ctx.drawImage(cs[e.dir][cf], sx - 8 + (e.moving && cf === 0 && (e.dir === 'left' || e.dir === 'right') ? (e.dir === 'left' ? -1 : 1) : 0), sy - 22);
     return;
@@ -5284,7 +5376,7 @@ function drawOcean(m, cx, cy) {
   for (let k = 0; k < 14; k++) { const gx = cx + hash(k, Math.floor(t * 1.5), 1) * VW, gy = cy + hash(k, Math.floor(t * 1.5), 2) * VH; F(ctx, Math.round(gx), Math.round(gy), 2, 1, '#d8f0ff'); } // glints
 }
 function drawFoam(m) { // white water where the hull cuts the sea
-  if (!m.foam) { m.foam = []; for (let y = 1; y < m.h - 1; y++) for (let x = 1; x < m.w - 1; x++) if (m.tiles[y * m.w + x] === T.OCEAN && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.key === 'ship' ? m.tiles[(y + dy) * m.w + x + dx] === T.RAIL : m.ground[(y + dy) * m.w + x + dx] !== T.OCEAN)) m.foam.push({ x, y }); }
+  if (!m.foam) { m.foam = []; for (let y = 1; y < m.h - 1; y++) for (let x = 1; x < m.w - 1; x++) if (m.tiles[y * m.w + x] === T.OCEAN && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => m.key !== 'island' ? m.tiles[(y + dy) * m.w + x + dx] === T.RAIL : m.ground[(y + dy) * m.w + x + dx] !== T.OCEAN)) m.foam.push({ x, y }); }
   const t = gameTime;
   for (const { x, y } of m.foam) for (const fy of [2, 7, 12]) { const ph = ((t * 46 + fy * 13 + x * 5) % 20 + 20) % 20, ox = x * TS, oy = y * TS; F(ctx, ox + 16 - Math.floor(ph), oy + fy, 5, 1, '#e8f4ff'); F(ctx, ox + 16 - Math.floor((ph + 10) % 20), oy + fy + 2, 3, 1, '#b8d8f0'); }
 }
@@ -5378,8 +5470,8 @@ function drawShipTop(m) {
   const p = player;
   for (const L of m.torches) { const x = L.x * TS + 8, y = L.y * TS + 4; F(ctx, x - 2, y - 3, 4, 5, '#3a2a1a'); F(ctx, x - 1, y - 2, 2, 3, Math.floor(gameTime * 6 + L.x) % 3 ? '#ffd27a' : '#ffb84a'); }
   for (const ms of m.masts || []) {
-    if (m.key !== 'ship') break;
-    const x = ms.x * TS + 8, top = 8 * TS + 4, bot = 17 * TS + 12, billow = 5 + Math.sin(gameTime * 1.7 + ms.x) * 1.5, under = p.map === 'ship' && Math.abs(p.x - x) < 22 && p.y > top && p.y < bot + 10;
+    if (m.key !== 'ship' && m.key !== 'prisonship') break;
+    const x = ms.x * TS + 8, top = (m.sailY0 || 8) * TS + 4, bot = (m.sailY1 || 17) * TS + 12, billow = 5 + Math.sin(gameTime * 1.7 + ms.x) * 1.5, under = p.map === 'ship' && Math.abs(p.x - x) < 22 && p.y > top && p.y < bot + 10;
     ctx.globalAlpha = under ? 0.4 : 0.95;
     F(ctx, x - 2, top - 2, 4, bot - top + 4, '#5a3618'); // the yard across the ship
     for (let y = top; y < bot; y += 2) { const k = Math.sin((y - top) / (bot - top) * Math.PI), w = Math.round(6 + billow * 2.2 * k); F(ctx, x + 2, y, w, 2, (y / 2) % 6 < 1 ? '#d8cfb4' : '#efe6cc'); F(ctx, x + 2 + w, y, 1, 2, '#b8ae94'); } // the sail bellies out with the wind
@@ -5392,14 +5484,14 @@ function render(dt) {
   const titleish = ['title', 'wardrobe', 'achievements', 'towns', 'roles'].includes(state) || (state === 'saves' && saves && saves.from === 'title');
   const p = player, camMap = titleish ? 'town' : p.map, m = maps[camMap];
   const resHere = []; for (const h of houses) for (const r of h.residents) if (r.map === camMap) resHere.push(r);
-  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : m.key === 'ship' || m.key === 'island' ? '#1d5585' : '#0d0906');
+  F(ctx, 0, 0, cv.width, cv.height, m.kind === 'town' ? '#1f3a1a' : m.key === 'ship' || m.key === 'island' || m.key === 'prisonship' ? '#1d5585' : '#0d0906');
   const cx = Math.round(camX), cy = Math.round(camY);
   ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S);
   if (m.key === 'ship') { drawOcean(m, cx, cy); drawShore(m, cx); }
-  if (m.key === 'island') drawOcean(m, cx, cy);
+  if (m.key === 'island' || m.key === 'prisonship') drawOcean(m, cx, cy);
   ctx.drawImage(m.canvas, 0, 0);
   if (m.kind === 'town' || m.kind === 'sewer') drawWater(m, cx, cy);
-  if (m.key === 'ship' || m.key === 'island') drawFoam(m);
+  if (m.key === 'ship' || m.key === 'island' || m.key === 'prisonship') drawFoam(m);
   if (m.key === 'island') drawIslandLife(m);
   const di = titleish ? TITLE_NIGHT : dayInfo();
   // dynamic tiles
@@ -5475,7 +5567,7 @@ function render(dt) {
   list.sort((a, b) => a.y - b.y);
   drawDust(camMap, dt);
   for (const e of list) drawEntity(e);
-  if (isShipMap(camMap)) drawShipTop(m);
+  if (isShipMap(camMap) || camMap === 'prisonship') drawShipTop(m);
   if (camMap === 'town') drawPortLife(m, cx, cy);
   if (p.state === 'escorted' && escort) for (const g of [escort.A, escort.B]) if (g && g.map === p.map) { // each watchman grips an arm
     const gx = Math.round(g.x), gy = Math.round(g.y) - 11, tx = Math.round(p.x + Math.sign(g.x - p.x) * 3 || p.x), ty = Math.round(p.y) - 11;
@@ -5488,7 +5580,9 @@ function render(dt) {
     for (let i = 0; i < 9; i++) { const ang = i * 0.7 + gameTime * 0.4, rr = c.r * (0.3 + (i % 3) * 0.25); ctx.fillStyle = `rgba(200,200,205,${a * 0.5})`; ctx.beginPath(); ctx.arc(c.x + Math.cos(ang) * rr, c.y + Math.sin(ang) * rr * 0.7, c.r * 0.45, 0, 7); ctx.fill(); }
   }
   // lighting
-  if ((m.kind === 'town' || m.key === 'ship' || m.key === 'island') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  if ((m.kind === 'town' || m.key === 'ship' || m.key === 'island' || m.key === 'prisonship') && di.dark > 0.01) drawLighting(di.dark, cx, cy, m);
+  else if (m.kind === 'tunnel') drawLighting(0.82, cx, cy, m);
+  if (m.key === 'island' && !titleish) { ctx.save(); ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S); drawSearchlights(); ctx.restore(); }
   if (m.kind === 'town' && !titleish && cx + VW > (PORT.x0 - 10) * TS && isNight()) { ctx.save(); ctx.setTransform(S, 0, 0, S, -cx * S, -cy * S); drawLighthouseBeam(m); ctx.restore(); } // the harbour light sweeps the dark
   else if (m.key === 'shipbelow') drawLighting(0.45 + di.dark * 0.3, cx, cy, m);
   if (m.kind === 'town' && !titleish && isRaining()) { // rain streaks and puddle splashes
@@ -6292,7 +6386,7 @@ if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => {});
 
 // debug / test hook
 window.__game = { get player() { return player; }, get guards() { return guards; }, houses, maps, fences, get state() { return state; }, set state(v) { state = v; },
-  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, cycleDifficulty, DF, guardRange, heatTime, get islandCount() { return islandCount; }, set islandCount(v) { islandCount = v; }, sendToIsland, leaveIsland, islandAllowed, get island() { return island; }, ISL, ISLAND_MAP, isShipMap, startCrossing, DOCKS, WATCH_SKINS, CITIZEN_SKINS, roleAch, roleSkinOpen, wardrobeTab, get CITIZEN_SHEET() { return CITIZEN_SHEET; }, get WATCH_SHEET() { return WATCH_SHEET; }, get paused() { return paused; }, ACH, openWardrobe, get wardrobe() { return wardrobe; }, skinUnlocked, SKIN_AT, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
+  get wanted() { return wanted; }, set wanted(v) { wanted = v; }, get rep() { return rep; }, get msgLog() { return msgLog; }, online, onlinePeers, onlineChat, sendQuick, updateOnline, get onlineUI() { return onlineUI; }, arriveOnIsland, PRISON_SHIP, TUNNEL_MAP, DRAIN_MAP, searchlights, cycleDifficulty, DF, guardRange, heatTime, get islandCount() { return islandCount; }, set islandCount(v) { islandCount = v; }, sendToIsland, leaveIsland, islandAllowed, get island() { return island; }, ISL, ISLAND_MAP, isShipMap, startCrossing, DOCKS, WATCH_SKINS, CITIZEN_SKINS, roleAch, roleSkinOpen, wardrobeTab, get CITIZEN_SHEET() { return CITIZEN_SHEET; }, get WATCH_SHEET() { return WATCH_SHEET; }, get paused() { return paused; }, ACH, openWardrobe, get wardrobe() { return wardrobe; }, skinUnlocked, SKIN_AT, shoreDepthAt: u => shoreDepth(u, 0, 71), startVoyage, endVoyage, get voyage() { return voyage; }, shipNPCs, drawTree, persona, startConvo, buildConvo, overheard, allResidents, playerSheets: () => [PLAYER_SHEET, PLAYER_CROUCH], jailNPCs, buy, startNpcWagon, startCuff, tackle, cuffRobber, wagonRoute, goodWork, rankTitle, payFor, startWagon, get wagon() { return wagon; }, pickMark, onlineEv, sendEv, arrestRobber, robberSlips, makePost, onPost, toMainMenu, openCase, get homeIdx() { return homeIdx; }, robTake, resolveKnock, watchAlert, thiefSpotted, get career() { return career; }, takeJob, joinWatch, quitCareer, updateCareer, finishTask, jailRobber, shiftWindow, jobSpots, calledOut, theftDiscovered, get stash() { return stash; }, chatClose, enterHouse, CITY, inCity, rideCarriage, get townPick() { return townPick; }, hide, updateCloset, closetFound, cloud, encodeSave, decodeSave, exportCode, importCode, loadSave, autosave, readResume, resumeGame, snapshot, setMode, multi, syncWorldClock, get clockRate() { return clockRate; }, questTargets, get job() { return job; }, set job(v) { job = v; }, startPocket, pocketTap, newWriggle, openChatBox, sendText, get pauseView() { return pauseView; }, rats, get up() { return up; }, disguised, shrooms, woodsSpots, get treasure() { return treasure; }, set treasure(v) { treasure = v; }, digTreasure, wildCatch, startRaid, runOutOfTown, get heist() { return heist; },  behindCover, canSee, coverNear, get contest() { return contest; }, get stash() { return stash; }, startContest, endContest, get halfBounty() { return halfBounty; }, pocketTarget, yards, yardDogs, isRaining, set rep(v) { rep = v; }, get heist() { return heist; }, get exiled() { return exiled; }, offerHeist, failHeist, offerRedemption, get bankBal() { return bankBal; }, get evidence() { return evidence; }, enterWatchHouse, freeThief, bankBell, get escort() { return escort; }, rescuePlayer, get job() { return job; }, rankName, finishSteal, burgle, thieves, manholes, canSave, enterSewer, climbUp, thiefSpotted, isSolid, estates, openSteward, onGrounds, openShop, shopBuy, get shopMenu() { return shopMenu; }, CATALOG, sleepInRoom, get profile() { return profile; }, unlock, stat, ACH, SKINS: THIEF_SKINS, applySkin, get toasts() { return toasts; }, get chat() { return chat; }, chatOpen, chatOptions, writeSlot, loadSlot, readSlot, openSaves, vendors, pets, isMarketDay, dayInfo, NEXT, get bounty() { return bounty; }, set bounty(v) { bounty = v; }, get gold() { return gold; }, set gold(v) { gold = v; }, startGame, knock, raiseAlarm, arrest, grab, keys, pressed, get escort() { return escort; }, get gameTime() { return gameTime; }, set gameTime(v) { gameTime = v; },
   sim(sec) { for (let i = 0; i < sec * 60; i++) { updateWorld(1 / 60); pressed.clear(); } updateCamera(null, player.map, player.x, player.y - 8); } };
 </script>
 </body>
